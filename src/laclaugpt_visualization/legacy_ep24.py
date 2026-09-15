@@ -58,6 +58,7 @@ def adapt(record: dict[str, Any]) -> dict[str, Any]:
     transcript = str(_first(record, "whisper_transcript", "transcript"))
     translated = str(_first(record, "whisper_translated", "translated_text"))
     ocr = _collect_numbered(record, "ocr")
+    legacy_frames = _collect_numbered(record, "frame")
     frame_analysis = [
         str(_first(record, f"frame_{index}", f"frame_analysis_{index}"))
         for index in range(1, 7)
@@ -114,7 +115,10 @@ def adapt(record: dict[str, Any]) -> dict[str, Any]:
         "intermediate": {
             "asr": [{"id": "transcript_1", "text": transcript, "language": _first(record, "whisper_language"), "translated_text": translated}] if transcript else [],
             "ocr": [{"id": f"ocr_{index}", "text": value} for index, value in enumerate(ocr, start=1)],
-            "frames": [],
+            "frames": [
+                {"id": f"frame_{index}", "legacy_value": value}
+                for index, value in enumerate(legacy_frames, start=1)
+            ],
             "frame_analysis": [{"id": f"frame_{index}", "description": value} for index, value in enumerate(frame_analysis, start=1)],
             "translations": ([{"id": "translation_1", "text": translated}] if translated else []),
             "stage_outputs": {},
@@ -128,7 +132,7 @@ def adapt(record: dict[str, Any]) -> dict[str, Any]:
         "transcript": transcript,
         "translated_text": translated,
         "ocr": ocr,
-        "frames": _collect_numbered(record, "frames"),
+        "frames": legacy_frames,
         "frame_analysis": frame_analysis,
         "media_references": [
             value
