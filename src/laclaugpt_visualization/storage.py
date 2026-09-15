@@ -21,9 +21,8 @@ def load_mongodb(settings: Settings, query: dict[str, Any] | None = None) -> pd.
     client = MongoClient(settings.mongodb_uri)
     try:
         collection = client[settings.mongodb_database][settings.resolved_mongodb_collection]
-        project_query = {"project_id": settings.project_id}
-        if query:
-            project_query.update(query)
+        project_query = dict(query or {})
+        project_query["project_id"] = settings.project_id
         records = list(collection.find(project_query, {"_id": False}))
     finally:
         client.close()
