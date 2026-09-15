@@ -1,0 +1,23 @@
+[Unit]
+Description=LaclauGPT Data Visualization
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<service-user>
+Group=<service-group>
+WorkingDirectory=<checkout-path>
+EnvironmentFile=<private-env-file>
+ExecStart=<venv-path>/bin/laclaugpt-visualize serve
+ExecStartPre=<venv-path>/bin/laclaugpt-visualize health
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=<private-runtime-data-path>
+
+[Install]
+WantedBy=multi-user.target
