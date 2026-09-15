@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,7 @@ def validate_analysis_input(source: str | Path, settings: Settings) -> dict[str,
     missing_identity = int(frame["source_url"].eq("").sum())
     versions = sorted({str(value) for value in frame["schema_version"] if str(value)})
     return {
-        "records": int(len(frame)),
+        "records": len(frame),
         "missing_source_url": missing_identity,
         "schema_versions": versions,
         "valid": missing_identity == 0,
@@ -36,7 +36,7 @@ def inspect_dataset(source: str | Path, settings: Settings) -> dict[str, Any]:
     """Return bounded metadata useful to an agent without exposing full rows."""
     frame = load_frame(source, settings=settings)
     return {
-        "records": int(len(frame)),
+        "records": len(frame),
         "platforms": sorted(frame["source_platform"].dropna().astype(str).unique().tolist())[:50],
         "countries": sorted(frame["source_country"].dropna().astype(str).unique().tolist())[:50],
         "languages": sorted(frame["source_language"].dropna().astype(str).unique().tolist())[:50],
@@ -72,7 +72,7 @@ def export_summary(
             "caller": caller,
             "execution": "agent",
             "project_id": settings.project_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
     )
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -98,7 +98,7 @@ def request_human_review(
         "caller": caller,
         "execution": "agent",
         "project_id": settings.project_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     with log.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
