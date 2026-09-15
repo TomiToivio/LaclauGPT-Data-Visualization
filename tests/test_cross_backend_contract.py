@@ -11,7 +11,7 @@ from laclaugpt_visualization.legacy_ep24 import adapt as adapt_ep24
 
 def _canonical_record() -> dict:
     return {
-        "schema_version": "1.0.0-draft",
+        "schema_version": "1.0.0",
         "source_url": "synthetic://canonical/1",
         "source_native_ids": {"video_id": "legacy-video-1"},
         "source": {
@@ -28,31 +28,38 @@ def _canonical_record() -> dict:
         },
         "content": {
             "text": "Synthetic source text",
-            "transcripts": [{"text": "Synthetic transcript", "language": "en"}],
-            "ocr": [{"text": "Synthetic OCR"}],
+            "transcripts": [{"id": "t1", "text": "Synthetic transcript", "language": "en"}],
+            "ocr": [{"id": "o1", "text": "Synthetic OCR"}],
             "frames": [{"id": "frame-1", "timestamp_seconds": 1.0}],
             "media_references": [{"object_ref": "synthetic://media/1"}],
         },
-        "evidence": {"items": [{"id": "evidence-1", "kind": "text"}]},
+        "evidence": [
+            {
+                "evidence_id": "evidence-1",
+                "kind": "text",
+                "source_url": "synthetic://canonical/1",
+                "quote": "Synthetic source text",
+            }
+        ],
         "analysis": {
             "status": "complete",
             "completed_at": "2026-09-15T08:00:00Z",
             "summary": "Synthetic summary",
-            "entities": [{"label": "Synthetic Actor"}],
+            "entities": [{"entity_id": "actor-1", "label": "Synthetic Actor"}],
             "entity_mentions": [{"entity_id": "actor-1", "text": "Synthetic Actor"}],
             "topics": [{"label": "AI"}],
             "classifications": [{"label": "synthetic-class"}],
-            "formations": [{"label": "Synthetic Formation"}],
-            "signifiers": [{"label": "AI"}],
-            "nodal_points": [{"label": "progress"}],
-            "discourses": [{"label": "Synthetic Discourse"}],
-            "imaginaries": [{"label": "Synthetic Imaginary"}],
-            "us": [{"label": "researchers"}],
-            "them": [{"label": "opponents"}],
-            "frontier": [{"label": "researchers/opponents"}],
-            "affects": [{"label": "hope"}],
-            "sentiments": [{"label": "positive"}],
-            "relations": [{"relation_type": "equivalence", "source_ref": "AI", "target_ref": "progress"}],
+            "formations": [{"object_id": "formation-1", "label": "Synthetic Formation", "kind": "formation"}],
+            "signifiers": [{"object_id": "signifier-1", "label": "AI", "kind": "signifier"}],
+            "nodal_points": [{"object_id": "nodal-1", "label": "progress", "kind": "nodal_point"}],
+            "discourses": [{"object_id": "discourse-1", "label": "Synthetic Discourse", "kind": "discourse"}],
+            "imaginaries": [{"object_id": "imaginary-1", "label": "Synthetic Imaginary", "kind": "imaginary"}],
+            "us": [{"object_id": "us-1", "label": "researchers", "kind": "us"}],
+            "them": [{"object_id": "them-1", "label": "opponents", "kind": "them"}],
+            "frontier": [{"object_id": "frontier-1", "label": "researchers/opponents", "kind": "frontier"}],
+            "affects": [{"object_id": "affect-1", "label": "hope", "kind": "affect"}],
+            "sentiments": [{"object_id": "sentiment-1", "label": "positive", "kind": "sentiment"}],
+            "relations": [{"relation_id": "r1", "relation_type": "equivalence", "source_ref": "AI", "target_ref": "progress"}],
             "uncertainty": ["synthetic uncertainty"],
             "abstentions": ["no hegemonic claim"],
             "model_runs": [{"provider": "fake", "model": "fixture"}],
@@ -66,7 +73,7 @@ def _assert_semantics(frame: pd.DataFrame) -> None:
     row = frame.iloc[0]
     assert row["source_url"] == "synthetic://canonical/1"
     assert row["document_id"] == row["source_url"]
-    assert row["schema_version"] == "1.0.0-draft"
+    assert row["schema_version"] == "1.0.0"
     assert row["source_type"] == "post"
     assert row["collector"] == "synthetic-test"
     assert row["source_text"] == "Synthetic source text"
@@ -76,6 +83,7 @@ def _assert_semantics(frame: pd.DataFrame) -> None:
     assert row["us"] == ["researchers"]
     assert row["them"] == ["opponents"]
     assert row["review_status"] == "PROVISIONAL"
+    assert row["evidence"][0]["evidence_id"] == "evidence-1"
     assert row["provenance"][0]["method"] == "synthetic-test"
     assert str(row["source_timestamp"]) == "2026-09-15 07:00:00+00:00"
 
