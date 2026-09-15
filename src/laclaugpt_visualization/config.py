@@ -9,6 +9,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .distributed import ProjectNamespace
+from .profiles import DeploymentProfile
 
 DATA_SUBDIRS = (
     "logs",
@@ -42,7 +43,12 @@ class Settings(BaseSettings):
     )
 
     project_id: str = "default"
-    profile: Literal["local", "server"] = "local"
+    profile: Literal["local", "server", "custom"] = "local"
+    machine: Literal["laptop", "linux-server", "custom"] = "laptop"
+    execution: Literal["cli", "web-service", "agent"] = "cli"
+    storage: Literal["local", "distributed", "custom"] = "local"
+    caller: str = "human-cli"
+
     data_backend: Literal["files", "sqlite", "mongodb"] = "files"
     cache_backend: Literal["memory", "redis"] = "memory"
     object_backend: Literal["local", "s3"] = "local"
@@ -51,6 +57,10 @@ class Settings(BaseSettings):
     output_dir: Path = Path("data/exports")
     sqlite_path: Path = Path("data/database/visualization.sqlite3")
     analysis_data_dir: Path | None = None
+
+    server_host: str = "127.0.0.1"
+    server_port: int = 8501
+    cache_max_entries: int = 512
 
     mongodb_uri: str | None = Field(default=None, repr=False)
     mongodb_database: str = "laclaugpt"
@@ -79,6 +89,21 @@ class Settings(BaseSettings):
     def resolved_mongodb_collection(self) -> str:
         return self.mongodb_collection or self.distributed_namespace.mongo_collection("annotations")
 
+    @property
+    def deployment_profile(self) -> DeploymentProfile:
+        machine = self.machine
+        execution = self.execution
+        if self.profile == "server" and self.machine == "laptop" and self.execution == "cli":
+            machine = "linux-server"
+            execution = "web-service"
+        return DeploymentProfile(
+            machine=machine,
+            execution=execution,
+            storage=self.storage,
+            cache=self.cache_backend,
+            analysis_data_root=self.analysis_data_dir or self.data_path("analysis"),
+        )
+
     def data_path(self, *parts: str) -> Path:
         return self.data_dir.joinpath(*parts)
 
@@ -89,13 +114,49 @@ class Settings(BaseSettings):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
+    def safe_summary(self) -> dict[str, object]:
+        """Return effective non-secret configuration for logs, health and agents."""
+        profile = self.deployment_profile
+        return {
+            "project_id": self.project_id,
+            "profile": self.profile,
+            "machine": profile.machine,
+            "execution": profile.execution,
+            "storage": profile.storage,
+            "caller": self.caller,
+            "data_backend": self.data_backend,
+            "cache_backend": self.cache_backend,
+            "object_backend": self.object_backend,
+            "data_dir": str(self.data_dir),
+            "analysis_data_dir": str(profile.analysis_data_root),
+            "output_dir": str(self.output_dir),
+            "server_host": self.server_host,
+            "server_port": self.server_port,
+            "cache_max_entries": self.cache_max_entries,
+            "mongodb_database": self.mongodb_database,
+            "mongodb_collection": self.resolved_mongodb_collection,
+            "s3_bucket": self.s3_bucket or "",
+        }
+
     def validate_remote_requirements(self) -> None:
+        self.deployment_profile.validate()
+        if not (1 <= self.server_port <= 65535):
+            raise ValueError("server port must be between 1 and 65535")
+        if self.cache_max_entries < 1:
+            raise ValueError("cache_max_entries must be positive")
         if self.data_backend == "mongodb" and not self.mongodb_uri:
             raise ValueError("mongodb backend requires LACLAUGPT_VIS_MONGODB_URI")
         if self.cache_backend == "redis" and not self.redis_url:
             raise ValueError("redis backend requires LACLAUGPT_VIS_REDIS_URL")
         if self.object_backend == "s3" and not (self.s3_endpoint_url and self.s3_bucket):
             raise ValueError("s3 backend requires endpoint URL and bucket")
+        if self.storage == "distributed":
+            if self.data_backend != "mongodb":
+                raise ValueError("distributed storage requires data_backend=mongodb")
+            if self.cache_backend != "redis":
+                raise ValueError("distributed storage requires cache_backend=redis")
+            if self.object_backend != "s3":
+                raise ValueError("distributed storage requires object_backend=s3")
 
 
 @lru_cache(maxsize=1)
