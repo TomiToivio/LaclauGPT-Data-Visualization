@@ -1,8 +1,4 @@
-"""Configuration for local-first and optional distributed visualization backends.
-
-Secrets are read from environment variables or an untracked .env file. Never
-commit credentials, tokens, host-specific paths, or project data to this repo.
-"""
+"""Configuration for local-first and optional distributed visualization backends."""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -12,13 +8,29 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DATA_SUBDIRS = (
+    "logs",
+    "database",
+    "config",
+    "files",
+    "csv",
+    "jsonl",
+    "codebooks",
+    "sources",
+    "downloads",
+    "media",
+    "models/ollama",
+    "models/whisper",
+    "cache",
+    "tmp",
+    "exports",
+    "artifacts",
+    "runs",
+)
+
 
 class Settings(BaseSettings):
-    """Runtime settings with safe local defaults.
-
-    The default profile needs no services: CSV/JSON files, SQLite, and the local
-    filesystem are sufficient. Remote services are opt-in via environment vars.
-    """
+    """Runtime settings with one private repository-local data root."""
 
     model_config = SettingsConfigDict(
         env_prefix="LACLAUGPT_VIS_",
@@ -33,8 +45,9 @@ class Settings(BaseSettings):
     object_backend: Literal["local", "s3"] = "local"
 
     data_dir: Path = Path("data")
-    output_dir: Path = Path("outputs")
-    sqlite_path: Path = Path("data/laclaugpt.sqlite3")
+    output_dir: Path = Path("data/exports")
+    sqlite_path: Path = Path("data/database/visualization.sqlite3")
+    analysis_data_dir: Path | None = None
 
     mongodb_uri: str | None = Field(default=None, repr=False)
     mongodb_database: str = "laclaugpt"
@@ -47,6 +60,16 @@ class Settings(BaseSettings):
     s3_access_key_id: str | None = Field(default=None, repr=False)
     s3_secret_access_key: str | None = Field(default=None, repr=False)
     s3_region: str | None = None
+
+    def data_path(self, *parts: str) -> Path:
+        return self.data_dir.joinpath(*parts)
+
+    def ensure_local_directories(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        for relative in DATA_SUBDIRS:
+            self.data_path(*relative.split("/")).mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
     def validate_remote_requirements(self) -> None:
         if self.data_backend == "mongodb" and not self.mongodb_uri:
