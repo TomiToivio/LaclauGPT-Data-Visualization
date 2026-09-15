@@ -2,32 +2,43 @@
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml)
 
-Researcher-facing dashboards and visualization helpers for the modular LaclauGPT ecosystem. Visualization consumes analysis outputs without performing collection or analysis itself.
+**LaclauGPT-Data-Visualization is the canonical visualization implementation repository** in the modular LaclauGPT architecture. It consumes canonical Collection/Analysis records and provides one researcher-facing application with Monitor, Researcher Review, and Explore modes. It does not perform collection or discourse inference itself.
+
+## Unified application
+
+- **Monitor**: near-real-time corpus status, analyzed/awaiting-analysis counts, latest source/analysis timestamps, formations, signifiers, actors and descriptive activity summaries.
+- **Researcher Review**: one-record close reading with transcript, OCR, multimodal/frame evidence, human-readable summary, structured analysis fields, provenance, uncertainty, typed corrections, notes and rerun/reprocess requests.
+- **Explore**: shared filters, timelines, formation/topic/entity distributions, relation tables and graph-projection inputs.
+
+Counts, model confidence, graph degree and layout are descriptive aids. They do not by themselves establish hegemony, nodal status, empty/floating signification, antagonism or theoretical validity.
+
+## Canonical data boundary
+
+```text
+LaclauGPT-Data-Collection
+        ↓ canonical records
+LaclauGPT-Data-Analysis
+        ↓ canonical analysis results
+LaclauGPT-Data-Visualization
+```
+
+Canonical nested JSON/JSONL is primary. Stable `source_url`, schema version, provenance, review status, uncertainty/abstention and multimodal references are preserved into the visualization view model. Historical EP24 flat exports are supported only through `legacy_ep24.py`; legacy column names never become the core schema.
 
 ## Runtime data boundary
 
-All runtime and study-specific material lives under `data/`, which is entirely excluded from Git. See `docs/RUNTIME_DATA.md`.
+All runtime and study-specific material lives under `data/`, which is entirely excluded from Git. Common locations include `data/logs/`, `data/database/`, `data/config/`, `data/files/`, `data/csv/`, `data/jsonl/`, `data/cache/`, `data/exports/`, `data/artifacts/` and `data/tmp/`. Researcher reviews default to `data/database/reviews.sqlite3`.
 
-Common locations include `data/logs/`, `data/database/`, `data/config/`, `data/files/`, `data/csv/`, `data/jsonl/`, `data/cache/`, `data/exports/`, and `data/artifacts/`. The default SQLite file is `data/database/visualization.sqlite3`, and generated visualization output goes to `data/exports/`.
-
-Do not create a top-level `outputs/`, `logs/`, `database/`, or other runtime directory.
+Never commit row-level EP24/AI26 data, transcripts, OCR, media, researcher notes, review databases, caches, filtered exports, `.env`, Streamlit secrets, credential-bearing URIs, private hostnames or machine-specific paths.
 
 ## Local same-machine pipeline
 
-If Analysis is checked out beside Visualization, configure:
-
 ```bash
 export LACLAUGPT_VIS_ANALYSIS_DATA_DIR=../LaclauGPT-Data-Analysis/data
+python -m pip install -e '.[dev]'
+laclaugpt-visualize
 ```
 
-Visualization may then read canonical Analysis output directly from the sibling module's private `data/` tree.
-
-For SQLite mode:
-
-```bash
-export LACLAUGPT_VIS_DATA_BACKEND=sqlite
-export LACLAUGPT_VIS_SQLITE_PATH=data/database/visualization.sqlite3
-```
+Local operation requires no services: CSV/JSON/JSONL/SQLite plus local filesystem and the SQLite review store are sufficient.
 
 ## Distributed pipeline
 
@@ -37,39 +48,30 @@ Install remote adapters with:
 python -m pip install -e '.[remote]'
 ```
 
-The preferred distributed stack is MongoDB for records, Redis for shared cache/state, and S3-compatible object storage such as CSC Allas for large artifacts. CSV/JSONL file transfer remains the explicit manual fallback.
+MongoDB may carry canonical records, Redis may provide cache/pub-sub/state, and S3-compatible storage such as CSC Allas may carry referenced artifacts. All are optional and lazy. CSV/JSONL remains the manual cross-machine fallback.
 
 ## Architecture
 
 ```text
 src/laclaugpt_visualization/
-  app.py
-  cli.py
+  app.py              # page orchestration only
+  canonical.py        # public canonical record boundary
+  data.py             # loaders, normalization, filters
+  legacy_ep24.py      # bounded legacy compatibility
+  transforms.py       # pure monitor/explore view models
+  review/             # typed review model + SQLite/Mongo stores
+  storage.py          # optional remote adapters
   config.py
-  data.py
-  storage.py
-tests/
-docs/
 ```
 
-Keep pure data transformations separate from Streamlit UI code. Optional infrastructure stays lazy and behind extras. Interoperate through stable files/records/APIs rather than importing sibling implementation internals.
-
-## Installation
-
-```bash
-python -m venv .venv
-# activate .venv
-python -m pip install -e '.[dev]'
-laclaugpt-visualize
-```
+See `docs/UNIFIED_DASHBOARD.md` and `docs/MIGRATION_REPORT.md` for feature mapping from the public visualization subtree, AI26 live dashboard and EP24 researcher dashboard.
 
 ## Privacy and quality
 
-This is public code with private runtime data. Tests use synthetic fixtures only; operational data/configuration belongs under `data/` or external deployment systems.
-
-Run:
+Normal CI is fully synthetic/offline and runs the public-tree privacy guard, Ruff and pytest on Python 3.11, 3.12 and 3.13.
 
 ```bash
+python scripts/check_public_tree.py
 ruff check .
 pytest
 ```
