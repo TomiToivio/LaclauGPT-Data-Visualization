@@ -1,41 +1,84 @@
-# LaclauGPT: Data Visualization
-LaclauGPT is a social science research framework. It is called LaclauGPT as a tribute to [Ernesto Laclau](https://en.wikipedia.org/wiki/Ernesto_Laclau)
-LaclauGPT is developed by [Tomi Toivio](mailto:tomi.toivio@helsinki.fi) for the [Helsinki Hub on Emotions, Populism and Polarisation](https://www.helsinki.fi/en/researchgroups/emotions-populism-and-polarisation). 
-LaclauGPT is a part of the Anarcho-Computational/Discourse-Analytical (AC/DT) Framework. 
+# LaclauGPT Data Visualization
 
-## What does Anarcho-Computational/Discourse-Theoretical mean?
-* Anarcho: We reject scientific dogmaticism in the spirit of Paul Feyerabend's epistemological anarchism. 
-* Computational: Simon Lindgren inspired us to experiment with the methods of computational social science.  
-* Discourse: We are heavy users of Ernesto Laclau's theory of discourse analysis.
-* Theoretical: We use Manuel Castell's theory of Network Society and Social Network Analysis.
+[![tests](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml)
 
-## Data Visualization
-This module is the dashboard for data visualization.
-It is also the user interface.
-It is built using Streamlit.
+Researcher-facing dashboards and visualization helpers for the modular LaclauGPT ecosystem. This repository is intentionally independent from the analysis runtime: it reads analysis outputs and presents them without performing data collection or LLM analysis.
 
-## Open Source LLMs
-LaclauGPT uses Ollama to run open souce LLMs on CSC Puhti supercomputer.
+The reusable visualization ideas from `TomiToivio/LaclauGPT-Discourse-Analysis` are being extracted here into a clean standalone package: normalized researcher exports, filtering/search, label summaries, Streamlit dashboards, and optional distributed storage adapters. Monolith-specific imports and project-specific research code are deliberately not copied.
 
-## Distributed Computing
-LaclauGPT is a distributed system with several modules. They communicate with:
-* Celery for task queue.
-* MongoDB for storing data. 
-* S3 object storage for files. 
-* Redis for configuration.
-* FastAPI for API requests.
-* NATS for LLM context.
+## Architecture
 
-## LaclauGPT Required Modules
-These are the required modules of LaclauGPT.
-* [LaclauGPT: Data Analysis](https://github.com/TomiToivio/LaclauGPT-Data-Analysis) 
-* [LaclauGPT: Data Storage](https://github.com/TomiToivio/LaclauGPT-Data-Storage)
-* [LaclauGPT: Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection)
-* [LaclauGPT: Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)
+The project follows a conventional Python `src/` layout:
 
-## LaclauGPT Optional Modules
-These modules are experimental and optional.
-* [LaclauGPT: Deep Research Agent](https://github.com/TomiToivio/LaclauGPT-Deep-Research-Agent)
-* [LaclauGPT: Data Collection Agent](https://github.com/TomiToivio/LaclauGPT-Data-Collection-Agent)
-* [LaclauGPT: Social Simulation Laboratory](https://github.com/TomiToivio/LaclauGPT-Social-Simulation-Laboratory)
-* [LaclauGPT: Web Scraper](https://github.com/TomiToivio/LaclauGPT-Web-Scraper)
+```text
+src/laclaugpt_visualization/
+  app.py       # Streamlit UI
+  cli.py       # console launcher
+  config.py    # typed environment settings
+  data.py      # pure loading/normalization/filtering helpers
+  storage.py   # optional MongoDB / Redis / S3 adapters
+tests/         # synthetic, data-free unit tests
+docs/          # architecture/privacy documentation
+```
+
+Implementation code belongs under `src/laclaugpt_visualization/`; tests belong under `tests/`; configuration is typed and environment-driven; optional infrastructure stays behind extras and lazy imports. Keep reusable data transformation logic separate from Streamlit UI code.
+
+## Local-first defaults
+
+A fresh checkout requires no servers. The default profile uses local CSV/JSONL files, SQLite when requested, in-memory caching, and the local filesystem. Put local input files under `data/` (which is gitignored), then run:
+
+```bash
+python -m venv .venv
+# activate .venv
+python -m pip install -e '.[dev]'
+laclaugpt-visualize
+```
+
+You can also point the dashboard at SQLite by setting `LACLAUGPT_VIS_DATA_BACKEND=sqlite` and `LACLAUGPT_VIS_SQLITE_PATH=data/laclaugpt.sqlite3`.
+
+## Distributed/server profile
+
+Install optional remote adapters with:
+
+```bash
+python -m pip install -e '.[remote]'
+```
+
+The preferred distributed stack is:
+
+- **MongoDB** for analysis records and dashboard queries;
+- **Redis** for optional shared cache/state;
+- **S3-compatible object storage** for large artifacts, including CSC Allas.
+
+Copy `.env.example` to `.env` and provide credentials locally. Remote services are opt-in; they must never be required for unit tests or ordinary laptop use.
+
+## Privacy: public repository, private data
+
+**Do not commit research data or private configuration.** The repository ignores `data/`, outputs, CSV/TSV/JSONL/Parquet files, SQLite/DuckDB databases, `.env*` secrets, credentials, keys, certificates, and machine-specific config. Only `.env.example` and sanitized configuration examples belong in Git.
+
+See [docs/PRIVACY_AND_CONFIGURATION.md](docs/PRIVACY_AND_CONFIGURATION.md) before adding new inputs, deployment settings, or integrations.
+
+## Tests and quality
+
+GitHub Actions runs Ruff and Pytest on Python 3.11, 3.12, and 3.13. Locally:
+
+```bash
+ruff check .
+pytest
+```
+
+Tests must use synthetic fixtures only. The green **tests** badge at the top of this README reflects `.github/workflows/tests.yml` on the default branch.
+
+## LaclauGPT modules
+
+Core modules are designed to interoperate through files and stable records rather than importing each other's application internals:
+
+- [LaclauGPT Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection)
+- [LaclauGPT Data Analysis](https://github.com/TomiToivio/LaclauGPT-Data-Analysis)
+- [LaclauGPT Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)
+
+Visualization should remain a downstream consumer: collection and analysis can run elsewhere (laptop, server, CSC) and publish outputs through CSV/JSONL/SQLite locally or MongoDB/S3 remotely.
+
+## Development rule of thumb
+
+If a feature can be expressed as a pure dataframe transformation, keep it outside Streamlit and test it directly. If it needs credentials or project data, configure it outside Git. If it belongs to collection or analysis, put it in that module instead of growing this repository back into a monolith.
