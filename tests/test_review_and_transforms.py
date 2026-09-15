@@ -9,7 +9,7 @@ def test_monitor_relations_and_review(tmp_path):
     frame = pd.DataFrame(
         [
             {
-                "document_id": "synthetic-1",
+                "document_id": "synthetic://1",
                 "source_url": "synthetic://1",
                 "source_timestamp": "2026-01-01T00:00:00Z",
                 "analysis_timestamp": "2026-01-02T00:00:00Z",
@@ -39,5 +39,6 @@ def test_monitor_relations_and_review(tmp_path):
     assert saved.document_id == "synthetic://1"
 
     legacy = adapt({"video_id": "v1", "platform": "synthetic"})
-    assert legacy["document_id"] == "v1"
+    assert legacy["document_id"] == "legacy:ep24:v1"
     assert legacy["source_url"] == "legacy:ep24:v1"
+    assert legacy["source_native_ids"]["video_id"] == "v1"
