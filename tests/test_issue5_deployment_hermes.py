@@ -9,6 +9,7 @@ from laclaugpt_visualization.integrations.hermes import (
     validate_analysis_input,
     validate_service,
 )
+from laclaugpt_visualization.service import readiness
 
 
 def _local_settings(tmp_path: Path, **overrides) -> Settings:
@@ -110,3 +111,7 @@ def test_health_is_offline_and_rejects_slurm(tmp_path: Path) -> None:
     result = validate_service(settings)
     assert result["status"] == "ready"
     assert result["command"][0:3] == ["python", "-m", "streamlit"]
+
+    slurm = readiness(settings, environment={"SLURM_JOB_ID": "123"}, hostname="worker")
+    assert slurm["status"] == "not-ready"
+    assert any("Slurm" in error for error in slurm["errors"])
