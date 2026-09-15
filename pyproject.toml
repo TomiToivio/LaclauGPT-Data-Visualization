@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "laclaugpt-data-visualization"
+version = "0.1.0"
+description = "Researcher-facing visualization module for LaclauGPT"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "CC0-1.0"
+authors = [{ name = "Tomi Toivio" }]
+dependencies = [
+  "pandas>=2.1,<3",
+  "pydantic>=2.7,<3",
+  "pydantic-settings>=2.2,<3",
+  "plotly>=5.24,<7",
+  "streamlit>=1.57,<2",
+]
+
+[project.optional-dependencies]
+remote = [
+  "pymongo>=4.6,<5",
+  "redis>=5,<7",
+  "boto3>=1.34,<2",
+]
+dev = [
+  "pytest>=8,<9",
+  "ruff>=0.11,<1",
+]
+
+[project.scripts]
+laclaugpt-visualize = "laclaugpt_visualization.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
