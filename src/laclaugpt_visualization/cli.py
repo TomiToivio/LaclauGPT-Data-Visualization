@@ -5,7 +5,6 @@ import argparse
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 from .config import get_settings
 from .service import readiness, streamlit_command
