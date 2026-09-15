@@ -1,7 +1,7 @@
 """Canonical Collection/Analysis record adapter for visualization.
 
 Visualization consumes the project-wide canonical contract and flattens records
-only after reconstructing the canonical nested representation.  It never imports
+only after reconstructing the canonical nested representation. It never imports
 Analysis or Collection implementation internals and never treats a DataFrame as
 persistent schema.
 """
@@ -11,8 +11,8 @@ import json
 import math
 from typing import Any
 
-_OBJECT_FIELDS = ("source_native_ids", "source", "content", "evidence", "analysis", "review")
-_LIST_FIELDS = ("provenance",)
+_OBJECT_FIELDS = ("source_native_ids", "source", "content", "analysis", "review", "legacy")
+_LIST_FIELDS = ("evidence", "provenance")
 
 
 def _missing(value: Any) -> bool:
@@ -20,11 +20,7 @@ def _missing(value: Any) -> bool:
 
 
 def _decode_json(value: Any, expected: type) -> Any:
-    """Decode deterministic JSON used by flat/SQL adapters.
-
-    CSV and some SQLite layouts serialize canonical objects/lists as JSON text.
-    Python repr is deliberately not parsed: the canonical contract requires JSON.
-    """
+    """Decode deterministic JSON used by flat/SQL adapters."""
     if isinstance(value, expected):
         return value
     if _missing(value) or value == "":
@@ -81,6 +77,10 @@ def _text_items(values: Any) -> list[str]:
     return result
 
 
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
     """Flatten one canonical record into a stable, non-persistent view model."""
     record = reconstruct_canonical(record)
@@ -94,9 +94,9 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
     transcripts = content.get("transcripts", [])
     transcript = "\n".join(_text_items(transcripts)) or str(content.get("text") or "")
     ocr = _text_items(content.get("ocr", []))
-    frames = content.get("frames", []) if isinstance(content.get("frames"), list) else []
-    media = content.get("media_references", []) if isinstance(content.get("media_references"), list) else []
-    files = content.get("file_references", []) if isinstance(content.get("file_references"), list) else []
+    frames = _list(content.get("frames"))
+    media = _list(content.get("media_references"))
+    files = _list(content.get("file_references"))
 
     source_url = str(record.get("source_url") or "")
     analysis_timestamp = analysis.get("completed_at") or analysis.get("started_at") or ""
@@ -107,7 +107,6 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "schema_version": str(record.get("schema_version") or ""),
-        # document_id is a compatibility/display alias only. Canonical identity is source_url.
         "document_id": source_url,
         "source_url": source_url,
         "source_native_ids": record.get("source_native_ids", {}),
@@ -133,10 +132,13 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         "frames": frames,
         "media_references": media,
         "file_references": files,
+        "representations": _list(analysis.get("representations")),
         "entities": _labels(analysis.get("entities", [])),
-        "entity_mentions": analysis.get("entity_mentions", []) if isinstance(analysis.get("entity_mentions"), list) else [],
+        "entity_mentions": _list(analysis.get("entity_mentions")),
         "topics": _labels(analysis.get("topics", [])),
-        "classifications": analysis.get("classifications", []) if isinstance(analysis.get("classifications"), list) else [],
+        "topic_assignments": _list(analysis.get("topic_assignments")),
+        "classifications": _list(analysis.get("classifications")),
+        "embeddings": _list(analysis.get("embeddings")),
         "formations": _labels(analysis.get("formations", [])),
         "signifiers": _labels(analysis.get("signifiers", [])),
         "nodal_points": _labels(analysis.get("nodal_points", [])),
@@ -148,13 +150,16 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         "affects": _labels(analysis.get("affects", [])),
         "sentiment_labels": _labels(analysis.get("sentiments", [])),
         "formula_of_populism": analysis.get("formula_of_populism"),
-        "relations": analysis.get("relations", []) if isinstance(analysis.get("relations"), list) else [],
-        "uncertainties": [str(value) for value in analysis.get("uncertainty", [])],
-        "abstentions": [str(value) for value in analysis.get("abstentions", [])],
-        "model_runs": analysis.get("model_runs", []) if isinstance(analysis.get("model_runs"), list) else [],
+        "relations": _list(analysis.get("relations")),
+        "uncertainties": [str(value) for value in _list(analysis.get("uncertainty"))],
+        "abstentions": [str(value) for value in _list(analysis.get("abstentions"))],
+        "codebook_refs": [str(value) for value in _list(analysis.get("codebook_refs"))],
+        "memory_refs": [str(value) for value in _list(analysis.get("memory_refs"))],
+        "model_runs": _list(analysis.get("model_runs")),
         "evidence": evidence,
         "review_status": str(review.get("status") or "PROVISIONAL"),
         "review": review,
         "provenance": provenance,
+        "legacy": record.get("legacy", {}),
         "raw_record": record,
     }
