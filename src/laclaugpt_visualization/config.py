@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .distributed import ProjectNamespace
+
 DATA_SUBDIRS = (
     "logs",
     "database",
@@ -39,6 +41,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    project_id: str = "default"
     profile: Literal["local", "server"] = "local"
     data_backend: Literal["files", "sqlite", "mongodb"] = "files"
     cache_backend: Literal["memory", "redis"] = "memory"
@@ -51,15 +54,30 @@ class Settings(BaseSettings):
 
     mongodb_uri: str | None = Field(default=None, repr=False)
     mongodb_database: str = "laclaugpt"
-    mongodb_collection: str = "annotations"
+    mongodb_collection: str | None = None
 
     redis_url: str | None = Field(default=None, repr=False)
+    redis_key_prefix: str = "laclaugpt"
 
     s3_endpoint_url: str | None = None
     s3_bucket: str | None = None
     s3_access_key_id: str | None = Field(default=None, repr=False)
     s3_secret_access_key: str | None = Field(default=None, repr=False)
     s3_region: str | None = None
+    s3_prefix_root: str = "projects"
+
+    @property
+    def distributed_namespace(self) -> ProjectNamespace:
+        return ProjectNamespace(
+            project_id=self.project_id,
+            redis_prefix=self.redis_key_prefix,
+            mongo_database=self.mongodb_database,
+            s3_prefix_root=self.s3_prefix_root,
+        )
+
+    @property
+    def resolved_mongodb_collection(self) -> str:
+        return self.mongodb_collection or self.distributed_namespace.mongo_collection("annotations")
 
     def data_path(self, *parts: str) -> Path:
         return self.data_dir.joinpath(*parts)
