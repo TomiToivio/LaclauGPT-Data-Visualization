@@ -2,6 +2,42 @@
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml)
 
+**LaclauGPT** is an open social-science research framework for **LLM-assisted computational discourse analysis** of large textual and multimodal corpora. It combines computational methods with interpretive political research while keeping model outputs traceable to source evidence, uncertainty, provenance and human review.
+
+The current flagship research programme is **[LaclauGPT: Ideological contestation over AI](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PAPER.md)**. The canonical theoretical and methodological contract is **[THEORY.md](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)**.
+
+The framework is developed around Ernesto Laclau and Chantal Mouffe's discourse theory and Emilia Palonen's work on populism, polarisation and hegemonic dynamics. The AI/AGI study is the main development case, but LaclauGPT is a **general research framework rather than a single-purpose AI ideology classifier**. The same architecture can support election research, populism, grievance politics, social-media research and other comparative discourse-analysis projects.
+
+> [!WARNING]
+> **Human-in-the-loop academic research only.** LaclauGPT's machine-generated summaries, classifications, discourse-theoretical codes, signifier roles, ideological formations, affects and other interpretations are preliminary analyses that must be verified by a human researcher. They are not ground truth or autonomous scholarly judgement. LaclauGPT is designed for academic research, not autonomous operational, administrative, intelligence, moderation, profiling or policy decisions about people or groups.
+
+## Research philosophy: human-in-the-loop as an assemblage
+
+LaclauGPT uses a deliberately assemblage-based working philosophy of AI:
+
+> **AI = HUMAN + LLM + LANGUAGE + INTERNET**
+
+This is a methodological and philosophical framing, not a settled empirical claim about machine consciousness.
+
+- **HUMAN — interpretation and accountable agency.** Researchers choose questions, define concepts and codebooks, evaluate evidence, resolve ambiguity and remain responsible for conclusions.
+- **LLM — learned model plus agentic machinery.** Models may contribute structured proposals, retrieval, comparison and tool use, but their outputs remain fallible and provisional.
+- **LANGUAGE — communication protocol and cognitive medium.** Language couples the researcher, model, sources and theoretical concepts, and helps structure the distinctions and relations available to analysis.
+- **INTERNET — infrastructure and epistemic environment.** Networks, software, model repositories, databases, APIs and research corpora form part of the practical research system. Retrieved information remains evidence to evaluate.
+
+Human-in-the-loop therefore means more than a final approval step. The human researcher is constitutive of the research process throughout.
+
+## Theoretical and methodological orientation
+
+LaclauGPT treats political meaning as relational, contested and only partially fixed. Its purpose is not merely to count topics or visualize model confidence, but to help researchers inspect evidence-linked proposals about articulations, identities, signifiers, political frontiers and ideological formations.
+
+Theoretical concepts such as nodal points, floating and empty signifiers, equivalence, antagonism, affective investment, populist articulation and hegemony must not be inferred from visual prominence alone. **Frequency is not hegemony; graph degree is not nodal status; proximity in a layout is not equivalence; sentiment is not affective investment; and a two-cluster picture is not by itself polarisation.**
+
+Visualization therefore supports interpretation rather than replacing it. Researchers must be able to move from aggregate patterns back to records, evidence, provenance, uncertainty and review status.
+
+See the **[scientific paper](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PAPER.md)** and **[theory contract](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)** for the full conceptual framework.
+
+## This repository
+
 **LaclauGPT-Data-Visualization is the canonical visualization implementation repository** in the modular LaclauGPT architecture. It consumes canonical Collection/Analysis records and provides one researcher-facing application with Monitor, Researcher Review, and Explore modes. It does not perform collection or discourse inference itself.
 
 ## Unified application
