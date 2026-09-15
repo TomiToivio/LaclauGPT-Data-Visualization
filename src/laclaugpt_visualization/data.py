@@ -11,7 +11,8 @@ import pandas as pd
 
 from .canonical import flatten_canonical
 from .config import Settings
-from .legacy_ep24 import looks_like_ep24, adapt as adapt_ep24
+from .legacy_ep24 import adapt as adapt_ep24
+from .legacy_ep24 import looks_like_ep24
 
 _LIST_COLUMNS = (
     "entities",
