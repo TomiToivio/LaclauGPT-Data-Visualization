@@ -90,7 +90,6 @@ class Settings(BaseSettings):
         self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
     def validate_remote_requirements(self) -> None:
-        self.distributed_namespace
         if self.data_backend == "mongodb" and not self.mongodb_uri:
             raise ValueError("mongodb backend requires LACLAUGPT_VIS_MONGODB_URI")
         if self.cache_backend == "redis" and not self.redis_url:
