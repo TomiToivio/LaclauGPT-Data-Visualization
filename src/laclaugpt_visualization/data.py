@@ -1,4 +1,4 @@
-"""Data loading, normalization and filtering for the visualization layer."""
+"""Data loading, canonical reconstruction, normalization and filtering."""
 from __future__ import annotations
 
 import json
@@ -9,20 +9,23 @@ from typing import Any
 
 import pandas as pd
 
-from .canonical import flatten_canonical
+from .canonical import flatten_canonical, reconstruct_canonical
 from .config import Settings
 from .legacy_ep24 import adapt as adapt_ep24
 from .legacy_ep24 import looks_like_ep24
 
 _LIST_COLUMNS = (
     "entities",
+    "entity_mentions",
     "topics",
+    "classifications",
     "signifiers",
     "nodal_points",
     "discourses",
     "imaginaries",
     "formations",
     "us",
+    "them",
     "frontier",
     "affects",
     "sentiment_labels",
@@ -32,6 +35,7 @@ _LIST_COLUMNS = (
     "ocr",
     "frames",
     "media_references",
+    "file_references",
     "model_runs",
 )
 
@@ -58,15 +62,39 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:
-    if "source_url" in record and isinstance(record.get("source"), dict):
-        return flatten_canonical(record)
+    candidate = reconstruct_canonical(record)
+    if candidate.get("source_url") and (
+        candidate.get("schema_version")
+        or candidate.get("source")
+        or candidate.get("content")
+        or candidate.get("analysis")
+    ):
+        return flatten_canonical(candidate)
     if looks_like_ep24(record):
         return adapt_ep24(record)
     return record
 
 
+def frame_from_records(records: Iterable[dict[str, Any]]) -> pd.DataFrame:
+    """Create the common view from canonical Mongo-like/Python documents.
+
+    This is also the no-live-Mongo contract boundary: callers may pass documents
+    returned by any storage adapter without exposing backend IDs as record identity.
+    """
+    clean: list[dict[str, Any]] = []
+    for record in records:
+        item = dict(record)
+        item.pop("_id", None)
+        clean.append(item)
+    return normalize_frame(pd.DataFrame(clean))
+
+
 def normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    """Normalize visualization columns without mutating the input frame."""
+    """Normalize visualization columns without mutating the input frame.
+
+    DataFrames are view-layer objects. Canonical rows are reconstructed first,
+    including JSON-encoded nested sections from CSV/SQLite adapters.
+    """
     if frame.empty:
         normalized = frame.copy()
     else:
@@ -80,7 +108,7 @@ def normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
         else:
             normalized[column] = normalized[column].map(_as_list)
 
-    for column in ("source_timestamp", "analysis_timestamp"):
+    for column in ("source_timestamp", "collection_timestamp", "analysis_timestamp"):
         if column in normalized:
             normalized[column] = pd.to_datetime(normalized[column], errors="coerce", utc=True)
         else:
@@ -89,13 +117,19 @@ def normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
     defaults = {
         "document_id": "",
         "source_url": "",
+        "schema_version": "",
         "summary": "",
+        "source_text": "",
         "transcript": "",
         "translated_text": "",
         "source_author": "",
+        "source_author_fullname": "",
         "source_platform": "",
+        "source_type": "",
         "source_country": "",
         "source_language": "",
+        "collector": "",
+        "collection_method": "",
         "analysis_status": "collection-only",
         "review_status": "PROVISIONAL",
     }
@@ -104,8 +138,11 @@ def normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
             normalized[column] = default
         normalized[column] = normalized[column].fillna(default).astype(str)
 
-    missing_id = normalized["document_id"].eq("") & normalized["source_url"].ne("")
-    normalized.loc[missing_id, "document_id"] = normalized.loc[missing_id, "source_url"]
+    # source_url is always the selection/review/export identity. document_id remains
+    # only a compatibility alias for old view code.
+    has_source = normalized["source_url"].ne("")
+    normalized.loc[has_source, "document_id"] = normalized.loc[has_source, "source_url"]
+
     if "searchable_text" not in normalized:
         normalized["searchable_text"] = normalized.apply(_searchable_text, axis=1)
     return normalized
@@ -114,12 +151,14 @@ def normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
 def _searchable_text(row: pd.Series) -> str:
     fields: list[str] = []
     for key in (
-        "document_id",
         "source_url",
         "summary",
+        "source_text",
         "transcript",
         "source_author",
+        "source_author_fullname",
         "source_platform",
+        "source_type",
         "source_country",
         "entities",
         "topics",
@@ -160,9 +199,9 @@ def load_frame(source: str | Path, settings: Settings | None = None) -> pd.DataF
             for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-        frame = pd.DataFrame(records)
+        return frame_from_records(records)
     elif suffix == ".json":
-        frame = pd.DataFrame(_records_from_json(path))
+        return frame_from_records(_records_from_json(path))
     elif suffix == ".parquet":
         frame = pd.read_parquet(path)
     elif suffix in {".sqlite", ".sqlite3", ".db"}:
@@ -174,8 +213,11 @@ def load_frame(source: str | Path, settings: Settings | None = None) -> pd.DataF
 
 def load_sqlite(path: str | Path, table: str = "annotations") -> pd.DataFrame:
     """Load a configured SQLite table without opening a connection at import time."""
+    if not table.replace("_", "").isalnum():
+        raise ValueError("SQLite table name must contain only letters, numbers or underscores")
     with sqlite3.connect(Path(path)) as connection:
-        return pd.read_sql_query(f'SELECT * FROM "{table}"', connection)
+        frame = pd.read_sql_query(f'SELECT * FROM "{table}"', connection)
+    return frame
 
 
 def explode_labels(frame: pd.DataFrame, column: str) -> pd.DataFrame:
