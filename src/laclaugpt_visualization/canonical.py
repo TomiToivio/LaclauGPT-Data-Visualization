@@ -1,9 +1,8 @@
 """Canonical Collection/Analysis record adapter for visualization.
 
-Visualization consumes the project-wide canonical contract and flattens records
-only after reconstructing the canonical nested representation. It never imports
-Analysis or Collection implementation internals and never treats a DataFrame as
-persistent schema.
+Visualization reconstructs the nested research record first, then exposes both the new
+view model and the stable EP24-era researcher aliases. DataFrames and dashboard columns
+are projections, never the persistent schema.
 """
 from __future__ import annotations
 
@@ -11,8 +10,36 @@ import json
 import math
 from typing import Any
 
-_OBJECT_FIELDS = ("source_native_ids", "source", "content", "analysis", "review", "legacy")
+_OBJECT_FIELDS = (
+    "source_native_ids",
+    "raw_capture",
+    "source",
+    "content",
+    "intermediate",
+    "analysis",
+    "human_readable",
+    "review",
+    "legacy",
+)
 _LIST_FIELDS = ("evidence", "provenance")
+
+LEGACY_COLUMNS = (
+    "country", "author_username", "account_type", "source_type", "source_recording",
+    "video_filename", "video_file", "frames", "whisper_transcript", "whisper_language",
+    "whisper_translated", "ocr_1", "ocr_2", "ocr_3", "ocr_4", "ocr_5", "ocr_6",
+    "frame_1", "frame_2", "frame_3", "frame_4", "frame_5", "frame_6",
+    "summary_analysis", "entities_legacy", "topics_legacy", "spacy_entities", "positive",
+    "neutral", "negative", "us_and_them", "us_legacy", "them_legacy", "social_contract",
+    "social_contract_topics", "NER_entities", "NER_politicians", "NER_political_parties",
+    "political_themes", "formula_of_populism_analysis", "formula_of_populism_us",
+    "formula_of_populism_frontier", "recording_date", "day_number", "video_id",
+    "sequence_number", "recording_datetime", "profile_name", "allas_filename", "lda_topic",
+    "lda_minor_topics", "lda_topic_words", "political_preference",
+    "manifestoberta_predicted_class", "manifestoberta_probabilities", "corrected_date",
+    "original_date", "corresponding_date", "split_number", "new_entity", "new_theme",
+    "video_duration", "new_id", "old_id", "puhti_filename", "raw_ref",
+    "raw_payload_json", "human_readable_summary", "human_readable_markdown",
+)
 
 
 def _missing(value: Any) -> bool:
@@ -38,7 +65,7 @@ def _decode_json(value: Any, expected: type) -> Any:
 
 
 def reconstruct_canonical(record: dict[str, Any]) -> dict[str, Any]:
-    """Reconstruct canonical nested sections from a backend-neutral row/document."""
+    """Reconstruct nested sections and tolerate 1.0 records during migration."""
     result = dict(record)
     if not result.get("source_url") and result.get("source_uri"):
         result["source_url"] = result["source_uri"]
@@ -46,6 +73,21 @@ def reconstruct_canonical(record: dict[str, Any]) -> dict[str, Any]:
         result[field] = _decode_json(result.get(field), dict)
     for field in _LIST_FIELDS:
         result[field] = _decode_json(result.get(field), list)
+    source = result["source"]
+    if not result["raw_capture"]:
+        result["raw_capture"] = {
+            "ref": source.get("raw_ref"),
+            "payload": None,
+            "metadata": {"preservation": "legacy-record"},
+        }
+    result["intermediate"].setdefault("asr", [])
+    result["intermediate"].setdefault("ocr", [])
+    result["intermediate"].setdefault("frames", [])
+    result["intermediate"].setdefault("frame_analysis", [])
+    result["intermediate"].setdefault("translations", [])
+    result["intermediate"].setdefault("stage_outputs", {})
+    result["human_readable"].setdefault("summary", "")
+    result["human_readable"].setdefault("markdown", "")
     return result
 
 
@@ -55,7 +97,7 @@ def _labels(values: Any) -> list[str]:
     labels: list[str] = []
     for value in values:
         if isinstance(value, dict):
-            label = value.get("label") or value.get("name") or value.get("text")
+            label = value.get("label") or value.get("canonical_label") or value.get("name") or value.get("text")
             if label:
                 labels.append(str(label))
         elif value is not None and str(value).strip():
@@ -81,20 +123,49 @@ def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def _legacy_scalar(value: Any) -> Any:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return value
+
+
 def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
-    """Flatten one canonical record into a stable, non-persistent view model."""
+    """Flatten canonical data while retaining old dashboard/dataframe field names."""
     record = reconstruct_canonical(record)
+    raw_capture = record["raw_capture"]
     source = record["source"]
     content = record["content"]
+    intermediate = record["intermediate"]
     evidence = record["evidence"]
     analysis = record["analysis"]
+    human = record["human_readable"]
     review = record["review"]
     provenance = record["provenance"]
+    legacy = dict(record["legacy"])
 
-    transcripts = content.get("transcripts", [])
+    transcripts = _list(content.get("transcripts"))
     transcript = "\n".join(_text_items(transcripts)) or str(content.get("text") or "")
-    ocr = _text_items(content.get("ocr", []))
-    frames = _list(content.get("frames"))
+    whisper_language = next(
+        (str(item.get("language")) for item in transcripts if isinstance(item, dict) and item.get("language")),
+        "",
+    )
+    whisper_translated = "\n".join(
+        str(item.get("translated_text"))
+        for item in transcripts
+        if isinstance(item, dict) and item.get("translated_text")
+    ) or str(content.get("translated_text") or "")
+
+    ocr_rows = _list(intermediate.get("ocr")) or _list(content.get("ocr"))
+    ocr = _text_items(ocr_rows)
+    frames = _list(intermediate.get("frames")) or _list(content.get("frames"))
+    frame_analysis_rows = _list(intermediate.get("frame_analysis"))
+    if not frame_analysis_rows:
+        frame_analysis_rows = [
+            item for item in frames if isinstance(item, dict) and item.get("description")
+        ]
+    frame_analysis = _text_items(frame_analysis_rows)
     media = _list(content.get("media_references"))
     files = _list(content.get("file_references"))
 
@@ -105,11 +176,26 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         if isinstance(last, dict):
             analysis_timestamp = last.get("created_at") or ""
 
-    return {
+    entities = _labels(analysis.get("entities", []))
+    topics = _labels(analysis.get("topics", []))
+    sentiments = _labels(analysis.get("sentiments", []))
+    formula = analysis.get("formula_of_populism")
+    native_ids = record.get("source_native_ids", {})
+    object_ref = next(
+        (
+            str(item.get("object_ref"))
+            for item in media
+            if isinstance(item, dict) and item.get("object_ref")
+        ),
+        "",
+    )
+
+    result: dict[str, Any] = {
         "schema_version": str(record.get("schema_version") or ""),
         "document_id": source_url,
         "source_url": source_url,
-        "source_native_ids": record.get("source_native_ids", {}),
+        "source_native_ids": native_ids,
+        "raw_capture": raw_capture,
         "source_platform": str(source.get("platform") or ""),
         "source_type": str(source.get("source_type") or ""),
         "source_author": str(source.get("author") or ""),
@@ -120,22 +206,27 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         "collection_timestamp": source.get("collected_at") or "",
         "collector": str(source.get("collector") or ""),
         "collection_method": str(source.get("collection_method") or ""),
-        "raw_ref": source.get("raw_ref"),
+        "raw_ref": raw_capture.get("ref") or source.get("raw_ref") or "",
+        "raw_payload": raw_capture.get("payload"),
         "raw_metadata": source.get("raw_metadata", {}),
+        "intermediate": intermediate,
         "analysis_timestamp": analysis_timestamp,
         "analysis_status": str(analysis.get("status") or "collection-only"),
         "summary": str(analysis.get("summary") or ""),
+        "human_readable_summary": str(human.get("summary") or ""),
+        "human_readable_markdown": str(human.get("markdown") or ""),
         "source_text": str(content.get("text") or ""),
         "transcript": transcript,
-        "translated_text": str(content.get("translated_text") or ""),
+        "translated_text": whisper_translated,
         "ocr": ocr,
         "frames": frames,
+        "frame_analysis": frame_analysis,
         "media_references": media,
         "file_references": files,
         "representations": _list(analysis.get("representations")),
-        "entities": _labels(analysis.get("entities", [])),
+        "entities": entities,
         "entity_mentions": _list(analysis.get("entity_mentions")),
-        "topics": _labels(analysis.get("topics", [])),
+        "topics": topics,
         "topic_assignments": _list(analysis.get("topic_assignments")),
         "classifications": _list(analysis.get("classifications")),
         "embeddings": _list(analysis.get("embeddings")),
@@ -148,8 +239,8 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         "them": _labels(analysis.get("them", [])),
         "frontier": _labels(analysis.get("frontier", [])),
         "affects": _labels(analysis.get("affects", [])),
-        "sentiment_labels": _labels(analysis.get("sentiments", [])),
-        "formula_of_populism": analysis.get("formula_of_populism"),
+        "sentiment_labels": sentiments,
+        "formula_of_populism": formula,
         "relations": _list(analysis.get("relations")),
         "uncertainties": [str(value) for value in _list(analysis.get("uncertainty"))],
         "abstentions": [str(value) for value in _list(analysis.get("abstentions"))],
@@ -160,6 +251,57 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         "review_status": str(review.get("status") or "PROVISIONAL"),
         "review": review,
         "provenance": provenance,
-        "legacy": record.get("legacy", {}),
+        "legacy": legacy,
         "raw_record": record,
     }
+
+    # Old dataframe/dashboard aliases. Imported historical values survive when no newer
+    # canonical equivalent is present.
+    aliases: dict[str, Any] = dict(legacy)
+    canonical_aliases = {
+        "country": result["source_country"],
+        "author_username": result["source_author"],
+        "source_type": result["source_type"] or result["source_platform"],
+        "video_filename": native_ids.get("video_filename", ""),
+        "video_file": object_ref,
+        "whisper_transcript": transcript,
+        "whisper_language": whisper_language,
+        "whisper_translated": whisper_translated,
+        "summary_analysis": result["summary"],
+        "entities_legacy": "; ".join(entities),
+        "topics_legacy": "; ".join(topics),
+        "positive": "; ".join(value for value in sentiments if "positive" in value.casefold()),
+        "neutral": "; ".join(value for value in sentiments if "neutral" in value.casefold()),
+        "negative": "; ".join(value for value in sentiments if "negative" in value.casefold()),
+        "us_legacy": "; ".join(result["us"]),
+        "them_legacy": "; ".join(result["them"]),
+        "formula_of_populism_analysis": _legacy_scalar(formula),
+        "formula_of_populism_us": _legacy_scalar((formula or {}).get("us") if isinstance(formula, dict) else ""),
+        "formula_of_populism_frontier": _legacy_scalar((formula or {}).get("frontier") if isinstance(formula, dict) else ""),
+        "recording_datetime": result["source_timestamp"],
+        "recording_date": str(result["source_timestamp"])[:10] if result["source_timestamp"] else "",
+        "video_id": native_ids.get("video_id") or native_ids.get("videoId") or "",
+        "allas_filename": object_ref,
+        "new_id": native_ids.get("new_id") or native_ids.get("video_id") or native_ids.get("videoId") or "",
+        "old_id": native_ids.get("old_id", ""),
+        "new_entity": "; ".join(entities),
+        "new_theme": "; ".join(topics),
+        "raw_ref": result["raw_ref"],
+        "raw_payload_json": (
+            "" if raw_capture.get("payload") is None else json.dumps(raw_capture.get("payload"), ensure_ascii=False, sort_keys=True)
+        ),
+        "human_readable_summary": result["human_readable_summary"],
+        "human_readable_markdown": result["human_readable_markdown"],
+    }
+    for index in range(1, 7):
+        canonical_aliases[f"ocr_{index}"] = ocr[index - 1] if index <= len(ocr) else ""
+        canonical_aliases[f"frame_{index}"] = frame_analysis[index - 1] if index <= len(frame_analysis) else ""
+    for key, value in canonical_aliases.items():
+        if value not in (None, "", [], {}):
+            aliases[key] = value
+        else:
+            aliases.setdefault(key, value)
+    for key in LEGACY_COLUMNS:
+        aliases.setdefault(key, "")
+        result[key] = aliases[key]
+    return result
