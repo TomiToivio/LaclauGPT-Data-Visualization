@@ -18,15 +18,18 @@ htmlcov/
 venv/
 env/
 .pypirc
+.streamlit/
 
 # IDE / notebooks
 .idea/
 .vscode/
 .ipynb_checkpoints/
 
-# LaclauGPT privacy boundary: data never belongs in this public repository.
+# LaclauGPT privacy boundary: runtime/research data never belongs in this public repository.
 data/
 outputs/
+exports/
+reviews/
 artifacts/
 cache/
 .laclaugpt-upload/
