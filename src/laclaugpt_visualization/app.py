@@ -1,4 +1,4 @@
-"""Streamlit dashboard for researcher-facing exploration."""
+﻿"""Streamlit dashboard for researcher-facing exploration."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,7 +8,7 @@ import streamlit as st
 
 from .config import get_settings
 from .data import explode_labels, filter_frame, load_frame
-from .storage import load_mongodb
+from .storage import load_mongodb`nfrom .transforms import monitor`nfrom .review import Review, SQLiteReviewStore
 
 
 def _load_default_frame():
@@ -27,7 +27,7 @@ def _load_default_frame():
 def run() -> None:
     st.set_page_config(page_title="LaclauGPT Data Visualization", layout="wide")
     st.title("LaclauGPT Data Visualization")
-    st.caption("Local-first researcher dashboard. Remote services are optional.")
+    st.caption("Local-first researcher dashboard. Remote services are optional.")`n    st.warning("Counts, confidence, graph degree and chart layout are descriptive aids, not evidence of hegemony, nodal status, empty signification or antagonism. Researchers must inspect evidence and review status.")
 
     frame = _load_default_frame()
     uploaded = st.sidebar.file_uploader("Open CSV or JSONL", type=["csv", "jsonl", "ndjson"])
@@ -51,7 +51,7 @@ def run() -> None:
     c2.metric("Platforms", filtered["source_platform"].nunique())
     c3.metric("Authors", filtered["source_author"].nunique())
 
-    tabs = st.tabs(["Overview", "Signifiers", "Discourses", "Documents"])
+    tabs = st.tabs(["Monitor", "Researcher Review", "Explore", "Signifiers", "Discourses", "Documents"])
     with tabs[0]:
         topics = explode_labels(filtered, "topics").head(20)
         if not topics.empty:
@@ -77,3 +77,5 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
+
+
