@@ -1,11 +1,13 @@
-"""One Streamlit application with Monitor, Researcher Review and Explore modes."""
+"""One Streamlit application with Monitor, Researcher Review, Explore and Research Data modes."""
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import plotly.express as px
 import streamlit as st
 
+from .canonical import LEGACY_COLUMNS
 from .config import get_settings
 from .data import filter_frame, load_frame
 from .review import Review, SQLiteReviewStore
@@ -71,6 +73,24 @@ def _monitor_page(frame) -> None:
     st.caption(CAVEAT)
 
 
+def _nonempty_legacy(row: Any) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    for key in LEGACY_COLUMNS:
+        if key not in row:
+            continue
+        value = row.get(key)
+        if value is None:
+            continue
+        if isinstance(value, float) and str(value) == "nan":
+            continue
+        if isinstance(value, (list, dict)) and not value:
+            continue
+        if not isinstance(value, (list, dict)) and not str(value).strip():
+            continue
+        values[key] = value
+    return values
+
+
 def _review_page(frame) -> None:
     if frame.empty:
         st.info("No records in the current view.")
@@ -80,33 +100,57 @@ def _review_page(frame) -> None:
     options = frame["source_url"].fillna("").astype(str).tolist()
     source_url = st.selectbox("Record", options)
     row = frame[frame["source_url"] == source_url].iloc[0]
-    st.subheader(row.get("summary") or source_url)
+    st.subheader(row.get("summary") or row.get("human_readable_summary") or source_url)
     st.caption(f"{row.get('source_platform', '')} · {row.get('source_author', '')}")
-    st.markdown("#### Transcript")
-    st.text(row.get("transcript") or "No transcript")
+
+    researcher_report = str(row.get("human_readable_markdown") or "")
+    if researcher_report:
+        st.markdown("#### Human-readable research report")
+        st.markdown(researcher_report)
+
+    st.markdown("#### Whisper / ASR transcript")
+    st.text(row.get("whisper_transcript") or row.get("transcript") or "No transcript")
+    if row.get("whisper_translated"):
+        st.markdown("#### Whisper translation")
+        st.text(row.get("whisper_translated"))
     if row.get("ocr"):
         st.markdown("#### OCR")
         st.write(row.get("ocr"))
-    if row.get("frames"):
-        st.markdown("#### Multimodal/frame evidence")
-        st.write(row.get("frames"))
-    st.markdown("#### Structured analysis")
+    if row.get("frame_analysis") or row.get("frames"):
+        st.markdown("#### Multimodal / frame analysis")
+        st.write(row.get("frame_analysis") or row.get("frames"))
+
+    legacy_values = _nonempty_legacy(row)
+    st.markdown("#### Legacy researcher fields")
+    if legacy_values:
+        st.json(legacy_values)
+    else:
+        st.caption("No populated legacy aliases for this record.")
+
+    with st.expander("Raw collected/scraped material"):
+        raw_record = row.get("raw_record")
+        raw_capture = raw_record.get("raw_capture") if isinstance(raw_record, dict) else row.get("raw_capture")
+        st.json(raw_capture or {"raw_ref": row.get("raw_ref", "")})
+    with st.expander("Intermediate stage outputs"):
+        st.json(row.get("intermediate") or {})
+
+    st.markdown("#### New structured LaclauGPT analysis")
     st.json(
         {
             key: row.get(key)
             for key in (
-                "entities", "topics", "formations", "signifiers", "discourses", "frontier",
-                "uncertainties", "abstentions", "provenance"
+                "entities", "entity_mentions", "topics", "classifications", "formations",
+                "signifiers", "nodal_points", "discourses", "imaginaries", "us", "them",
+                "frontier", "affects", "sentiment_labels", "formula_of_populism", "relations",
+                "uncertainties", "abstentions", "model_runs", "evidence", "provenance",
             )
             if key in row
         }
     )
+
     existing = store.get(source_url) or Review(source_url=source_url)
-    status = st.selectbox(
-        "Review status",
-        ["PROVISIONAL", "ACCEPTED", "REJECTED", "REVISED", "CANONICAL", "SUPERSEDED"],
-        index=["PROVISIONAL", "ACCEPTED", "REJECTED", "REVISED", "CANONICAL", "SUPERSEDED"].index(existing.status),
-    )
+    statuses = ["PROVISIONAL", "ACCEPTED", "REJECTED", "REVISED", "CANONICAL", "SUPERSEDED"]
+    status = st.selectbox("Review status", statuses, index=statuses.index(existing.status))
     note = st.text_area("Researcher note", value=existing.note)
     dubious = st.checkbox("Dubious", value=existing.dubious)
     exclude = st.checkbox("Recommend exclusion", value=existing.exclude)
@@ -156,10 +200,29 @@ def _explore_page(frame) -> None:
     st.caption(CAVEAT)
 
 
+def _research_data_page(frame) -> None:
+    """Always expose old dataframe fields beside current canonical analysis fields."""
+    st.markdown("#### Full researcher dataframe")
+    st.caption(
+        "This table intentionally includes legacy EP24 aliases, intermediate stage outputs, "
+        "new LaclauGPT fields and the human-readable report fields."
+    )
+    preferred = [
+        "source_url", "recording_date", "country", "author_username", "source_type",
+        "summary_analysis", "human_readable_summary", "whisper_transcript", "whisper_language",
+        "whisper_translated", "ocr_1", "frame_1", "new_entity", "new_theme", "entities",
+        "topics", "formations", "signifiers", "discourses", "formula_of_populism_analysis",
+        "raw_ref", "review_status",
+    ]
+    ordered = [column for column in preferred if column in frame.columns]
+    ordered.extend(column for column in frame.columns if column not in ordered)
+    st.dataframe(frame[ordered], use_container_width=True, hide_index=True)
+
+
 def run() -> None:
     st.set_page_config(page_title="LaclauGPT Data Visualization", layout="wide")
     st.title("LaclauGPT Data Visualization")
-    st.caption("Canonical monitor + researcher workbench + exploration layer.")
+    st.caption("Canonical monitor + researcher workbench + exploration + full research dataframe.")
     st.warning(CAVEAT)
     settings = get_settings()
     settings.ensure_local_directories()
@@ -174,13 +237,17 @@ def run() -> None:
         st.info("Add canonical CSV/JSONL under data/, configure Analysis data root, SQLite, or MongoDB.")
         return
     filtered = _sidebar_filters(frame)
-    monitor_tab, review_tab, explore_tab = st.tabs(["Monitor", "Researcher Review", "Explore"])
+    monitor_tab, review_tab, explore_tab, data_tab = st.tabs(
+        ["Monitor", "Researcher Review", "Explore", "Research Data"]
+    )
     with monitor_tab:
         _monitor_page(filtered)
     with review_tab:
         _review_page(filtered)
     with explore_tab:
         _explore_page(filtered)
+    with data_tab:
+        _research_data_page(filtered)
 
 
 if __name__ == "__main__":
