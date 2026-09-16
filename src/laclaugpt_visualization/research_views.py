@@ -44,10 +44,23 @@ def infer_dashboard_mode(frame: pd.DataFrame) -> str:
         frame[column].notna().any()
         for column in legacy_markers.intersection(frame.columns)
     )
-    has_canonical = any(
+
+    # The EP24 boundary adapter deliberately adds provenance and a schema version so old
+    # records remain traceable. Those adapter fields do not make a legacy record a native
+    # canonical record. Treat explicit non-legacy schema versions and actual canonical
+    # analytical objects as the stronger signals instead.
+    native_schema = False
+    if "schema_version" in frame.columns:
+        native_schema = frame["schema_version"].fillna("").astype(str).map(
+            lambda value: bool(value.strip())
+            and not value.strip().startswith("legacy-ep24-adapter-")
+        ).any()
+    canonical_objects = any(
         column in frame.columns and frame[column].map(_is_nonempty).any()
-        for column in ("formations", "signifiers", "relations", "evidence", "provenance")
+        for column in ("formations", "signifiers", "relations", "evidence")
     )
+    has_canonical = bool(native_schema or canonical_objects)
+
     if has_legacy and has_canonical:
         return "hybrid_research"
     if has_legacy:
