@@ -2,6 +2,10 @@
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml)
 
+> **Part of the [LaclauGPT](https://github.com/TomiToivio/LaclauGPT) project.** The main LaclauGPT repository is the **meta-repository** and project front door: it contains the scientific paper, theory, shared architecture, canonical data contract and complete-system documentation. This repository is only the **Data Visualization** implementation stage.
+>
+> **Project map:** [LaclauGPT / paper + meta-repo](https://github.com/TomiToivio/LaclauGPT) → [Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection) → [Data Analysis](https://github.com/TomiToivio/LaclauGPT-Data-Analysis) → **Data Visualization (you are here)**
+
 **LaclauGPT** is an open social-science research framework for **LLM-assisted computational discourse analysis** of large textual and multimodal corpora. It combines computational methods with interpretive political research while keeping model outputs traceable to source evidence, uncertainty, provenance and human review.
 
 The current flagship research programme is **[LaclauGPT: Ideological contestation over AI](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PAPER.md)**. The canonical theoretical and methodological contract is **[THEORY.md](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)**.
@@ -38,7 +42,9 @@ See the **[scientific paper](https://github.com/TomiToivio/LaclauGPT/blob/main/p
 
 ## This repository
 
-**LaclauGPT-Data-Visualization is the canonical visualization implementation repository** in the modular LaclauGPT architecture. It consumes canonical Collection/Analysis records and provides one researcher-facing application with Monitor, Researcher Review, and Explore modes. It does not perform collection or discourse inference itself.
+**LaclauGPT Data Visualization** is the canonical researcher-facing visualization and review implementation in the modular LaclauGPT architecture. It consumes canonical records from **[LaclauGPT Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection)** and analytical enrichments from **[LaclauGPT Data Analysis](https://github.com/TomiToivio/LaclauGPT-Data-Analysis)**. The scientific paper, theory and project-wide contracts live in the **[LaclauGPT meta-repository](https://github.com/TomiToivio/LaclauGPT)**.
+
+It provides one researcher-facing application with Monitor, Researcher Review, and Explore modes. It does not perform collection or discourse inference itself.
 
 ## Unified application
 
@@ -57,6 +63,8 @@ LaclauGPT-Data-Analysis
         ↓ canonical analysis results
 LaclauGPT-Data-Visualization
 ```
+
+The shared contract governing that flow lives in the **[LaclauGPT meta-repository](https://github.com/TomiToivio/LaclauGPT)**.
 
 Canonical nested JSON/JSONL is primary. Stable `source_url`, schema version, provenance, review status, uncertainty/abstention and multimodal references are preserved into the visualization view model. Historical EP24 flat exports are supported only through `legacy_ep24.py`; legacy column names never become the core schema.
 
@@ -113,3 +121,7 @@ pytest
 ```
 
 See `AGENTS.md`, `docs/PRIVACY_AND_CONFIGURATION.md`, and `docs/RUNTIME_DATA.md`.
+
+## Where to go next
+
+For collection/capture work, go to **[LaclauGPT-Data-Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection)**. For NLP/LLM/discourse-analysis work, go to **[LaclauGPT-Data-Analysis](https://github.com/TomiToivio/LaclauGPT-Data-Analysis)**. For the paper, theory, shared architecture or complete-system installation, return to **[LaclauGPT](https://github.com/TomiToivio/LaclauGPT)**.
