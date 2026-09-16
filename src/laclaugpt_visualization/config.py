@@ -29,6 +29,7 @@ DATA_SUBDIRS = (
     "exports",
     "artifacts",
     "runs",
+    "reports",
 )
 
 
