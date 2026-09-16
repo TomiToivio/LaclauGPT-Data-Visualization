@@ -40,9 +40,9 @@ def infer_dashboard_mode(frame: pd.DataFrame) -> str:
         "formula_of_populism_analysis",
         "lda_topic",
     }
-    has_legacy = bool(legacy_markers.intersection(frame.columns)) and any(
-        frame[column].notna().any()
-        for column in legacy_markers.intersection(frame.columns)
+    has_legacy = any(
+        column in frame.columns and frame[column].map(_is_nonempty).any()
+        for column in legacy_markers
     )
 
     # The EP24 boundary adapter deliberately adds provenance and a schema version so old
