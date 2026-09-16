@@ -1,4 +1,4 @@
-"""One Streamlit application with Monitor, Researcher Review, Explore and Research Data modes."""
+"""Streamlit research workbench for legacy, canonical-live and hybrid data."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +10,13 @@ import streamlit as st
 from .canonical import LEGACY_COLUMNS
 from .config import get_settings
 from .data import filter_frame, load_frame
+from .research_views import (
+    DASHBOARD_MODES,
+    infer_dashboard_mode,
+    load_reports,
+    map_points,
+    timeline_counts,
+)
 from .review import Review, SQLiteReviewStore
 from .storage import load_mongodb
 from .transforms import explore, graph_projection, monitor, relations
@@ -19,6 +26,12 @@ CAVEAT = (
     "themselves establish hegemony, nodal status, empty/floating signification, antagonism "
     "or theoretical validity. Inspect evidence and human review state."
 )
+
+MODE_HELP = {
+    "legacy_ep24": "Historical EP24 dataframe/researcher workflow with legacy intermediate fields.",
+    "canonical_live": "Canonical near-real-time monitoring and discourse exploration.",
+    "hybrid_research": "EP24-style evidence inspection plus current LaclauGPT discourse views.",
+}
 
 
 def _load_default_frame():
@@ -32,9 +45,8 @@ def _load_default_frame():
     candidates: list[Path] = []
     for root in roots:
         if root and Path(root).exists():
-            candidates.extend(sorted(Path(root).glob("*.jsonl")))
-            candidates.extend(sorted(Path(root).glob("*.ndjson")))
-            candidates.extend(sorted(Path(root).glob("*.csv")))
+            for suffix in ("*.jsonl", "*.ndjson", "*.csv", "*.json"):
+                candidates.extend(sorted(Path(root).glob(suffix)))
     return load_frame(candidates[0], settings) if candidates else None
 
 
@@ -201,7 +213,6 @@ def _explore_page(frame) -> None:
 
 
 def _research_data_page(frame) -> None:
-    """Always expose old dataframe fields beside current canonical analysis fields."""
     st.markdown("#### Full researcher dataframe")
     st.caption(
         "This table intentionally includes legacy EP24 aliases, intermediate stage outputs, "
@@ -219,10 +230,91 @@ def _research_data_page(frame) -> None:
     st.dataframe(frame[ordered], use_container_width=True, hide_index=True)
 
 
+def _timeline_map_page(frame) -> None:
+    st.markdown("#### Timeline")
+    counts = timeline_counts(frame)
+    if counts.empty:
+        st.caption("No valid source, collection, analysis or event timestamps in this view.")
+    else:
+        st.plotly_chart(
+            px.line(
+                counts,
+                x="period",
+                y="documents",
+                color="time_kind",
+                markers=True,
+                title="Source / collection / analysis / event time",
+            ),
+            use_container_width=True,
+        )
+        st.caption("The four clocks remain separate; inferred event time is not source publication time.")
+
+    st.markdown("#### Map")
+    points = map_points(frame)
+    if points.empty:
+        st.caption("No valid geospatial observations in this view. Coordinates are never fabricated.")
+    else:
+        st.plotly_chart(
+            px.scatter_geo(
+                points,
+                lat="latitude",
+                lon="longitude",
+                hover_name="label",
+                hover_data=["location", "event_type", "source_url"],
+                title="Geocoded source/event evidence",
+            ),
+            use_container_width=True,
+        )
+        st.dataframe(
+            points[["source_url", "label", "location", "event_type", "event_time"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+def _reports_page(frame) -> None:
+    settings = get_settings()
+    reports = load_reports(settings.data_path("reports"))
+    if not reports:
+        st.info("No generated reports found under data/reports/. Markdown and JSON reports are supported.")
+        return
+    labels = [
+        f"{report.date.date().isoformat() if report.date is not None else 'undated'} · {report.title}"
+        for report in reports
+    ]
+    selected = reports[labels.index(st.selectbox("Research report", labels))]
+    st.markdown(selected.body)
+    if selected.source_urls:
+        linked = frame[frame["source_url"].isin(selected.source_urls)]
+        st.caption(f"Linked records in current view: {len(linked)} / {len(selected.source_urls)}")
+        if not linked.empty:
+            st.dataframe(
+                linked[[column for column in ("source_url", "source_author", "summary") if column in linked]],
+                use_container_width=True,
+                hide_index=True,
+            )
+    st.caption("Generated reports are research aids and require human verification before citation as findings.")
+
+
+def _render_mode(frame, mode: str) -> None:
+    if mode == "legacy_ep24":
+        labels = ["Researcher Review", "Research Data", "Timeline & Map", "Reports"]
+        pages = [_review_page, _research_data_page, _timeline_map_page, _reports_page]
+    elif mode == "canonical_live":
+        labels = ["Monitor", "Explore", "Researcher Review", "Timeline & Map", "Reports", "Research Data"]
+        pages = [_monitor_page, _explore_page, _review_page, _timeline_map_page, _reports_page, _research_data_page]
+    else:
+        labels = ["Monitor", "Researcher Review", "Explore", "Timeline & Map", "Reports", "Research Data"]
+        pages = [_monitor_page, _review_page, _explore_page, _timeline_map_page, _reports_page, _research_data_page]
+    for tab, page in zip(st.tabs(labels), pages, strict=True):
+        with tab:
+            page(frame)
+
+
 def run() -> None:
     st.set_page_config(page_title="LaclauGPT Data Visualization", layout="wide")
     st.title("LaclauGPT Data Visualization")
-    st.caption("Canonical monitor + researcher workbench + exploration + full research dataframe.")
+    st.caption("Legacy EP24 + canonical live + hybrid researcher workbench.")
     st.warning(CAVEAT)
     settings = get_settings()
     settings.ensure_local_directories()
@@ -234,20 +326,19 @@ def run() -> None:
         temp.write_bytes(uploaded.getvalue())
         frame = load_frame(temp)
     if frame is None or frame.empty:
-        st.info("Add canonical CSV/JSONL under data/, configure Analysis data root, SQLite, or MongoDB.")
+        st.info("Add canonical/legacy CSV or JSONL under data/, configure SQLite, or configure MongoDB.")
         return
-    filtered = _sidebar_filters(frame)
-    monitor_tab, review_tab, explore_tab, data_tab = st.tabs(
-        ["Monitor", "Researcher Review", "Explore", "Research Data"]
+
+    default_mode = infer_dashboard_mode(frame)
+    mode = st.sidebar.selectbox(
+        "Dashboard mode",
+        DASHBOARD_MODES,
+        index=DASHBOARD_MODES.index(default_mode),
+        format_func=lambda value: value.replace("_", " ").title(),
     )
-    with monitor_tab:
-        _monitor_page(filtered)
-    with review_tab:
-        _review_page(filtered)
-    with explore_tab:
-        _explore_page(filtered)
-    with data_tab:
-        _research_data_page(filtered)
+    st.sidebar.caption(MODE_HELP[mode])
+    filtered = _sidebar_filters(frame)
+    _render_mode(filtered, mode)
 
 
 if __name__ == "__main__":
