@@ -7,9 +7,10 @@ they never collect or analyze research material.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import pandas as pd
 
@@ -170,7 +171,7 @@ def timeline_counts(frame: pd.DataFrame, frequency: str = "D") -> pd.DataFrame:
 def _parse_report_json(path: Path) -> ResearchReport:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f"report JSON must contain an object: {path}")
+        raise TypeError(f"report JSON must contain an object: {path}")
     body = payload.get("markdown") or payload.get("body") or payload.get("summary") or ""
     raw_urls = payload.get("source_urls") or payload.get("sources") or []
     if isinstance(raw_urls, str):
@@ -216,7 +217,7 @@ def load_reports(root: str | Path | None) -> list[ResearchReport]:
         elif candidate.suffix.lower() == ".json":
             try:
                 reports.append(_parse_report_json(candidate))
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, TypeError):
                 continue
     return sorted(
         reports,
