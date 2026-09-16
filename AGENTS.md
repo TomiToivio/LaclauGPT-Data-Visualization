@@ -6,6 +6,18 @@ This repository is the canonical Data Visualization module of LaclauGPT. Keep it
 
 The project-wide data contract is owned by [`TomiToivio/LaclauGPT`](https://github.com/TomiToivio/LaclauGPT/blob/main/docs/CANONICAL_DATA_CONTRACT.md). Read `docs/CANONICAL_DATA_MODEL.md` before changing loaders, persistence, review state or view-model fields.
 
+## AI26 public reference study
+
+AI26 (`Ideological contestation over AI`) is the preferred realistic public example for Visualization because the current modular LaclauGPT system is being developed alongside the public AI26 paper. Read `docs/AI26_REFERENCE_CASE.md` when adding examples, filters, dashboard documentation or synthetic fixtures.
+
+Use the three AI26 arenas (`elites`, `grassroots`, `parliamentary`) and the public AI26 codebook as realistic examples, but never hard-code them into core models or generic UI contracts. Arena is sampling provenance, not ideology.
+
+The six current computational formation labels (`accelerationism`, `doomerism`, `left-wing accelerationism`, `ai safety`, `ai critical`, `anti-ai`) are provisional aggregation anchors. Visualizations must preserve multi-label overlap, uncertainty, abstention and human review instead of presenting them as exhaustive or permanent actor identities.
+
+Current terms such as safety, pacing, competition, innovation, China, control, liability, independent evaluation, regulation, labour, ownership, surveillance and data centres are useful public reference filters. They remain candidate signifiers/context terms. A chart must not turn frequency, centrality or co-occurrence into a theoretical conclusion.
+
+Public-safe AI26 dashboard semantics and synthetic fixtures may be committed. Real AI26 records, private watch lists, researcher annotations, credentials/endpoints and generated private reports remain outside Git.
+
 ## Mandatory architecture rules
 
 1. UI code renders or edits view/review state. It never performs discourse analysis.
@@ -38,7 +50,7 @@ Laclau/Mouffe/Palonen concepts require human interpretation. Frequency, centrali
 
 ## Mandatory runtime data boundary
 
-All runtime and study-specific material belongs below `data/`, and the whole `data/` tree stays outside Git. Follow `docs/RUNTIME_DATA.md`.
+All runtime and operational study material belongs below `data/`, and the whole `data/` tree stays outside Git. Follow `docs/RUNTIME_DATA.md`.
 
 Logs, databases, local configuration, CSV/JSONL files, downloaded files, media, caches, exports, artifacts, temporary files and researcher review state all belong under `data/`. Visualization output defaults to `data/exports/`; local review state defaults to `data/database/reviews.sqlite3`.
 
@@ -48,7 +60,7 @@ When Analysis and Visualization run on the same host, use `analysis_data_dir` to
 
 This is a public repository. Never commit row-level research data, transcripts, OCR, frames/media, researcher notes, review databases, generated exports, caches, `.env`, `.streamlit/secrets.toml`, credentials, private endpoints, institutional usernames/project IDs, machine-specific absolute paths or private target/source lists.
 
-Private repositories may be inspected only when authorized and only to understand reusable behavior. Never copy private data, configuration, credentials, targets, researcher notes or study-specific material into this repository.
+Private repositories may be inspected when authorized to understand reusable behavior and publication-safe study methodology. Public-safe AI26 conceptual/configuration examples may be adapted into this repository; never copy private data, credentials, unpublished target lists, researcher notes or operational deployment state.
 
 Only tiny explicitly synthetic fixtures belong in tests/examples. Run `python scripts/check_public_tree.py` before merging.
 
