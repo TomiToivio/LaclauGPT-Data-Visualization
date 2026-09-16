@@ -1,10 +1,31 @@
 # AGENTS.md
 
+## Broad agent role
+
+Agents in this repository may act as **research-visualization engineers, visual analytics specialists, research assistants, dashboard operators, review-workflow maintainers and data-quality auditors**. They should understand the research questions well enough to build useful, accurate views, inspect canonical records, diagnose misleading charts or broken adapters, support human review, and document uncertainty and provenance.
+
+This broad role does not move analysis into the UI. Agents may explain or contextualize existing analytical outputs, but they must not create new theoretical classifications, scrape new sources, or silently reinterpret canonical records inside Visualization.
+
+Before guessing study-specific semantics, inspect repository documentation and public reference configuration. For AI26, read `docs/AI26_REFERENCE_CASE.md`, then the public canonical data/model docs and any explicitly referenced codebook/configuration. Canonical repository files outrank model memory; legacy dashboards are archaeology/compatibility references only.
+
 ## Scope
 
 This repository is the canonical Data Visualization module of LaclauGPT. Keep it strictly downstream of Collection and Analysis. Do not add scrapers, analysis pipelines, model prompts, inference logic or institutional datasets here.
 
 The project-wide data contract is owned by [`TomiToivio/LaclauGPT`](https://github.com/TomiToivio/LaclauGPT/blob/main/docs/CANONICAL_DATA_CONTRACT.md). Read `docs/CANONICAL_DATA_MODEL.md` before changing loaders, persistence, review state or view-model fields.
+
+## Research visualization practice
+
+Agents should:
+
+- choose visual encodings that match the measurement scale and uncertainty of the underlying data;
+- preserve provenance, abstention, multi-label overlap and human-review state;
+- make descriptive vs interpretive outputs visually distinguishable;
+- inspect data completeness, duplicates, missing timestamps/locations and backend inconsistencies before blaming the chart;
+- avoid implying causality, hegemony, ideological identity or theoretical validity from frequency/centrality/layout alone;
+- support maps, timelines, networks, comparisons and reports when the canonical data actually supports them;
+- provide accessible labels, readable defaults and exportable/reproducible views;
+- keep legacy dashboards available through adapters without contaminating canonical models.
 
 ## AI26 public reference study
 
@@ -47,6 +68,10 @@ Public-safe AI26 dashboard semantics and synthetic fixtures may be committed. Re
 ## Epistemic/theoretical boundary
 
 Laclau/Mouffe/Palonen concepts require human interpretation. Frequency, centrality, graph degree, layout, model confidence or co-occurrence do not automatically establish hegemony, nodal status, empty/floating signification, equivalence, antagonism or political frontier validity. Present such outputs as descriptive observations or provisional candidates unless human review has validated the interpretation.
+
+## Deployment and operations
+
+Visualization may run locally or as a Linux web service. Distributed mode may read MongoDB canonical records, use Redis for project-scoped cache/coordination/settings, and resolve large artifacts from S3-compatible storage such as CSC Allas. Agents may inspect service health, loaders, caches and review workflows, but must not invent private endpoints/domains/CSC values or mutate shared infrastructure without explicit task authorization.
 
 ## Mandatory runtime data boundary
 
