@@ -33,28 +33,46 @@ def infer_dashboard_mode(frame: pd.DataFrame) -> str:
     """Choose a useful default without changing the underlying data."""
     if frame.empty:
         return "canonical_live"
-    legacy_markers = {
-        "new_id",
-        "whisper_transcript",
-        "summary_analysis",
-        "formula_of_populism_analysis",
-        "lda_topic",
-    }
-    has_legacy = any(
-        column in frame.columns and frame[column].map(_is_nonempty).any()
-        for column in legacy_markers
-    )
 
-    # The EP24 boundary adapter deliberately adds provenance and a schema version so old
-    # records remain traceable. Those adapter fields do not make a legacy record a native
-    # canonical record. Treat explicit non-legacy schema versions and actual canonical
-    # analytical objects as the stronger signals instead.
-    native_schema = False
-    if "schema_version" in frame.columns:
-        native_schema = frame["schema_version"].fillna("").astype(str).map(
-            lambda value: bool(value.strip())
-            and not value.strip().startswith("legacy-ep24-adapter-")
-        ).any()
+    schema = (
+        frame["schema_version"].fillna("").astype(str)
+        if "schema_version" in frame.columns
+        else pd.Series(dtype=str)
+    )
+    legacy_schema = schema.map(
+        lambda value: value.strip().startswith("legacy-ep24-adapter-")
+    ).any()
+    native_schema = schema.map(
+        lambda value: bool(value.strip())
+        and not value.strip().startswith("legacy-ep24-adapter-")
+    ).any()
+
+    # The canonical flattener intentionally exposes EP24 aliases for every record, so
+    # alias presence alone cannot distinguish an old dataset from a canonical one.
+    # Use lineage (`legacy`) plus values that are genuinely additional to their canonical
+    # counterparts. This also lets a native canonical record become hybrid when a researcher
+    # has supplied/preserved extra historical fields.
+    legacy_payload = (
+        "legacy" in frame.columns and frame["legacy"].map(_is_nonempty).any()
+    )
+    legacy_only_columns = (
+        "lda_topic",
+        "lda_minor_topics",
+        "lda_topic_words",
+        "manifestoberta_predicted_class",
+        "manifestoberta_probabilities",
+        "old_id",
+        "puhti_filename",
+    )
+    legacy_only_values = any(
+        column in frame.columns and frame[column].map(_is_nonempty).any()
+        for column in legacy_only_columns
+    )
+    legacy_overlay = legacy_only_values or _different_populated_columns(
+        frame, "whisper_transcript", "transcript"
+    ) or _different_populated_columns(frame, "summary_analysis", "summary")
+    has_legacy = bool(legacy_schema or legacy_payload or legacy_overlay)
+
     canonical_objects = any(
         column in frame.columns and frame[column].map(_is_nonempty).any()
         for column in ("formations", "signifiers", "relations", "evidence")
@@ -66,6 +84,18 @@ def infer_dashboard_mode(frame: pd.DataFrame) -> str:
     if has_legacy:
         return "legacy_ep24"
     return "canonical_live"
+
+
+def _different_populated_columns(frame: pd.DataFrame, legacy: str, canonical: str) -> bool:
+    """Return true when a legacy alias contains information beyond its canonical alias."""
+    if legacy not in frame.columns or canonical not in frame.columns:
+        return False
+    for legacy_value, canonical_value in zip(frame[legacy], frame[canonical], strict=False):
+        if not _is_nonempty(legacy_value):
+            continue
+        if str(legacy_value).strip() != str(canonical_value or "").strip():
+            return True
+    return False
 
 
 def _is_nonempty(value: Any) -> bool:
