@@ -29,6 +29,7 @@ from .research_views import (
 from .review import Review, SQLiteReviewStore
 from .storage import load_mongodb
 from .transforms import explore, graph_projection, monitor, relations
+from .worker_status import RedisOperationalStatus
 
 CAVEAT = (
     "Counts, confidence, graph degree and layout are descriptive aids. They do not by "
@@ -483,6 +484,98 @@ def _reports_page(frame) -> None:
     )
 
 
+def _run_ids(frame) -> set[str]:
+    if frame.empty:
+        return set()
+    projected = provenance_frame(frame)
+    if "run_id" not in projected:
+        return set()
+    return {
+        str(value)
+        for value in projected["run_id"]
+        if value not in (None, "", UNKNOWN)
+    }
+
+
+def _live_status_page(frame) -> None:
+    """Best-effort transient Redis view; durable research state never depends on it."""
+    settings = get_settings()
+    st.markdown("#### Live worker and workflow status")
+    st.caption(
+        "This panel is transient operational telemetry, not research data or audit history. "
+        "Durable records and results remain available independently of Redis."
+    )
+    if settings.messaging_backend != "redis":
+        st.info("Live Redis status is disabled. Durable dashboard data is fully available.")
+        return
+    if not settings.redis_url:
+        st.warning("Live Redis status is unavailable because no private runtime Redis URL is configured.")
+        return
+    try:
+        import redis
+    except ImportError:
+        st.warning("Live Redis status is unavailable because the optional Redis client is not installed.")
+        return
+
+    try:
+        client = redis.Redis.from_url(
+            settings.redis_url,
+            socket_connect_timeout=1.5,
+            socket_timeout=1.5,
+            decode_responses=False,
+        )
+        status = RedisOperationalStatus(
+            client,
+            prefix=settings.redis_key_prefix,
+            heartbeat_ttl_seconds=settings.redis_heartbeat_ttl_seconds,
+            event_limit=settings.redis_event_limit,
+        ).snapshot(settings.project_id, run_ids=_run_ids(frame))
+    except Exception:
+        st.warning("Live Redis status is unavailable; durable research data is unaffected.")
+        return
+
+    if not status.available:
+        st.warning(status.note)
+        return
+
+    workers = [
+        {
+            "worker_id": item.worker_id,
+            "role": item.worker_role,
+            "run_id": item.run_id,
+            "state": "stale" if item.stale else item.status,
+            "reported_state": item.status,
+            "task_id": item.current_task_id or "",
+            "age_seconds": round(item.age_seconds, 1),
+            "updated_at": item.updated_at.isoformat(),
+        }
+        for item in status.workers
+    ]
+    if workers:
+        st.markdown("##### Workers")
+        st.dataframe(workers, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No matching worker heartbeats are currently visible.")
+
+    events = [
+        {
+            "stream": item.stream,
+            "message_id": item.message_id or "",
+            "task_id": item.task_id or "",
+            "run_id": item.run_id or "",
+            "task_type": item.task_type or "",
+            "producer": item.producer or "",
+            "created_at": item.created_at or "",
+        }
+        for item in status.events
+    ]
+    if events:
+        st.markdown("##### Recent safe workflow identifiers")
+        st.dataframe(events, use_container_width=True, hide_index=True)
+        st.caption("Queue payloads and arbitrary event metadata are intentionally not rendered.")
+    st.caption(status.note)
+
+
 def _plugin_provider(frame) -> InMemoryProvider:
     """Expose products already present in the dashboard without performing new analysis."""
     products = {
@@ -514,6 +607,8 @@ def _backend_capabilities() -> set[str]:
         capabilities.add("mongodb")
     if settings.cache_backend == "redis" and settings.redis_url:
         capabilities.update({"redis_config", "redis_task_queue", "redis_message_queue"})
+    if settings.messaging_backend == "redis" and settings.redis_url:
+        capabilities.add("redis_status")
     if settings.object_backend == "s3" and settings.s3_bucket:
         capabilities.add("allas")
     return capabilities
@@ -602,8 +697,8 @@ def _render_mode(frame, mode: str) -> None:
             _reports_page,
             _research_data_page,
         ]
-    labels.append("Plugin Library")
-    pages.append(lambda current_frame: _plugin_library_page(current_frame, mode))
+    labels.extend(["Live Status", "Plugin Library"])
+    pages.extend([_live_status_page, lambda current_frame: _plugin_library_page(current_frame, mode)])
     for tab, page in zip(st.tabs(labels), pages, strict=True):
         with tab:
             page(frame)
