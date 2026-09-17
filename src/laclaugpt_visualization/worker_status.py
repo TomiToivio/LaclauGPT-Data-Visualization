@@ -24,6 +24,13 @@ SAFE_EVENT_FIELDS = (
     "producer",
     "created_at",
 )
+DEFAULT_OPERATIONAL_ERRORS: tuple[type[BaseException], ...] = (
+    ConnectionError,
+    OSError,
+    TimeoutError,
+    TypeError,
+    ValueError,
+)
 
 
 def _decode(value: Any) -> str:
@@ -101,12 +108,15 @@ class RedisOperationalStatus:
     prefix: str = "laclaugpt"
     heartbeat_ttl_seconds: int = 60
     event_limit: int = 25
+    error_types: tuple[type[BaseException], ...] = DEFAULT_OPERATIONAL_ERRORS
 
     def __post_init__(self) -> None:
         if self.heartbeat_ttl_seconds < 5:
             raise ValueError("heartbeat_ttl_seconds must be at least 5")
         if self.event_limit < 0:
             raise ValueError("event_limit must not be negative")
+        if not self.error_types:
+            raise ValueError("error_types must not be empty")
 
     def snapshot(
         self,
@@ -123,7 +133,7 @@ class RedisOperationalStatus:
         try:
             workers = self._workers(project_id, allowed_runs, current)
             events = self._events(project_id, allowed_runs)
-        except Exception:  # Redis/network/client errors must not break durable dashboard views.
+        except self.error_types:
             return OperationalSnapshot(
                 available=False,
                 note="Live Redis status unavailable; durable research data is unaffected.",
@@ -144,7 +154,6 @@ class RedisOperationalStatus:
         results: list[WorkerHeartbeat] = []
         pattern = f"{self.prefix}:{project_id}:worker:*"
         for raw_key in self.client.scan_iter(match=pattern):
-            key = _decode(raw_key)
             payload = _mapping(self.client.get(raw_key))
             if payload is None and hasattr(self.client, "hgetall"):
                 payload = _mapping(self.client.hgetall(raw_key))
