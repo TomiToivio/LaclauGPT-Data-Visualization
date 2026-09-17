@@ -7,6 +7,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .data import explode_labels
+from .query_backends import GraphRequest, graph_from_frame
 
 
 def monitor(frame: pd.DataFrame) -> dict[str, object]:
@@ -71,14 +72,18 @@ def relation_summary(frame: pd.DataFrame) -> pd.DataFrame:
     return values["type"].value_counts().rename_axis("type").reset_index(name="count")
 
 
-def graph_projection(frame: pd.DataFrame) -> dict[str, list[dict[str, object]]]:
-    edges = relations(frame)
-    if edges.empty:
-        return {"nodes": [], "edges": []}
-    labels = pd.concat([edges["source"], edges["target"]])
-    counts = labels[labels.str.strip().ne("")].value_counts()
-    nodes = [{"id": label, "degree": int(count)} for label, count in counts.items()]
-    return {"nodes": nodes, "edges": edges.to_dict(orient="records")}
+def graph_projection(
+    frame: pd.DataFrame,
+    *,
+    max_nodes: int = 500,
+    max_edges: int = 1000,
+) -> dict[str, object]:
+    """Return a bounded, provenance-preserving graph projection for ordinary UI views."""
+    payload, _evidence = graph_from_frame(
+        frame,
+        GraphRequest(max_nodes=max_nodes, max_edges=max_edges),
+    )
+    return payload
 
 
 def explore(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
