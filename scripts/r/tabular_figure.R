@@ -1,5 +1,5 @@
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 5) {
+if (length(args) < 4) {
   stop("Usage: Rscript tabular_figure.R input.csv x_column y_column output.pdf [group_column]")
 }
 
