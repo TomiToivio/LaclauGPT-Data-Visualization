@@ -1,0 +1,27 @@
+[Unit]
+Description=LaclauGPT AI26 Data Visualization (Laskin)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<laskin-user>
+Group=<laskin-group>
+WorkingDirectory=/mnt/workspace/LaclauGPT-Data-Visualization
+EnvironmentFile=/mnt/workspace/LaclauGPT-Private/config/ai26/visualization/laskin.env
+ExecStartPre=/mnt/workspace/LaclauGPT-Data-Visualization/.venv/bin/laclaugpt-visualize health
+ExecStart=/mnt/workspace/LaclauGPT-Data-Visualization/.venv/bin/laclaugpt-visualize serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGINT
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/mnt/workspace/LaclauGPT-Data-Visualization
+ReadWritePaths=/mnt/workspace/LaclauGPT-Private
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
