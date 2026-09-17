@@ -10,6 +10,8 @@ import streamlit as st
 from .canonical import LEGACY_COLUMNS
 from .config import get_settings
 from .data import filter_frame, load_frame
+from .plugins import default_registry
+from .products import DataProduct, InMemoryProvider, ProductKind
 from .provenance import (
     UNKNOWN,
     comparison_warning,
@@ -481,6 +483,84 @@ def _reports_page(frame) -> None:
     )
 
 
+def _plugin_provider(frame) -> InMemoryProvider:
+    """Expose products already present in the dashboard without performing new analysis."""
+    products = {
+        ProductKind.TABLE: DataProduct(ProductKind.TABLE, frame),
+        ProductKind.RECORDS: DataProduct(ProductKind.RECORDS, frame),
+    }
+    timeline = timeline_counts(frame)
+    if not timeline.empty:
+        products[ProductKind.TIMELINE] = DataProduct(ProductKind.TIMELINE, timeline)
+    points = map_points(frame)
+    if not points.empty:
+        products[ProductKind.GEODATA] = DataProduct(ProductKind.GEODATA, points)
+    projection = graph_projection(frame)
+    if projection["nodes"] or projection["edges"]:
+        products[ProductKind.NETWORK] = DataProduct(ProductKind.NETWORK, projection)
+    reports = load_reports(get_settings().data_path("reports"))
+    if reports:
+        products[ProductKind.REPORT] = DataProduct(ProductKind.REPORT, reports)
+    media_columns = {"frames", "frame_analysis", "video_file", "audio_file", "media"}
+    if media_columns.intersection(frame.columns):
+        products[ProductKind.MEDIA] = DataProduct(ProductKind.MEDIA, frame)
+    return InMemoryProvider(products)
+
+
+def _backend_capabilities() -> set[str]:
+    settings = get_settings()
+    capabilities: set[str] = set()
+    if settings.data_backend == "mongodb" and settings.mongodb_uri:
+        capabilities.add("mongodb")
+    if settings.cache_backend == "redis" and settings.redis_url:
+        capabilities.update({"redis_config", "redis_task_queue", "redis_message_queue"})
+    if settings.object_backend == "s3" and settings.s3_bucket:
+        capabilities.add("allas")
+    return capabilities
+
+
+def _plugin_library_page(frame, mode: str) -> None:
+    st.markdown("#### Plugin library")
+    st.caption(
+        "Visualization plugins are read-only. User-interface plugins may edit or enqueue work "
+        "only through explicit permission/audit service boundaries."
+    )
+    registry = default_registry()
+    provider = _plugin_provider(frame)
+    backends = _backend_capabilities()
+    fields = set(frame.columns)
+    rows = []
+    for plugin in registry.all():
+        status = registry.status(
+            plugin.spec.name,
+            provider,
+            rag_enabled=ProductKind.RETRIEVAL in provider.capabilities(),
+            backend_capabilities=backends,
+            fields=fields,
+            mode=mode,
+        )
+        rows.append(
+            {
+                "plugin": plugin.spec.name,
+                "kind": plugin.spec.kind.value,
+                "category": plugin.spec.category.value,
+                "status": "available" if status.available else "unavailable",
+                "placeholder": plugin.spec.placeholder,
+                "mutates_state": plugin.spec.mutates_state,
+                "requires_backends": ", ".join(sorted(plugin.spec.required_backends)),
+                "reason": "; ".join(status.reasons),
+                "source": plugin.spec.source or "",
+            }
+        )
+    kind = st.selectbox("Plugin kind", ["all", "visualization", "user_interface"])
+    shown = rows if kind == "all" else [row for row in rows if row["kind"] == kind]
+    st.dataframe(shown, use_container_width=True, hide_index=True)
+    st.caption(
+        "Unavailable optional plugins are capability-gated rather than crashing local/offline mode. "
+        "Placeholders describe planned contracts; they do not fabricate missing analysis products."
+    )
+
+
 def _render_mode(frame, mode: str) -> None:
     warning = comparison_warning(frame)
     if warning:
@@ -522,6 +602,8 @@ def _render_mode(frame, mode: str) -> None:
             _reports_page,
             _research_data_page,
         ]
+    labels.append("Plugin Library")
+    pages.append(lambda current_frame: _plugin_library_page(current_frame, mode))
     for tab, page in zip(st.tabs(labels), pages, strict=True):
         with tab:
             page(frame)
