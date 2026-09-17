@@ -9,7 +9,10 @@ Examples:
 ```bash
 Rscript scripts/r/dna_network_plot.R nodes.csv edges.csv dna-network.pdf
 Rscript scripts/r/tabular_figure.R timeline.csv day count timeline.pdf
+Rscript scripts/r/stm_topic_plot.R fitted-stm-model.rds stm-topics.pdf 20
 ```
+
+`stm_topic_plot.R` only renders an already-fitted STM model. It does not fit topics inside the Visualization repository. The same rule applies to rDNA/DNA, quanteda, community detection and network measures: compute analytical results upstream, then pass portable outputs here for rendering and review.
 
 Recommended packages:
 

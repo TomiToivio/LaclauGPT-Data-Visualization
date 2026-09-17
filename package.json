@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:legacy": "node --test web/legacy/legacy.test.mjs"
+    "test:legacy": "node --test web/legacy/legacy.test.mjs frontend/plugins/semantic-renderers.test.mjs"
   }
 }
