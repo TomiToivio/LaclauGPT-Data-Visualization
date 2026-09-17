@@ -14,9 +14,9 @@ from typing import Any
 import pandas as pd
 
 from .interoperability import (
+    SEMANTIC_SAFEGUARDS,
     EvidenceLink,
     GraphViewModel,
-    SEMANTIC_SAFEGUARDS,
     ViewEdge,
     ViewNode,
     dats_review_view,
@@ -106,7 +106,10 @@ def graph_measure_table(projection: Mapping[str, Any]) -> pd.DataFrame:
     measures = projection.get("measures") or projection.get("network_measures") or []
     if isinstance(measures, Mapping):
         measures = [
-            {"element_id": element_id, **(dict(values) if isinstance(values, Mapping) else {"value": values})}
+            {
+                "element_id": element_id,
+                **(dict(values) if isinstance(values, Mapping) else {"value": values}),
+            }
             for element_id, values in measures.items()
         ]
     return pd.DataFrame(list(measures))
