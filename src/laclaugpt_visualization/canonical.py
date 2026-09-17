@@ -299,6 +299,10 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         "human_readable_summary": result["human_readable_summary"],
         "human_readable_markdown": result["human_readable_markdown"],
     }
+    for index, value in enumerate(ocr[:6], start=1):
+        canonical_aliases[f"ocr_{index}"] = value
+    for index, value in enumerate(frame_analysis[:6], start=1):
+        canonical_aliases[f"frame_{index}"] = value
     for key, value in canonical_aliases.items():
         if value not in (None, "", [], {}):
             aliases[key] = value
