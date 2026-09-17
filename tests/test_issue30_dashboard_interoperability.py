@@ -40,7 +40,7 @@ def test_dats_objects_map_to_normal_dashboard_dataframe() -> None:
     assert row["source_language"] == "fi"
     assert row["external_ids"] == {"dats": "d1"}
     assert row["review_status"] == "PROVISIONAL"
-    assert row["machine_generated"] is True
+    assert bool(row["machine_generated"]) is True
     assert row["evidence"][0]["external_ids"] == {"dats": "a1"}
 
 
