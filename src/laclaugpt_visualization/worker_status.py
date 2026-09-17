@@ -35,6 +35,24 @@ DEFAULT_OPERATIONAL_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 
+def default_operational_errors() -> tuple[type[BaseException], ...]:
+    """Operational errors to treat as data, including the redis client's own.
+
+    ``redis.exceptions.ConnectionError`` is **not** a subclass of the builtin
+    ``ConnectionError`` or ``OSError`` — it derives from ``RedisError`` — so an
+    unreachable Redis would escape a handler built only from builtins and the
+    "failure is data" contract in ``snapshot()`` would be broken. ``RedisError``
+    is the base of every client error, covering connection, timeout and protocol
+    failures in one entry.
+    """
+    errors: tuple[type[BaseException], ...] = DEFAULT_OPERATIONAL_ERRORS
+    try:
+        from redis.exceptions import RedisError
+    except ImportError:  # redis is optional; the builtins still apply
+        return errors
+    return errors + (RedisError,)
+
+
 def _decode(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
@@ -119,6 +137,12 @@ class RedisOperationalStatus:
             raise ValueError("event_limit must not be negative")
         if not self.error_types:
             raise ValueError("error_types must not be empty")
+        # The default is the builtin-only tuple; widen it with the redis client's
+        # own error hierarchy unless a caller injected an explicit tuple. Redis
+        # errors do not derive from the builtins, so an outage would otherwise
+        # escape the handler below.
+        if self.error_types == DEFAULT_OPERATIONAL_ERRORS:
+            self.error_types = default_operational_errors()
 
     def snapshot(
         self,

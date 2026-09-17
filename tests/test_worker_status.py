@@ -124,6 +124,65 @@ def test_redis_outage_degrades_to_unavailable_snapshot():
     assert "durable research data is unaffected" in snapshot.note
 
 
+class FakeRedisRaisingRedisError(FakeRedis):
+    """A client that fails the way the real one does.
+
+    ``redis.exceptions.ConnectionError`` derives from ``RedisError``, not from
+    the builtin ``ConnectionError`` or ``OSError``, so a handler built from
+    builtins alone lets a genuine outage escape (issue #41).
+    """
+
+    def scan_iter(self, match):
+        raise _redis_connection_error("synthetic outage")
+
+    def get(self, key):
+        raise _redis_connection_error("synthetic outage")
+
+    def xrevrange(self, key, count=25):
+        raise _redis_connection_error("synthetic outage")
+
+
+def _redis_connection_error(message: str) -> BaseException:
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    return RedisConnectionError(message)
+
+
+def test_redis_client_error_is_treated_as_operational() -> None:
+    """The default error set must include the redis client's own hierarchy."""
+    from redis.exceptions import RedisError
+
+    errors = RedisOperationalStatus(client=FakeRedis()).error_types
+    assert RedisError in errors
+
+
+def test_real_redis_error_type_is_caught_not_raised() -> None:
+    """Regression for #41: a real redis outage must degrade, never propagate."""
+    snapshot = RedisOperationalStatus(FakeRedisRaisingRedisError()).snapshot("demo26")
+    assert snapshot.available is False
+    assert snapshot.workers == ()
+    assert snapshot.events == ()
+    assert "durable research data is unaffected" in snapshot.note
+
+
+def test_unreachable_redis_endpoint_degrades() -> None:
+    """End-to-end: a client pointed at a closed port must not raise."""
+    import pytest
+
+    redis_lib = pytest.importorskip("redis")
+    client = redis_lib.from_url("redis://127.0.0.1:6399/0", socket_connect_timeout=1)
+    snapshot = RedisOperationalStatus(client=client).snapshot("demo26")
+    assert snapshot.available is False
+
+
+def test_explicit_error_types_are_respected() -> None:
+    """A caller that injects its own tuple does not get the redis hierarchy."""
+    errors = RedisOperationalStatus(
+        client=FakeRedis(), error_types=(ValueError,)
+    ).error_types
+    assert errors == (ValueError,)
+
+
 def test_run_filter_prevents_cross_run_status_mix():
     now = datetime(2026, 9, 17, 12, 0, tzinfo=UTC)
     redis = FakeRedis(
