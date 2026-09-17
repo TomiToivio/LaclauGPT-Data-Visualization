@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -81,10 +80,17 @@ def test_csv_graph_is_bounded_and_preserves_provenance(tmp_path: Path) -> None:
     assert product.metadata["bounded"] is True
     assert len(product.payload["nodes"]) <= 4
     assert len(product.payload["edges"]) <= 4
-    assert any(edge["source_url"] == "https://example.invalid/1" for edge in product.payload["edges"])
-    assert any(edge["validation_status"] == "human_validated" for edge in product.payload["edges"])
+    assert any(
+        edge["source_url"] == "https://example.invalid/1"
+        for edge in product.payload["edges"]
+    )
+    assert any(
+        edge["validation_status"] == "human_validated"
+        for edge in product.payload["edges"]
+    )
     assert backend.vector_capability().available is False
-    assert backend.context(ContextRequest("https://example.invalid/1")).metadata["available"] is False
+    context = backend.context(ContextRequest("https://example.invalid/1"))
+    assert context.metadata["available"] is False
 
 
 def test_auto_falls_back_and_explicit_mongodb_does_not(tmp_path: Path) -> None:
@@ -109,21 +115,40 @@ def test_auto_falls_back_and_explicit_mongodb_does_not(tmp_path: Path) -> None:
         resolve_query_backend(explicit, _frame(), mongo_backend_factory=unavailable)
 
 
+def test_storage_backend_policy_maps_onto_legacy_loader(tmp_path: Path) -> None:
+    auto = _settings(
+        tmp_path,
+        storage_backend="auto",
+        mongodb_uri="mongodb://example.invalid:27017",
+    )
+    assert auto.data_backend == "mongodb"
+    local = _settings(
+        tmp_path,
+        storage_backend="csv",
+        data_backend="mongodb",
+        mongodb_uri="mongodb://example.invalid:27017",
+    )
+    assert local.data_backend == "files"
+
+
 class FakeCursor(list):
     def limit(self, value: int):
         return FakeCursor(self[:value])
 
 
 class FakeCollection:
-    def __init__(self, records):
+    def __init__(self, records, *, vector: bool = True):
         self.records = list(records)
+        self.vector = vector
         self.last_pipeline = None
 
     def find(self, query, projection=None):
         del projection
         records = self.records
         if query.get("project_id"):
-            records = [row for row in records if row.get("project_id") == query["project_id"]]
+            records = [
+                row for row in records if row.get("project_id") == query["project_id"]
+            ]
         if query.get("source_url") and isinstance(query["source_url"], dict):
             allowed = set(query["source_url"].get("$in", []))
             records = [row for row in records if row.get("source_url") in allowed]
@@ -132,12 +157,15 @@ class FakeCollection:
     def find_one(self, query, projection=None):
         del projection
         for row in self.records:
-            if row.get("project_id") == query.get("project_id") and row.get("source_url") == query.get("source_url"):
+            if (
+                row.get("project_id") == query.get("project_id")
+                and row.get("source_url") == query.get("source_url")
+            ):
                 return row
         return None
 
     def list_search_indexes(self):
-        return [{"name": "laclaugpt_vector", "type": "vectorSearch"}]
+        return [{"name": "laclaugpt_vector", "type": "vectorSearch"}] if self.vector else []
 
     def aggregate(self, pipeline, maxTimeMS=None):
         del maxTimeMS
@@ -192,7 +220,9 @@ def mongo_backend(tmp_path: Path) -> MongoQueryBackend:
     return MongoQueryBackend(settings=settings, client=FakeClient(FakeCollection(records)))
 
 
-def test_mongodb_graph_and_vector_context_are_backend_neutral(mongo_backend: MongoQueryBackend) -> None:
+def test_mongodb_graph_and_vector_context_are_backend_neutral(
+    mongo_backend: MongoQueryBackend,
+) -> None:
     mongo_backend.probe()
     records = mongo_backend.records().payload
     assert set(records["source_url"]) == {
@@ -200,7 +230,13 @@ def test_mongodb_graph_and_vector_context_are_backend_neutral(mongo_backend: Mon
         "https://example.invalid/2",
     }
 
-    graph = mongo_backend.graph(GraphRequest(roots=("https://example.invalid/1",), max_nodes=5, max_edges=6))
+    graph = mongo_backend.graph(
+        GraphRequest(
+            roots=("https://example.invalid/1",),
+            max_nodes=5,
+            max_edges=6,
+        )
+    )
     assert graph.metadata["backend"] == "mongodb"
     assert graph.payload["bounded"] is True
     assert len(graph.payload["nodes"]) <= 5
@@ -219,7 +255,25 @@ def test_mongodb_graph_and_vector_context_are_backend_neutral(mongo_backend: Mon
     assert pipeline[0]["$vectorSearch"]["filter"] == {"project_id": "ai26"}
 
 
-def test_graph_lookup_is_depth_and_limit_bounded(mongo_backend: MongoQueryBackend) -> None:
+def test_missing_vector_index_only_disables_retrieval(tmp_path: Path) -> None:
+    records = _frame().to_dict(orient="records")
+    settings = _settings(
+        tmp_path,
+        storage_backend="mongodb",
+        mongodb_uri="mongodb://synthetic.invalid:27017",
+    )
+    backend = MongoQueryBackend(
+        settings=settings,
+        client=FakeClient(FakeCollection(records, vector=False)),
+    )
+    assert backend.vector_capability().available is False
+    assert not backend.context(ContextRequest("https://example.invalid/1")).payload
+    assert not backend.graph(GraphRequest(max_nodes=5, max_edges=5)).payload.get("error")
+
+
+def test_graph_lookup_is_depth_and_limit_bounded(
+    mongo_backend: MongoQueryBackend,
+) -> None:
     mongo_backend.graph_lookup(["Actor:alice"], depth=99, limit=999999)
     pipeline = mongo_backend.graph_collection.last_pipeline
     lookup = pipeline[2]["$graphLookup"]
@@ -237,3 +291,16 @@ def test_storage_backend_never_exposes_uri_in_safe_summary(tmp_path: Path) -> No
     summary = settings.safe_summary()
     assert summary["storage_backend"] == "mongodb"
     assert "secret-host" not in repr(summary)
+
+
+def test_streamlit_pages_do_not_issue_mongodb_queries_directly() -> None:
+    root = Path(__file__).parents[1] / "src" / "laclaugpt_visualization"
+    ui_sources = [
+        (root / "app.py").read_text(encoding="utf-8"),
+        (root / "pages" / "Graph_Context_Explorer.py").read_text(encoding="utf-8"),
+    ]
+    for source in ui_sources:
+        assert "MongoClient" not in source
+        assert "$graphLookup" not in source
+        assert "$vectorSearch" not in source
+        assert "pymongo" not in source
