@@ -1,8 +1,7 @@
-"""Researcher-facing provenance helpers.
+"""Safe researcher-facing provenance projections.
 
-Visualization consumes provenance emitted by Collection and Analysis.  This module is
-intentionally read-only: it normalizes safe identifiers for display/filtering and never
-reconstructs private configuration, prompts, codebooks or context payloads.
+Visualization consumes Collection/Analysis provenance. It never executes codebooks,
+reconstructs private configuration, or renders private prompt/context payloads.
 """
 from __future__ import annotations
 
@@ -13,9 +12,6 @@ import pandas as pd
 
 UNKNOWN = "unknown / not recorded"
 
-# Fields that are useful to researchers and safe to surface as identifiers.  Values are
-# resolved from canonical records, analysis.model_runs and provenance events using aliases
-# kept deliberately broad while producers converge on the shared contract.
 FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "run_id": ("run_id", "analysis_run_id", "execution_id"),
     "study_id": ("study_id", "project_id", "project", "study"),
@@ -24,30 +20,72 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "country": ("country", "source_country"),
     "language": ("language", "source_language"),
     "effective_config_version": ("effective_config_version", "config_version"),
-    "effective_config_hash": ("effective_config_hash", "config_hash", "configuration_hash"),
-    "execution_profile": ("execution_profile", "machine_profile", "runtime_profile", "machine"),
+    "effective_config_hash": (
+        "effective_config_hash",
+        "config_hash",
+        "configuration_hash",
+        "config_sha256",
+    ),
+    "execution_profile": (
+        "execution_profile",
+        "machine_profile",
+        "runtime_profile",
+        "machine",
+    ),
     "context_profile": ("context_profile", "analysis_context_profile", "profile"),
-    "codebook_id": ("codebook_id", "codebook_identifier", "codebook"),
+    "codebook_id": ("codebook_id", "codebook_identifier"),
     "codebook_version": ("codebook_version",),
-    "codebook_hash": ("codebook_hash", "codebook_sha", "codebook_fingerprint"),
+    "codebook_hash": (
+        "codebook_hash",
+        "codebook_sha",
+        "codebook_sha256",
+        "codebook_fingerprint",
+    ),
     "model": ("model", "model_id", "llm_model"),
     "backend": ("backend", "provider", "llm_backend"),
     "task_profile": ("task_profile", "model_profile", "llm_profile"),
     "embedding_model": ("embedding_model", "embedding_model_id"),
-    "index_version": ("index_version", "embedding_index_version", "vector_index_version"),
-    "previous_summary_id": ("previous_summary_id", "daily_summary_id", "prior_summary_id"),
-    "pipeline_version": ("pipeline_version", "analysis_pipeline_version", "version"),
-    "validation_status": ("validation_status", "human_validation_status", "review_status"),
-    "collection_config_id": ("collection_config_id", "collection_provenance_id", "collection_run_id"),
+    "index_version": (
+        "index_version",
+        "embedding_index_version",
+        "vector_index_version",
+    ),
+    "previous_summary_id": (
+        "previous_summary_id",
+        "daily_summary_id",
+        "prior_summary_id",
+    ),
+    "pipeline_version": ("pipeline_version", "analysis_pipeline_version"),
+    "validation_status": (
+        "validation_status",
+        "human_validation_status",
+        "review_status",
+    ),
+    "collection_config_id": (
+        "collection_config_id",
+        "collection_provenance_id",
+        "collection_run_id",
+    ),
 }
 
-BOOL_ALIASES: dict[str, tuple[str, ...]] = {
+BOOL_ALIASES = {
     "rag_enabled": ("rag_enabled", "retrieval_enabled", "use_rag"),
-    "context_memory_enabled": ("context_memory_enabled", "memory_enabled", "use_context_memory"),
+    "context_memory_enabled": (
+        "context_memory_enabled",
+        "memory_enabled",
+        "use_context_memory",
+    ),
 }
 
-LIST_ALIASES: dict[str, tuple[str, ...]] = {
-    "retrieval_ids": ("retrieval_ids", "retrieval_id", "query_ids", "query_id", "request_ids", "request_id"),
+LIST_ALIASES = {
+    "retrieval_ids": (
+        "retrieval_ids",
+        "retrieval_id",
+        "query_ids",
+        "query_id",
+        "request_ids",
+        "request_id",
+    ),
     "context_source_refs": (
         "context_source_refs",
         "context_record_ids",
@@ -57,8 +95,6 @@ LIST_ALIASES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# Never expose values beneath these keys, even when a producer accidentally places them in
-# provenance.  Safe views are allowlisted as well, so this is defence in depth.
 SENSITIVE_KEY_PARTS = (
     "password",
     "passwd",
@@ -81,60 +117,9 @@ SAFE_EVENT_KEYS = {
     "method",
     "created_at",
     "producer",
-    "run_id",
-    "analysis_run_id",
-    "execution_id",
-    "study_id",
-    "project_id",
-    "arena",
-    "dataset",
-    "country",
-    "language",
-    "effective_config_version",
-    "config_version",
-    "effective_config_hash",
-    "config_hash",
-    "execution_profile",
-    "machine_profile",
-    "runtime_profile",
-    "context_profile",
-    "analysis_context_profile",
-    "codebook_id",
-    "codebook_identifier",
-    "codebook_version",
-    "codebook_hash",
-    "codebook_fingerprint",
-    "model",
-    "model_id",
-    "provider",
-    "backend",
-    "task_profile",
-    "model_profile",
-    "embedding_model",
-    "embedding_model_id",
-    "index_version",
-    "embedding_index_version",
-    "rag_enabled",
-    "retrieval_enabled",
-    "context_memory_enabled",
-    "memory_enabled",
-    "retrieval_id",
-    "retrieval_ids",
-    "query_id",
-    "query_ids",
-    "request_id",
-    "request_ids",
-    "context_source_refs",
-    "context_record_ids",
-    "source_records",
-    "previous_summary_id",
-    "daily_summary_id",
-    "pipeline_version",
-    "analysis_pipeline_version",
-    "validation_status",
-    "human_validation_status",
-    "collection_config_id",
-    "collection_provenance_id",
+    *{alias for aliases in FIELD_ALIASES.values() for alias in aliases},
+    *{alias for aliases in BOOL_ALIASES.values() for alias in aliases},
+    *{alias for aliases in LIST_ALIASES.values() for alias in aliases},
 }
 
 
@@ -162,22 +147,40 @@ def _events(row: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 
 
 def _candidate_mappings(row: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    """Return mappings from most specific/recent to broadest fallback."""
     raw = _mapping(row.get("raw_record"))
     analysis = _mapping(raw.get("analysis"))
     source = _mapping(raw.get("source"))
     model_runs = row.get("model_runs") or analysis.get("model_runs") or []
-    model_mappings = [value for value in model_runs if isinstance(value, Mapping)] if isinstance(model_runs, list) else []
-    provenance = _events(row)
-    return [*reversed(provenance), *reversed(model_mappings), analysis, source, raw, row]
+    models = (
+        [value for value in model_runs if isinstance(value, Mapping)]
+        if isinstance(model_runs, list)
+        else []
+    )
+    return [*reversed(_events(row)), *reversed(models), analysis, source, raw, row]
 
 
 def _first(row: Mapping[str, Any], aliases: Iterable[str]) -> Any:
     for mapping in _candidate_mappings(row):
         for alias in aliases:
             value = mapping.get(alias)
-            if _present(value):
+            if _present(value) and not isinstance(value, Mapping):
                 return value
+    return None
+
+
+def _nested(row: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    for mapping in _candidate_mappings(row):
+        value = mapping.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def _nested_value(mapping: Mapping[str, Any], keys: Iterable[str]) -> Any:
+    for key in keys:
+        value = mapping.get(key)
+        if _present(value) and not isinstance(value, Mapping):
+            return value
     return None
 
 
@@ -198,24 +201,47 @@ def _as_bool(value: Any) -> bool | None:
 def _as_list(value: Any) -> list[str]:
     if not _present(value):
         return []
-    if isinstance(value, (list, tuple, set)):
-        result: list[str] = []
-        for item in value:
-            if isinstance(item, Mapping):
-                identifier = next(
-                    (
-                        item.get(key)
-                        for key in ("source_url", "source_id", "record_id", "id", "ref")
-                        if _present(item.get(key))
-                    ),
-                    None,
-                )
-                if identifier is not None:
-                    result.append(str(identifier))
-            elif _present(item):
-                result.append(str(item))
-        return list(dict.fromkeys(result))
-    return [str(value)]
+    if not isinstance(value, (list, tuple, set)):
+        return [str(value)]
+    result: list[str] = []
+    for item in value:
+        if isinstance(item, Mapping):
+            identifier = _nested_value(
+                item,
+                ("source_url", "source_id", "record_id", "id", "ref"),
+            )
+            if identifier is not None:
+                result.append(str(identifier))
+        elif _present(item):
+            result.append(str(item))
+    return list(dict.fromkeys(result))
+
+
+def _apply_nested_runtime_fields(row: Mapping[str, Any], summary: dict[str, Any]) -> None:
+    codebook = _nested(row, "codebook")
+    if codebook:
+        nested = {
+            "codebook_id": _nested_value(codebook, ("codebook_id", "id", "name")),
+            "codebook_version": _nested_value(codebook, ("version", "codebook_version")),
+            "codebook_hash": _nested_value(
+                codebook,
+                ("sha256", "hash", "fingerprint", "codebook_hash"),
+            ),
+        }
+        for field, value in nested.items():
+            if summary[field] == UNKNOWN and _present(value):
+                summary[field] = str(value)
+
+    routing = _nested(row, "model_routing")
+    if routing:
+        nested = {
+            "model": _nested_value(routing, ("model", "model_id", "name")),
+            "backend": _nested_value(routing, ("backend", "provider")),
+            "task_profile": _nested_value(routing, ("task_profile", "profile")),
+        }
+        for field, value in nested.items():
+            if summary[field] == UNKNOWN and _present(value):
+                summary[field] = str(value)
 
 
 def summarize_provenance(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -225,7 +251,8 @@ def summarize_provenance(row: Mapping[str, Any]) -> dict[str, Any]:
         value = _first(row, aliases)
         summary[field] = str(value) if _present(value) else UNKNOWN
 
-    # Canonical flattened aliases are reliable fallbacks for source dimensions.
+    _apply_nested_runtime_fields(row, summary)
+
     for field, fallback in (
         ("country", row.get("source_country")),
         ("language", row.get("source_language")),
@@ -248,8 +275,6 @@ def summarize_provenance(row: Mapping[str, Any]) -> dict[str, Any]:
             values = list(dict.fromkeys([*values, *memory_refs]))
         summary[field] = values
 
-    # Presence of retrieval/context references is evidence that the facility was used even
-    # when an older producer did not emit explicit booleans.
     if summary["rag_enabled"] is None and summary["retrieval_ids"]:
         summary["rag_enabled"] = True
     if summary["context_memory_enabled"] is None and summary["context_source_refs"]:
@@ -258,7 +283,7 @@ def summarize_provenance(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def safe_provenance_events(row: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Return allowlisted provenance event fields, dropping accidental secret payloads."""
+    """Return allowlisted scalar/list event fields and drop private payloads."""
     safe: list[dict[str, Any]] = []
     for event in _events(row):
         clean: dict[str, Any] = {}
@@ -270,17 +295,13 @@ def safe_provenance_events(row: Mapping[str, Any]) -> list[dict[str, Any]]:
                 continue
             if isinstance(value, Mapping):
                 continue
-            if isinstance(value, (list, tuple, set)):
-                clean[key] = _as_list(value)
-            else:
-                clean[key] = value
+            clean[key] = _as_list(value) if isinstance(value, (list, tuple, set)) else value
         if clean:
             safe.append(clean)
     return safe
 
 
 def provenance_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    """Project normalized records into filterable provenance columns."""
     columns = [*FIELD_ALIASES, *BOOL_ALIASES, *LIST_ALIASES]
     if frame.empty:
         return pd.DataFrame(columns=columns, index=frame.index)
@@ -289,7 +310,6 @@ def provenance_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def mixed_provenance_dimensions(frame: pd.DataFrame) -> dict[str, list[str]]:
-    """Identify material provenance dimensions that differ within the current view."""
     projected = provenance_frame(frame)
     material = (
         "run_id",
@@ -305,8 +325,6 @@ def mixed_provenance_dimensions(frame: pd.DataFrame) -> dict[str, list[str]]:
     )
     mixed: dict[str, list[str]] = {}
     for field in material:
-        if field not in projected:
-            continue
         values = sorted(
             {
                 str(value)
