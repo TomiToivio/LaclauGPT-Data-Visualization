@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,13 +26,22 @@ SAFE_EVENT_FIELDS = (
     "producer",
     "created_at",
 )
-DEFAULT_OPERATIONAL_ERRORS: tuple[type[BaseException], ...] = (
-    ConnectionError,
-    OSError,
-    TimeoutError,
-    TypeError,
-    ValueError,
-)
+
+
+def _default_operational_errors() -> tuple[type[BaseException], ...]:
+    """Return outage/parsing exceptions without making redis a hard dependency."""
+    errors: tuple[type[BaseException], ...] = (
+        ConnectionError,
+        OSError,
+        TimeoutError,
+        TypeError,
+        ValueError,
+    )
+    try:
+        from redis.exceptions import RedisError
+    except ImportError:
+        return errors
+    return errors + (RedisError,)
 
 
 def _decode(value: Any) -> str:
@@ -110,7 +119,7 @@ class RedisOperationalStatus:
     prefix: str = "laclaugpt"
     heartbeat_ttl_seconds: int = 60
     event_limit: int = 25
-    error_types: tuple[type[BaseException], ...] = DEFAULT_OPERATIONAL_ERRORS
+    error_types: tuple[type[BaseException], ...] = field(default_factory=_default_operational_errors)
 
     def __post_init__(self) -> None:
         if self.heartbeat_ttl_seconds < 5:
