@@ -21,7 +21,7 @@ _OBJECT_FIELDS = (
     "review",
     "legacy",
 )
-_LIST_FIELDS = ("evidence", "provenance")
+_LIST_FIELDS = ("source_units", "alignments", "evidence", "provenance")
 
 LEGACY_COLUMNS = (
     "country", "author_username", "account_type", "source_type", "source_recording",
@@ -183,18 +183,21 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
     native_ids = record.get("source_native_ids", {})
     object_ref = next(
         (
-            str(item.get("object_ref"))
+            str(item.get("object_ref") or item.get("ref"))
             for item in media
-            if isinstance(item, dict) and item.get("object_ref")
+            if isinstance(item, dict) and (item.get("object_ref") or item.get("ref"))
         ),
         "",
     )
 
     result: dict[str, Any] = {
         "schema_version": str(record.get("schema_version") or ""),
+        "fixture_version": str(record.get("fixture_version") or ""),
         "document_id": source_url,
         "source_url": source_url,
         "source_native_ids": native_ids,
+        "source_units": record["source_units"],
+        "alignments": record["alignments"],
         "raw_capture": raw_capture,
         "source_platform": str(source.get("platform") or ""),
         "source_type": str(source.get("source_type") or ""),
@@ -216,14 +219,17 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         "human_readable_summary": str(human.get("summary") or ""),
         "human_readable_markdown": str(human.get("markdown") or ""),
         "source_text": str(content.get("text") or ""),
+        "content_title": str(content.get("title") or ""),
         "transcript": transcript,
         "translated_text": whisper_translated,
         "ocr": ocr,
+        "ocr_items": ocr_rows,
         "frames": frames,
         "frame_analysis": frame_analysis,
         "media_references": media,
         "file_references": files,
         "representations": _list(analysis.get("representations")),
+        "analysis_objects": _list(analysis.get("analysis_objects")),
         "entities": entities,
         "entity_mentions": _list(analysis.get("entity_mentions")),
         "topics": topics,
@@ -242,10 +248,10 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         "sentiment_labels": sentiments,
         "formula_of_populism": formula,
         "relations": _list(analysis.get("relations")),
-        "uncertainties": [str(value) for value in _list(analysis.get("uncertainty"))],
-        "abstentions": [str(value) for value in _list(analysis.get("abstentions"))],
-        "codebook_refs": [str(value) for value in _list(analysis.get("codebook_refs"))],
-        "memory_refs": [str(value) for value in _list(analysis.get("memory_refs"))],
+        "uncertainties": _list(analysis.get("uncertainty")),
+        "abstentions": _list(analysis.get("abstentions")),
+        "codebook_refs": _list(analysis.get("codebook_refs")),
+        "memory_refs": _list(analysis.get("memory_refs")),
         "model_runs": _list(analysis.get("model_runs")),
         "evidence": evidence,
         "review_status": str(review.get("status") or "PROVISIONAL"),
