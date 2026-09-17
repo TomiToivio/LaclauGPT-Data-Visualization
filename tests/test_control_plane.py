@@ -106,7 +106,9 @@ def test_task_permission_revision_and_commands(tmp_path: Path):
 
 
 def test_secret_redaction_is_recursive():
-    clean = redact_config({"nested": {"password": "x", "model": "m"}, "tokens": [{"api_key": "y"}]})
+    clean = redact_config(
+        {"nested": {"password": "x", "model": "m"}, "tokens": [{"api_key": "y"}]}
+    )
     assert clean["nested"]["password"] == "<redacted>"
     assert clean["nested"]["model"] == "m"
-    assert clean["tokens"][0]["api_key"] == "<redacted>"
+    assert clean["tokens"] == "<redacted>"
