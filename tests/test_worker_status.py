@@ -32,6 +32,13 @@ class FakeRedis:
         return self.streams.get(key, [])[:count]
 
 
+class RedisClientConnectionFailure:
+    def scan_iter(self, match):
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        raise RedisConnectionError("synthetic redis client outage")
+
+
 def heartbeat(*, updated_at, status="busy", run_id="run-1", worker_id="worker-1"):
     return json.dumps(
         {
@@ -118,6 +125,14 @@ def test_workflow_events_expose_identifiers_not_payloads():
 
 def test_redis_outage_degrades_to_unavailable_snapshot():
     snapshot = RedisOperationalStatus(FakeRedis(fail=True)).snapshot("demo26")
+    assert snapshot.available is False
+    assert snapshot.workers == ()
+    assert snapshot.events == ()
+    assert "durable research data is unaffected" in snapshot.note
+
+
+def test_redis_client_connection_error_degrades_to_unavailable_snapshot():
+    snapshot = RedisOperationalStatus(RedisClientConnectionFailure()).snapshot("demo26")
     assert snapshot.available is False
     assert snapshot.workers == ()
     assert snapshot.events == ()
