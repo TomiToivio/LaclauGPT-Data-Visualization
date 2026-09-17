@@ -11,8 +11,8 @@ from .data import load_frame, normalize_frame
 from .query_backends import BackendUnavailable, MongoQueryBackend
 
 
-def _local_fallback_frame(settings: Settings) -> pd.DataFrame:
-    """Load the same portable local inputs used by the dashboard without remote services."""
+def load_local_frame(settings: Settings) -> pd.DataFrame:
+    """Load the portable local visualization input without contacting remote services."""
     if settings.data_backend == "sqlite" and settings.sqlite_path.exists():
         return load_frame(settings.sqlite_path, settings)
     roots = [settings.analysis_data_dir, settings.data_dir]
@@ -39,7 +39,7 @@ def load_mongodb(settings: Settings, query: dict[str, Any] | None = None) -> pd.
             from pymongo.errors import PyMongoError
         except ImportError as exc:
             if settings.storage_backend == "auto":
-                return _local_fallback_frame(settings)
+                return load_local_frame(settings)
             raise RuntimeError("Install laclaugpt-data-visualization[remote] for MongoDB") from exc
         client = MongoClient(
             settings.mongodb_uri,
@@ -55,7 +55,7 @@ def load_mongodb(settings: Settings, query: dict[str, Any] | None = None) -> pd.
             return normalize_frame(pd.DataFrame(records))
         except (PyMongoError, ConnectionError, OSError, TimeoutError) as exc:
             if settings.storage_backend == "auto":
-                return _local_fallback_frame(settings)
+                return load_local_frame(settings)
             raise BackendUnavailable("Configured MongoDB is unavailable.") from exc
         finally:
             client.close()
@@ -66,7 +66,7 @@ def load_mongodb(settings: Settings, query: dict[str, Any] | None = None) -> pd.
         return product.payload
     except BackendUnavailable:
         if settings.storage_backend == "auto":
-            return _local_fallback_frame(settings)
+            return load_local_frame(settings)
         raise
 
 
