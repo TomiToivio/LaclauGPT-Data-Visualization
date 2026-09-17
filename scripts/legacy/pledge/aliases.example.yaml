@@ -1,0 +1,13 @@
+version: pledge-normalization-v1
+country_aliases:
+  finland: Finland
+  suomi: Finland
+  poland: Poland
+  polska: Poland
+platform_aliases:
+  twitter: X
+  x.com: X
+  instagram: Instagram
+  tiktok: TikTok
+notes:
+  political_alignment: Never infer or repair in visualization; preserve observed, legacy_derived, or missing provenance.
