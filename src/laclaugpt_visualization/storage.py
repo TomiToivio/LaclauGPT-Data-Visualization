@@ -7,26 +7,67 @@ from typing import Any
 import pandas as pd
 
 from .config import Settings
-from .data import normalize_frame
+from .data import load_frame, normalize_frame
+from .query_backends import BackendUnavailable, MongoQueryBackend
+
+
+def _local_fallback_frame(settings: Settings) -> pd.DataFrame:
+    """Load the same portable local inputs used by the dashboard without remote services."""
+    if settings.data_backend == "sqlite" and settings.sqlite_path.exists():
+        return load_frame(settings.sqlite_path, settings)
+    roots = [settings.analysis_data_dir, settings.data_dir]
+    candidates: list[Path] = []
+    for root in roots:
+        if root and Path(root).exists():
+            for suffix in ("*.jsonl", "*.ndjson", "*.csv", "*.json", "*.parquet"):
+                candidates.extend(sorted(Path(root).glob(suffix)))
+    return load_frame(candidates[0], settings) if candidates else normalize_frame(pd.DataFrame())
 
 
 def load_mongodb(settings: Settings, query: dict[str, Any] | None = None) -> pd.DataFrame:
-    """Load project-scoped records from MongoDB. Requires the ``remote`` extra."""
-    settings.validate_remote_requirements()
-    try:
-        from pymongo import MongoClient
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError("Install laclaugpt-data-visualization[remote] for MongoDB") from exc
+    """Load project-scoped records, falling back only when ``storage_backend=auto``.
 
-    client = MongoClient(settings.mongodb_uri)
+    Explicit MongoDB mode fails clearly. Auto mode treats MongoDB as the preferred shared
+    backend but preserves local/CSV operation if the optional driver or remote service is
+    unavailable.
+    """
+    settings.validate_remote_requirements()
+    if query:
+        # Backward-compatible ad hoc query path. It remains bounded to the current project.
+        try:
+            from pymongo import MongoClient
+            from pymongo.errors import PyMongoError
+        except ImportError as exc:
+            if settings.storage_backend == "auto":
+                return _local_fallback_frame(settings)
+            raise RuntimeError("Install laclaugpt-data-visualization[remote] for MongoDB") from exc
+        client = MongoClient(
+            settings.mongodb_uri,
+            serverSelectionTimeoutMS=settings.mongodb_connect_timeout_ms,
+            connectTimeoutMS=settings.mongodb_connect_timeout_ms,
+            appname="laclaugpt-data-visualization",
+        )
+        try:
+            collection = client[settings.mongodb_database][settings.resolved_mongodb_collection]
+            project_query = dict(query)
+            project_query["project_id"] = settings.project_id
+            records = list(collection.find(project_query, {"_id": False}))
+            return normalize_frame(pd.DataFrame(records))
+        except (PyMongoError, ConnectionError, OSError, TimeoutError) as exc:
+            if settings.storage_backend == "auto":
+                return _local_fallback_frame(settings)
+            raise BackendUnavailable("Configured MongoDB is unavailable.") from exc
+        finally:
+            client.close()
+
     try:
-        collection = client[settings.mongodb_database][settings.resolved_mongodb_collection]
-        project_query = dict(query or {})
-        project_query["project_id"] = settings.project_id
-        records = list(collection.find(project_query, {"_id": False}))
-    finally:
-        client.close()
-    return normalize_frame(pd.DataFrame(records))
+        backend = MongoQueryBackend.from_settings(settings)
+        product = backend.records()
+        return product.payload
+    except BackendUnavailable:
+        if settings.storage_backend == "auto":
+            return _local_fallback_frame(settings)
+        raise
 
 
 def redis_client(settings: Settings):
