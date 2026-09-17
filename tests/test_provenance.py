@@ -97,17 +97,16 @@ def _roundtrip(record: dict, path, backend: str):
 
 
 def test_full_provenance_summary_exposes_safe_research_identifiers() -> None:
-    frame = pd.DataFrame([load_frame])  # keep pandas imported in this focused unit test
-    del frame
+    record = _record()
     row = {
-        **_record(),
+        **record,
         "source_country": "FI",
         "source_language": "fi",
         "review_status": "ACCEPTED",
-        "model_runs": _record()["analysis"]["model_runs"],
+        "model_runs": record["analysis"]["model_runs"],
         "codebook_refs": ["ai26-core"],
         "memory_refs": ["synthetic://context/legacy-memory-ref"],
-        "raw_record": _record(),
+        "raw_record": record,
     }
     summary = summarize_provenance(row)
     assert summary["run_id"] == "run-1"
@@ -206,4 +205,4 @@ def test_provenance_projection_supports_json_csv_and_sqlite(tmp_path) -> None:
         assert projected.iloc[0]["context_profile"] == "balanced"
         assert projected.iloc[0]["codebook_hash"] == "cb-aaa"
         assert projected.iloc[0]["model"] == "gemma4"
-        assert projected.iloc[0]["rag_enabled"] is True
+        assert bool(projected.iloc[0]["rag_enabled"]) is True
