@@ -10,4 +10,6 @@ On Laskin, the public working tree is exactly `/mnt/workspace/LaclauGPT-Data-Vis
 
 Use `laclaugpt_visualization.integrations.hermes` for redacted config inspection, input validation, bounded dataset metadata inspection, service validation, exports, safe cache operations and human-review requests. Agents may only perform actions explicitly requested by the user or defined by an authorized scheduled task; do not silently mutate Collection/Analysis semantics or distributed configuration.
 
+Run the offline cross-module contract check (`python tools/verify_contracts.py`) when a change touches the canonical adapter, a view-model transform or a loader.
+
 Preserve `source_url`, schema version, provenance, uncertainty, abstention and multi-label semantics. Distributed operation uses the existing MongoDB/Redis/S3-or-Allas adapters. Never expose secrets, invent deployment values, flush shared Redis implicitly, commit private data/review state, or publish private issue/PR details into public repositories. Use synthetic/public-safe fixtures in public tests and run repository quality gates before proposing a merge.

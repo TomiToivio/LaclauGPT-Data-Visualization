@@ -31,6 +31,24 @@ Frequency, centrality, layout and co-occurrence are descriptive signals, not aut
 
 AI26 is the realistic public reference case. Arena is sampling provenance, not ideology. Formation labels are provisional aggregation anchors and may overlap. Candidate signifiers are useful filters/context terms, not validated theoretical conclusions. Never hard-code AI26-specific values into generic contracts when a configurable dimension is appropriate.
 
+## Cross-module contract conformance
+
+Visualization is the last stage of `Collection -> Analysis -> Visualization` and must render canonical records through the generic adapter, never a project-specific one. Three project-wide contracts are normative here and are owned by the meta-repository `TomiToivio/LaclauGPT`:
+
+- `docs/CANONICAL_DATA_CONTRACT.md` — `source_url` is the semantic identity and must reach the view model unchanged. MongoDB `_id`, SQLite keys and DataFrame row numbers are never research identity.
+- `docs/STORAGE_BACKEND_CONTRACT.md` — backend selection is a deployment concern; the dashboard consumes a repository/query abstraction rather than issuing backend-specific queries.
+- `fixtures/cross_module/canonical_parity_v1.json` — the versioned schema-drift tripwire. A repository-local copy is vendored under `tests/fixtures/`; never fork its semantics into a second incompatible fixture.
+
+Run the offline conformance check before proposing a change to the canonical adapter, the view-model transforms or a loader:
+
+```bash
+python tools/verify_contracts.py
+```
+
+It verifies that the fixture renders generically (no project-specific adapter), that multimodal-shaped fields and analysis metadata (provenance, uncertainty, codebook references, model runs) survive into the view model, that review state stays human-controlled and provisional interpretation is never promoted during rendering, that monitor/explore views build, that the SQLite loader reconstructs the same record, and that the public-tree policy still passes. It contacts nothing and writes no research data; the exit status is the gate.
+
+Do not treat a green unit suite as contract conformance: these checks are deliberately independent of the module's own tests, because a shared-schema break appears as a mismatch *between* modules rather than as a failing unit here.
+
 ## Deployment
 
 Local/laptop workflow may read Analysis files/SQLite directly. Linux web-service workflow may use local or distributed storage. Distributed mode uses MongoDB for queryable canonical records/review state, Redis for project-scoped settings/cache/coordination/pub-sub where useful, and S3-compatible storage such as CSC Allas for referenced artifacts.
