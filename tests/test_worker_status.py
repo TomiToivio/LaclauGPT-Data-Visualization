@@ -1,5 +1,7 @@
 import json
+import sys
 from datetime import UTC, datetime, timedelta
+from types import ModuleType
 
 from laclaugpt_visualization.config import Settings
 from laclaugpt_visualization.worker_status import RedisOperationalStatus
@@ -30,13 +32,6 @@ class FakeRedis:
         if self.fail:
             raise ConnectionError("synthetic outage")
         return self.streams.get(key, [])[:count]
-
-
-class RedisClientConnectionFailure:
-    def scan_iter(self, match):
-        from redis.exceptions import ConnectionError as RedisConnectionError
-
-        raise RedisConnectionError("synthetic redis client outage")
 
 
 def heartbeat(*, updated_at, status="busy", run_id="run-1", worker_id="worker-1"):
@@ -131,7 +126,25 @@ def test_redis_outage_degrades_to_unavailable_snapshot():
     assert "durable research data is unaffected" in snapshot.note
 
 
-def test_redis_client_connection_error_degrades_to_unavailable_snapshot():
+def test_redis_client_connection_error_degrades_to_unavailable_snapshot(monkeypatch):
+    class RedisError(Exception):
+        pass
+
+    class RedisConnectionError(RedisError):
+        pass
+
+    redis_module = ModuleType("redis")
+    exceptions_module = ModuleType("redis.exceptions")
+    exceptions_module.RedisError = RedisError
+    exceptions_module.ConnectionError = RedisConnectionError
+    redis_module.exceptions = exceptions_module
+    monkeypatch.setitem(sys.modules, "redis", redis_module)
+    monkeypatch.setitem(sys.modules, "redis.exceptions", exceptions_module)
+
+    class RedisClientConnectionFailure:
+        def scan_iter(self, match):
+            raise RedisConnectionError("synthetic redis client outage")
+
     snapshot = RedisOperationalStatus(RedisClientConnectionFailure()).snapshot("demo26")
     assert snapshot.available is False
     assert snapshot.workers == ()
