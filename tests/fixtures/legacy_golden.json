@@ -1,0 +1,19 @@
+{
+  "contract_version": "legacy-view-v1",
+  "pledge": {
+    "rows": [
+      {"source_id":"p1","date":"2024-06-01","country":"Finland","platform":"TikTok","grievance":"Public services first","political_alignment":"Left","topics":"welfare; AI","entities":"Parliament","positive":"solidarity","neutral":"policy","negative":"cuts"},
+      {"source_id":"p2","date":"2024-06-02","country":"Poland","platform":"Instagram","grievance":"Jobs and wages","political_alignment":"","legacy_derived_alignment":"Centre","topics":"labour; AI","entities":"Government","positive":"jobs","neutral":"automation","negative":"inequality"},
+      {"source_id":"p3","date":"2024-06-02","country":"Finland","platform":"X","grievance":"No label supplied","political_alignment":"","topics":"AI","entities":"","positive":"","neutral":"","negative":""}
+    ],
+    "expected_alignment_status": {"observed":1,"legacy_derived":1,"missing":1}
+  },
+  "art": {
+    "rows": [
+      {"source_id":"a1","country":"Finland","summary_analysis":"## Themes\n- Public AI\n- Labour\n## Entities\n- Parliament"},
+      {"source_id":"a2","country":"Poland","summary_analysis":"## Themes\n- Public AI\n- Sovereignty\n## Entities\n- Parliament"}
+    ],
+    "expected_concepts": 6,
+    "expected_public_ai_edges": 2
+  }
+}
