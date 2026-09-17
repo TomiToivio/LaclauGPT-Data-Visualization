@@ -6,12 +6,13 @@ module never opens MongoDB/Redis connections, so local/offline dashboard use sta
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import sqlite3
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 
@@ -29,7 +30,7 @@ def _contains_secret_key(value: Mapping[str, Any]) -> bool:
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +132,7 @@ class RedisConfigService:
             raw = raw.decode("utf-8")
         data = json.loads(raw)
         if not isinstance(data, dict):
-            raise ValueError("distributed configuration must be a JSON object")
+            raise TypeError("distributed configuration must be a JSON object")
         return data
 
     def update(
