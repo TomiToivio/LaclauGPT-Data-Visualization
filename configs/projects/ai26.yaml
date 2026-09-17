@@ -1,0 +1,107 @@
+schema_version: "1"
+project_id: ai26
+title: Ideological contestation over AI
+mode: ai26-research-dashboard
+storage: distributed
+data_backend: mongodb
+cache_backend: redis
+messaging_backend: redis
+canonical_analysis_codebook: TomiToivio/LaclauGPT-Data-Analysis:codebooks/public/ai26_v2.yaml
+private_overlay_required: false
+
+arenas:
+  elites: AI labs, researchers, entrepreneurs, intellectuals and adjacent movements
+  grassroots: Mobilisation around labour, culture, surveillance, environment, data centres, safety and deployment resistance
+  parliamentary: Parliamentary, electoral, government, party and policy discourse
+
+formations:
+  accelerationism:
+    display_label: Accelerationism / techno-optimist discourse
+    description: Provisional upstream aggregation anchor; not a permanent actor identity.
+    provisional: true
+    multi_label: true
+  doomerism:
+    display_label: Catastrophic-risk / doomer discourse
+    description: Provisional upstream aggregation anchor; terminology is situated and contested.
+    provisional: true
+    multi_label: true
+  left-wing accelerationism:
+    display_label: Left / public-interest techno-optimism
+    description: Provisional upstream aggregation anchor for egalitarian, post-work or public-interest technology-positive discourse.
+    provisional: true
+    multi_label: true
+  ai safety:
+    display_label: AI safety / alignment
+    description: Provisional upstream aggregation anchor for safety, alignment, evaluation, pacing and governance discourse.
+    provisional: true
+    multi_label: true
+  ai critical:
+    display_label: Critical AI
+    description: Provisional upstream aggregation anchor for power, labour, inequality, surveillance, extraction and ownership discourse.
+    provisional: true
+    multi_label: true
+  anti-ai:
+    display_label: Anti-AI / refusal / deployment resistance
+    description: Provisional upstream aggregation anchor; opposition to one deployment is not generalized to all AI.
+    provisional: true
+    multi_label: true
+
+filters:
+  - time
+  - source
+  - platform
+  - source_family
+  - author
+  - arena
+  - language
+  - formation
+  - signifier
+  - topic
+  - entity
+  - analysis_stage
+  - review_status
+  - uncertainty_status
+  - run_revision
+  - schema_version
+  - model_revision
+  - prompt_revision
+  - codebook_revision
+
+tabs:
+  - Monitor
+  - Explore
+  - Networks
+  - Records
+  - Reports
+  - RAG Chat
+  - Configuration
+  - Hermes
+  - Diagnostics
+
+optional_capabilities:
+  dna: true
+  rdf: false
+  rdf_graphrag: false
+  critical_ai: true
+  rag_chat: true
+  hermes: true
+  redis_config_editing: true
+  redis_worker_status: true
+
+limits:
+  table_page_size: 100
+  graph_max_nodes: 500
+  graph_max_edges: 1000
+  refresh_seconds: 30
+
+semantic_safeguards:
+  - frequency is not hegemony
+  - graph degree or centrality is not a nodal point
+  - cluster or community is not an ideological formation
+  - actor agreement is not Laclaudian equivalence
+  - negative or conflict edge is not an antagonistic frontier by itself
+  - semantic proximity is not equivalence
+  - sentiment is not affective investment
+  - topic prevalence is not discourse or hegemony
+  - source-family prior is not current-document ideology
+  - formation labels are provisional, multi-label and reviewable
