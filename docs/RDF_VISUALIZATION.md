@@ -37,7 +37,7 @@ When RDF is disabled, the RDF page clearly reports that project policy disables 
 
 ## Bounded graph explorer
 
-The Streamlit page `pages/31_RDF_Explorer.py` supports bounded semantic exploration with:
+The Streamlit page `pages/rdf_explorer.py` supports bounded semantic exploration with:
 
 - class/type and predicate filters;
 - named/project graph filters;
