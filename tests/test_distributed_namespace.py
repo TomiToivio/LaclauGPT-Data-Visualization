@@ -15,6 +15,11 @@ def test_settings_default_mongodb_collection_is_project_scoped() -> None:
     assert settings.resolved_mongodb_collection == "ep24__annotations"
 
 
+def test_periodic_summary_collection_kind_matches_analysis_namespace() -> None:
+    ns = ProjectNamespace("ai26")
+    assert ns.mongo_collection("periodic_summaries") == "ai26__periodic_summaries"
+
+
 def test_redis_helpers_stay_inside_project_namespace() -> None:
     settings = Settings(_env_file=None, project_id="hungary26")
     assert redis_cache_key(settings, "monitor") == "laclaugpt:hungary26:cache:monitor"
