@@ -2,11 +2,7 @@ import json
 
 import pytest
 
-from laclaugpt_visualization.plugins import (
-    Permission,
-    PluginKind,
-    default_registry,
-)
+from laclaugpt_visualization.plugins import PluginKind, default_registry
 from laclaugpt_visualization.products import DataProduct, InMemoryProvider, ProductKind
 from laclaugpt_visualization.services import (
     MongoRecordService,
