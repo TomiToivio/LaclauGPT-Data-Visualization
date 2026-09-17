@@ -21,7 +21,7 @@ def monitor(frame: pd.DataFrame) -> dict[str, object]:
         "documents": len(frame),
         "analyzed": int((status != "collection-only").sum()),
         "awaiting_analysis": int((status == "collection-only").sum()),
-        "awaiting_review": int(~reviewed.isin(["ACCEPTED", "CANONICAL", "verified"]).sum()),
+        "awaiting_review": int((~reviewed.isin(["ACCEPTED", "CANONICAL", "verified"])).sum()),
         "latest_source": source_time.max().isoformat() if len(source_time) and pd.notna(source_time.max()) else "",
         "latest_analysis": analysis_time.max().isoformat() if len(analysis_time) and pd.notna(analysis_time.max()) else "",
         "formations": explode_labels(frame, "formations"),
@@ -80,138 +80,45 @@ def relations(frame: pd.DataFrame) -> pd.DataFrame:
         for relation in values:
             if not isinstance(relation, dict):
                 continue
-            source = str(relation.get("source_ref") or relation.get("source") or "").strip()
-            target = str(relation.get("target_ref") or relation.get("target") or "").strip()
-            if not source or not target:
-                continue
-            evidence = relation.get("evidence_refs") or relation.get("evidence") or []
-            if isinstance(evidence, str):
-                evidence = [evidence]
-            if not isinstance(evidence, list):
-                evidence = []
             rows.append(
                 {
-                    "source": source,
-                    "target": target,
-                    "type": str(relation.get("relation_type") or relation.get("type") or "related_to"),
-                    "document_id": str(row.get("document_id", "")),
-                    "source_url": str(row.get("source_url", "")),
-                    "weight": float(relation.get("weight") or 1.0),
-                    "edge_status": _edge_status(relation, str(row.get("review_status", "PROVISIONAL"))),
-                    "evidence_refs": evidence,
-                    "summary": str(row.get("human_readable_summary") or row.get("summary") or ""),
-                    "timestamp": row.get("source_timestamp") or row.get("analysis_timestamp") or "",
+                    "source": relation.get("source") or relation.get("from") or relation.get("source_id") or "",
+                    "target": relation.get("target") or relation.get("to") or relation.get("target_id") or "",
+                    "type": relation.get("type") or relation.get("relation") or relation.get("label") or "",
+                    "document_id": row.get("document_id", ""),
+                    "source_url": row.get("source_url", ""),
+                    "weight": relation.get("weight", relation.get("confidence", "")),
+                    "edge_status": _edge_status(relation, str(row.get("review_status", ""))),
+                    "evidence_refs": relation.get("evidence_refs") or relation.get("evidence") or [],
+                    "summary": relation.get("summary") or relation.get("description") or "",
+                    "timestamp": relation.get("timestamp") or relation.get("created_at") or "",
                 }
             )
     return pd.DataFrame(rows, columns=columns)
 
 
-def relation_summary(frame: pd.DataFrame) -> pd.DataFrame:
-    values = relations(frame)
-    if values.empty:
-        return pd.DataFrame(columns=["type", "count"])
-    return values["type"].value_counts().rename_axis("type").reset_index(name="count")
-
-
-def graph_projection(
-    frame: pd.DataFrame,
-    *,
-    max_edges: int = 500,
-    max_nodes: int = 500,
-) -> dict[str, object]:
-    """Build a bounded canonical-data network fallback.
-
-    Edges remain linked to source records/evidence. Duplicate relations are aggregated only
-    for weight/degree while preserving contributing record URLs. Both node and edge counts are
-    bounded so a dashboard cannot accidentally materialize a complete corpus graph.
-    """
-    raw = relations(frame)
-    if raw.empty:
-        return {"nodes": [], "edges": [], "bounded": True, "truncated": False}
-
-    raw = raw.head(max(1, max_edges)).copy()
-    grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
-    for edge in raw.to_dict(orient="records"):
-        key = (edge["source"], edge["target"], edge["type"], edge["edge_status"])
-        current = grouped.setdefault(
-            key,
-            {
-                "source": edge["source"],
-                "target": edge["target"],
-                "type": edge["type"],
-                "edge_status": edge["edge_status"],
-                "weight": 0.0,
-                "record_count": 0,
-                "source_urls": [],
-                "evidence_refs": [],
-            },
-        )
-        current["weight"] += float(edge["weight"])
-        current["record_count"] += 1
-        if edge["source_url"] and edge["source_url"] not in current["source_urls"]:
-            current["source_urls"].append(edge["source_url"])
-        for ref in edge["evidence_refs"]:
-            text = str(ref)
-            if text and text not in current["evidence_refs"]:
-                current["evidence_refs"].append(text)
-
-    all_edges = list(grouped.values())
-    degree: Counter[str] = Counter()
-    for edge in all_edges:
-        degree[edge["source"]] += edge["record_count"]
-        degree[edge["target"]] += edge["record_count"]
-
-    allowed_nodes = {
-        label for label, _count in degree.most_common(max(1, max_nodes))
-    }
-    edges = [
-        edge
-        for edge in all_edges
-        if edge["source"] in allowed_nodes and edge["target"] in allowed_nodes
-    ][: max(1, max_edges)]
-
-    node_types: dict[str, set[str]] = {}
-    for _, row in frame.iterrows():
-        actor = str(row.get("source_author") or "").strip()
-        if actor:
-            node_types.setdefault(actor, set()).add("actor")
-        for field, kind in (
-            ("entities", "entity"),
-            ("signifiers", "signifier"),
-            ("topics", "topic"),
-            ("formations", "formation"),
-        ):
-            values = row.get(field, [])
-            if isinstance(values, list):
-                for value in values:
-                    text = str(value).strip()
-                    if text:
-                        node_types.setdefault(text, set()).add(kind)
-
-    nodes = [
-        {
-            "id": label,
-            "label": label,
-            "degree": int(count),
-            "kinds": sorted(node_types.get(label, {"unknown"})),
-        }
-        for label, count in degree.most_common(max(1, max_nodes))
-    ]
-    return {
-        "nodes": nodes,
-        "edges": edges,
-        "bounded": True,
-        "truncated": len(degree) > max_nodes or len(all_edges) > max_edges,
-        "limits": {"nodes": max_nodes, "edges": max_edges},
-    }
-
-
 def explore(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
     return {
-        "timeline": timeline(frame),
         "formations": explode_labels(frame, "formations"),
+        "signifiers": explode_labels(frame, "signifiers"),
         "topics": explode_labels(frame, "topics"),
         "entities": explode_labels(frame, "entities"),
-        "signifiers": explode_labels(frame, "signifiers"),
-        "relations": relation_summary(frame),
+        "discourses": explode_labels(frame, "discourses"),
+        "imaginaries": explode_labels(frame, "imaginaries"),
     }
+
+
+def cooccurrence(frame: pd.DataFrame, column: str) -> pd.DataFrame:
+    counts: Counter[tuple[str, str]] = Counter()
+    if column not in frame:
+        return pd.DataFrame(columns=["source", "target", "count"])
+    for values in frame[column]:
+        if not isinstance(values, list):
+            continue
+        labels = sorted({str(value).strip() for value in values if str(value).strip()})
+        for index, source in enumerate(labels):
+            for target in labels[index + 1 :]:
+                counts[(source, target)] += 1
+    return pd.DataFrame(
+        [{"source": source, "target": target, "count": count} for (source, target), count in counts.items()]
+    )
