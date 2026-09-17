@@ -524,15 +524,24 @@ def _live_status_page(frame) -> None:
             socket_timeout=1.5,
             decode_responses=False,
         )
-        status = RedisOperationalStatus(
-            client,
-            prefix=settings.redis_key_prefix,
-            heartbeat_ttl_seconds=settings.redis_heartbeat_ttl_seconds,
-            event_limit=settings.redis_event_limit,
-        ).snapshot(settings.project_id, run_ids=_run_ids(frame))
-    except Exception:
-        st.warning("Live Redis status is unavailable; durable research data is unaffected.")
+    except ValueError:
+        st.warning("Live Redis status is unavailable because the private runtime Redis URL is invalid.")
         return
+
+    status = RedisOperationalStatus(
+        client,
+        prefix=settings.redis_key_prefix,
+        heartbeat_ttl_seconds=settings.redis_heartbeat_ttl_seconds,
+        event_limit=settings.redis_event_limit,
+        error_types=(
+            redis.exceptions.RedisError,
+            ConnectionError,
+            OSError,
+            TimeoutError,
+            TypeError,
+            ValueError,
+        ),
+    ).snapshot(settings.project_id, run_ids=_run_ids(frame))
 
     if not status.available:
         st.warning(status.note)
