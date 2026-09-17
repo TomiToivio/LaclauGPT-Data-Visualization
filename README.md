@@ -54,6 +54,18 @@ It provides one researcher-facing application with Monitor, Researcher Review, a
 
 Counts, model confidence, graph degree and layout are descriptive aids. They do not by themselves establish hegemony, nodal status, empty/floating signification, antagonism or theoretical validity.
 
+## Legacy / Specialized dashboards
+
+The EP24-derived **pledge** and **art** dashboards intentionally bypass the complete modern canonical pipeline. They use privacy-safe, deterministic legacy adapters and a shared `legacy-view-v1` interchange contract:
+
+- Python preserves raw values, performs deterministic normalization and records provenance;
+- R independently checks important aggregates and produces research-readable static figures;
+- JavaScript provides linked interaction and the art dashboard's research/exhibition rendering modes.
+
+Political metadata distinguishes `observed`, `legacy_derived` and `missing` values. The art renderer explicitly labels orbital/constellation geometry as decorative unless a documented private-runtime semantic projection is supplied. Real legacy datasets, row-level derivatives, embeddings and private configuration remain outside Git.
+
+See [`docs/LEGACY_SPECIALIZED_DASHBOARDS.md`](docs/LEGACY_SPECIALIZED_DASHBOARDS.md).
+
 ## Canonical data boundary
 
 ```text
@@ -118,6 +130,7 @@ Normal CI is fully synthetic/offline and runs the public-tree privacy guard, Ruf
 python scripts/check_public_tree.py
 ruff check .
 pytest
+npm run test:legacy
 ```
 
 See `AGENTS.md`, `docs/PRIVACY_AND_CONFIGURATION.md`, and `docs/RUNTIME_DATA.md`.
