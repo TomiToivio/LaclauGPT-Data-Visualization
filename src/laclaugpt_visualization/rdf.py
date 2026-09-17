@@ -9,9 +9,10 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 from urllib import error, request
 
 import yaml
@@ -65,7 +66,7 @@ class RDFProjectPolicy:
     graphrag_enabled: bool = False
 
     @classmethod
-    def from_mapping(cls, project: Mapping[str, Any] | None) -> "RDFProjectPolicy":
+    def from_mapping(cls, project: Mapping[str, Any] | None) -> RDFProjectPolicy:
         if not isinstance(project, Mapping):
             return cls()
         analysis = project.get("analysis")
@@ -123,7 +124,7 @@ class RDFSubgraph:
     provenance: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, Any], limits: RDFLimits) -> "RDFSubgraph":
+    def from_payload(cls, payload: Mapping[str, Any], limits: RDFLimits) -> RDFSubgraph:
         nodes = tuple(payload.get("nodes") or ())
         edges = tuple(payload.get("edges") or ())
         if len(nodes) > limits.nodes or len(edges) > limits.edges:
@@ -193,9 +194,7 @@ class AnalysisHTTPRDFProvider:
         return self._request("/health", method="GET")
 
     def capabilities(self) -> Mapping[str, Any]:
-        return self._request(
-            f"/rdf/capabilities?project={self.project_id}", method="GET"
-        )
+        return self._request(f"/rdf/capabilities?project={self.project_id}", method="GET")
 
     def query_subgraph(self, filters: Mapping[str, Any], limits: RDFLimits) -> RDFSubgraph:
         payload = self._request(
