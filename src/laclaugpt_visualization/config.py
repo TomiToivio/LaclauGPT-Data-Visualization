@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .distributed import ProjectNamespace
@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     storage: Literal["local", "distributed", "custom"] = "local"
     caller: str = "human-cli"
 
+    # ``storage_backend`` is the researcher-facing read/query selection. The older
+    # ``data_backend`` remains the deployment/storage adapter setting for compatibility.
+    storage_backend: Literal["auto", "mongodb", "csv"] = "auto"
     data_backend: Literal["files", "sqlite", "mongodb"] = "files"
     cache_backend: Literal["memory", "redis"] = "memory"
     object_backend: Literal["local", "s3"] = "local"
@@ -68,6 +71,14 @@ class Settings(BaseSettings):
     mongodb_uri: str | None = Field(default=None, repr=False)
     mongodb_database: str = "laclaugpt"
     mongodb_collection: str | None = None
+    mongodb_graph_collection: str | None = None
+    mongodb_vector_index: str = "laclaugpt_vector"
+    mongodb_embedding_path: str = "embedding"
+    mongodb_connect_timeout_ms: int = 1500
+    graph_max_depth: int = 3
+    graph_max_nodes: int = 500
+    graph_max_edges: int = 1000
+    vector_max_results: int = 50
 
     # The umbrella messaging contract uses LACLAUGPT_REDIS_URL. Keep the historical
     # visualization-specific alias for compatibility, but never place the value in Git.
@@ -87,6 +98,17 @@ class Settings(BaseSettings):
     s3_region: str | None = None
     s3_prefix_root: str = "projects"
 
+    @model_validator(mode="after")
+    def resolve_storage_backend(self) -> "Settings":
+        """Map the new query policy onto the maintained legacy loader without UI coupling."""
+        if self.storage_backend == "mongodb":
+            self.data_backend = "mongodb"
+        elif self.storage_backend == "csv" and self.data_backend == "mongodb":
+            self.data_backend = "files"
+        elif self.storage_backend == "auto" and self.mongodb_uri:
+            self.data_backend = "mongodb"
+        return self
+
     @property
     def distributed_namespace(self) -> ProjectNamespace:
         return ProjectNamespace(
@@ -99,6 +121,10 @@ class Settings(BaseSettings):
     @property
     def resolved_mongodb_collection(self) -> str:
         return self.mongodb_collection or self.distributed_namespace.mongo_collection("annotations")
+
+    @property
+    def resolved_mongodb_graph_collection(self) -> str:
+        return self.mongodb_graph_collection or self.distributed_namespace.mongo_collection("relations")
 
     @property
     def deployment_profile(self) -> DeploymentProfile:
@@ -135,6 +161,7 @@ class Settings(BaseSettings):
             "execution": profile.execution,
             "storage": profile.storage,
             "caller": self.caller,
+            "storage_backend": self.storage_backend,
             "data_backend": self.data_backend,
             "cache_backend": self.cache_backend,
             "object_backend": self.object_backend,
@@ -147,6 +174,12 @@ class Settings(BaseSettings):
             "cache_max_entries": self.cache_max_entries,
             "mongodb_database": self.mongodb_database,
             "mongodb_collection": self.resolved_mongodb_collection,
+            "mongodb_graph_collection": self.resolved_mongodb_graph_collection,
+            "mongodb_vector_index": self.mongodb_vector_index,
+            "graph_max_depth": self.graph_max_depth,
+            "graph_max_nodes": self.graph_max_nodes,
+            "graph_max_edges": self.graph_max_edges,
+            "vector_max_results": self.vector_max_results,
             "redis_heartbeat_ttl_seconds": self.redis_heartbeat_ttl_seconds,
             "redis_event_limit": self.redis_event_limit,
             "s3_bucket": self.s3_bucket or "",
@@ -158,10 +191,22 @@ class Settings(BaseSettings):
             raise ValueError("server port must be between 1 and 65535")
         if self.cache_max_entries < 1:
             raise ValueError("cache_max_entries must be positive")
+        if self.mongodb_connect_timeout_ms < 100:
+            raise ValueError("MongoDB connect timeout must be at least 100 ms")
+        if not 1 <= self.graph_max_depth <= 8:
+            raise ValueError("graph_max_depth must be between 1 and 8")
+        if not 1 <= self.graph_max_nodes <= 10000:
+            raise ValueError("graph_max_nodes must be between 1 and 10000")
+        if not 1 <= self.graph_max_edges <= 50000:
+            raise ValueError("graph_max_edges must be between 1 and 50000")
+        if not 1 <= self.vector_max_results <= 1000:
+            raise ValueError("vector_max_results must be between 1 and 1000")
         if self.redis_heartbeat_ttl_seconds < 5:
             raise ValueError("redis heartbeat TTL must be at least 5 seconds")
         if self.redis_event_limit < 0:
             raise ValueError("redis event limit must not be negative")
+        if self.storage_backend == "mongodb" and not self.mongodb_uri:
+            raise ValueError("mongodb storage backend requires LACLAUGPT_VIS_MONGODB_URI")
         if self.data_backend == "mongodb" and not self.mongodb_uri:
             raise ValueError("mongodb backend requires LACLAUGPT_VIS_MONGODB_URI")
         if self.cache_backend == "redis" and not self.redis_url:
