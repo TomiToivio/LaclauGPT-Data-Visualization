@@ -8,6 +8,7 @@ _PROJECT_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 _MONGO_KINDS = {
     "records",
     "annotations",
+    "relations",
     "reviews",
     "runs",
     "artifacts",
