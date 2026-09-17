@@ -1,9 +1,14 @@
-import json
 from pathlib import Path
 
 import pytest
 
-from laclaugpt_visualization.control_plane import Actor, RedisControlPlane, redact_config
+from laclaugpt_visualization.control_plane import (
+    Actor,
+    MessageEnvelope,
+    RedisControlPlane,
+    TaskEnvelope,
+    redact_config,
+)
 
 
 class FakeRedis:
@@ -33,14 +38,14 @@ def actor(*permissions):
     return Actor("researcher-1", "human", frozenset(permissions))
 
 
-def test_redis_disabled_boundary_is_plain_dependency_injection(tmp_path: Path):
+def test_read_only_default_and_local_snapshot_fallback(tmp_path: Path):
     service = RedisControlPlane(FakeRedis(), "ai26", snapshot_dir=tmp_path)
-    assert service.current_config() is None
+    assert service.current_config("visualization") is None
     with pytest.raises(PermissionError):
         service.publish_config({"enabled": True})
 
 
-def test_config_revision_flow_redacts_and_snapshots(tmp_path: Path):
+def test_config_revision_uses_shared_namespace_and_content_hash(tmp_path: Path):
     redis = FakeRedis()
     service = RedisControlPlane(
         redis,
@@ -48,20 +53,38 @@ def test_config_revision_flow_redacts_and_snapshots(tmp_path: Path):
         snapshot_dir=tmp_path,
         actor=actor("config.publish"),
     )
-    first = service.publish_config({"collection": {"enabled": True}, "api_token": "do-not-store"})
-    assert first.config["api_token"] == "<redacted>"
-    assert service.current_config().revision == first.revision
-    assert list(tmp_path.glob("ai26-cfg_*.json"))
+    first = service.publish_config({"collection": {"enabled": True}}, module="collection")
+    assert service.current_config("collection").revision == first.revision
+    assert redis.get(f"laclaugpt:ai26:settings:collection:{first.revision}")
+    assert redis.get("laclaugpt:ai26:settings:collection:current")
+    assert redis.streams["laclaugpt:ai26:stream:config-events"]
+    assert (tmp_path / "ai26" / "collection" / f"{first.revision}.json").exists()
+    assert (tmp_path / "ai26" / "collection" / "current.json").exists()
 
     second = service.publish_config(
-        {"collection": {"enabled": False}}, expected_revision=first.revision
+        {"collection": {"enabled": False}},
+        module="collection",
+        expected_revision=first.revision,
     )
-    assert second.previous_revision == first.revision
+    assert second.revision != first.revision
     with pytest.raises(RuntimeError):
-        service.publish_config({}, expected_revision=first.revision)
+        service.publish_config(
+            {}, module="collection", expected_revision=first.revision
+        )
 
 
-def test_request_response_correlation_and_actor_audit(tmp_path: Path):
+def test_shared_config_rejects_secret_fields(tmp_path: Path):
+    service = RedisControlPlane(
+        FakeRedis(),
+        "ai26",
+        snapshot_dir=tmp_path,
+        actor=actor("config.publish"),
+    )
+    with pytest.raises(ValueError, match="secret-like"):
+        service.publish_config({"api_token": "must-not-enter-redis"})
+
+
+def test_message_contract_and_response_correlation(tmp_path: Path):
     redis = FakeRedis()
     service = RedisControlPlane(
         redis,
@@ -69,40 +92,82 @@ def test_request_response_correlation_and_actor_audit(tmp_path: Path):
         snapshot_dir=tmp_path,
         actor=actor("message.send"),
     )
-    receipt = service.send_request("rag.query", {"query": "synthetic question"})
-    response = {
-        "schema_version": "1.0",
-        "type": "rag.response",
-        "project_id": "ai26",
-        "request_id": receipt.request_id,
-        "producer": "synthetic-rag",
-        "result_ref": "record:synthetic-1",
-    }
-    redis.xadd(service.response_stream, {"payload": json.dumps(response)})
-    found = service.correlated_responses(receipt.request_id)
+    receipt = service.send_request(
+        "rag",
+        run_id="run-1",
+        message_type="rag.query",
+        config_revision="cfg-1",
+        body={"query": "synthetic question"},
+        payload_ref="record:synthetic-1",
+    )
+    sent = redis.streams["laclaugpt:ai26:stream:messages:rag"][0][1]
+    assert sent["project_id"] == "ai26"
+    assert sent["run_id"] == "run-1"
+    assert sent["correlation_id"] == receipt.correlation_id
+    assert sent["sender"] == "human:researcher-1"
+
+    response = MessageEnvelope.build(
+        project_id="ai26",
+        run_id="run-1",
+        sender="rag:synthetic",
+        recipient="visualization",
+        message_type="rag.response",
+        config_revision="cfg-1",
+        correlation_id=receipt.correlation_id,
+        payload_ref="result:synthetic-1",
+    )
+    redis.xadd("laclaugpt:ai26:stream:messages:visualization", response.to_fields())
+    found = service.correlated_responses(receipt.correlation_id)
     assert len(found) == 1
-    assert found[0]["result_ref"] == "record:synthetic-1"
+    assert found[0]["payload_ref"] == "result:synthetic-1"
 
 
-def test_task_permission_revision_and_commands(tmp_path: Path):
+def test_run_requests_and_analysis_tasks_reuse_shared_streams(tmp_path: Path):
     redis = FakeRedis()
     service = RedisControlPlane(
         redis,
         "ai26",
         snapshot_dir=tmp_path,
-        actor=actor("config.publish", "task.trigger", "task.retry", "task.cancel"),
+        actor=actor("task.trigger", "task.retry", "task.cancel"),
     )
-    revision = service.publish_config({"analysis": {"plugins": ["laclau"]}})
-    task = service.trigger_task("analysis.run", {"run_id": "synthetic-run"})
-    assert task.config_revision == revision.revision
-    assert service.task_command(task.task_id, "retry")
-    assert service.task_command(task.task_id, "cancel")
-    events = service.task_events()
-    assert {item["type"] for item in events} >= {
-        "task.requested",
-        "task.retry.requested",
-        "task.cancel.requested",
-    }
+    run_request = service.request_run(
+        "analysis",
+        run_id="run-1",
+        config_revision="cfg-1",
+        payload_ref="manifest:run-1",
+    )
+    assert run_request.stream == "laclaugpt:ai26:stream:messages:analysis"
+
+    task = TaskEnvelope(
+        task_id="task-1",
+        idempotency_key="idem-1",
+        project_id="ai26",
+        run_id="run-1",
+        task_type="laclau",
+        record_ref="record:1",
+        schema_version="1.0",
+        config_revision="cfg-1",
+        codebook_revision="codebook-1",
+    )
+    receipt = service.publish_analysis_task(task)
+    assert receipt.stream == "laclaugpt:ai26:stream:analysis:run-1:tasks"
+    assert service.analysis_tasks("run-1")[0]["task_id"] == "task-1"
+
+    retry = service.task_command(
+        "analysis",
+        run_id="run-1",
+        task_id="task-1",
+        action="retry",
+        config_revision="cfg-1",
+    )
+    cancel = service.task_command(
+        "analysis",
+        run_id="run-1",
+        task_id="task-1",
+        action="cancel",
+        config_revision="cfg-1",
+    )
+    assert retry.stream == cancel.stream == "laclaugpt:ai26:stream:messages:analysis"
 
 
 def test_secret_redaction_is_recursive():
