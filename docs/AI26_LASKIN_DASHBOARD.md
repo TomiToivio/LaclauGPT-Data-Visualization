@@ -115,6 +115,8 @@ set +a
 exec .venv/bin/laclaugpt-visualize serve
 ```
 
+For an `ai26` profile `serve` launches `laclaugpt_visualization/ai26_dashboard.py` — the AI26 research workbench with the Monitor / Explore / Networks / Records / Reports / RAG / Configuration / Hermes / Diagnostics views. It is not the generic `app.py` workbench. The profile's project id selects the module, and `laclaugpt-visualize health` reports `not-ready` if that module is missing, so the deployment cannot silently serve the wrong dashboard.
+
 This is suitable for verification only. Steady-state operation must be supervised by systemd or the existing equivalent service manager, not Hermes or an interactive shell.
 
 ## systemd service
@@ -139,6 +141,38 @@ sudo systemctl restart laclaugpt-visualization-ai26.service
 sudo systemctl stop laclaugpt-visualization-ai26.service
 journalctl -u laclaugpt-visualization-ai26.service -n 200 --no-pager
 ```
+
+### User-service variant (no root required)
+
+On hosts without passwordless sudo the same unit works as a **user** service. Install the template under `~/.config/systemd/user/`, drop the `User=`/`Group=` lines and the `[Install] WantedBy=multi-user.target` target, and use `WantedBy=default.target`:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now laclaugpt-visualization-ai26.service
+systemctl --user status laclaugpt-visualization-ai26.service
+systemctl --user restart laclaugpt-visualization-ai26.service
+systemctl --user stop laclaugpt-visualization-ai26.service
+journalctl --user -u laclaugpt-visualization-ai26.service -n 200 --no-pager
+```
+
+A user service stops at logout unless lingering is enabled. Enable it once so steady-state operation does not depend on an interactive session:
+
+```bash
+loginctl enable-linger "$USER"
+loginctl show-user "$USER" | grep Linger    # expect Linger=yes
+```
+
+### Manual health/status command
+
+The readiness check is the supported way to inspect a deployment without seeing secrets:
+
+```bash
+set -a; . /mnt/workspace/LaclauGPT-Private/config/ai26/visualization/laskin.env; set +a
+.venv/bin/laclaugpt-visualize health     # exit 0 = ready, 1 = not-ready
+.venv/bin/laclaugpt-visualize profile    # non-secret effective configuration
+```
+
+`health` reports `not-ready` when a backend requirement is unmet or when the dashboard module for the configured project is missing, so a service that cannot serve its own dashboard is never reported healthy.
 
 Do not paste journal output into public issues without checking it for research content and private infrastructure identifiers.
 
