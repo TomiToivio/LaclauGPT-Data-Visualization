@@ -28,12 +28,16 @@ def test_peak_result_maps_to_timeline_and_keeps_method_metadata():
         "input_record_ids": ["x:1"],
         "provenance": {"producer": "analysis"},
         "validation": {"status": "not_applicable", "human_review_status": "provisional"},
-        "output": {"series": [{"date": "2026-09-17", "count": 4}], "peaks": []},
+        "output": {
+            "series": [{"date": "2026-09-17", "count": 4, "record_ids": ["x:1"]}],
+            "peaks": [],
+        },
     }
     products = result_products(result)
     timeline = products[ProductKind.TIMELINE]
     assert timeline.metadata["method_id"] == "peak_analysis"
     assert "frequency is not hegemony" in timeline.metadata["semantic_warning"].lower()
+    assert [item.record_id for item in timeline.evidence] == ["x:1"]
 
 
 def test_hashtag_network_does_not_authorize_theoretical_labels():
@@ -44,10 +48,22 @@ def test_hashtag_network_does_not_authorize_theoretical_labels():
         "interpretation_mode": "exploratory_instrumentalist",
         "provenance": {"producer": "analysis"},
         "validation": {"status": "not_applicable", "human_review_status": "reviewed"},
-        "output": {"nodes": [], "edges": []},
+        "output": {
+            "nodes": [{"id": "AI"}, {"id": "progress"}],
+            "edges": [
+                {
+                    "source": "AI",
+                    "target": "progress",
+                    "relation": "cooccurrence_candidate",
+                    "evidence_record_ids": ["x:1", "x:2"],
+                }
+            ],
+        },
     }
     assert theoretical_labels_authorized(result) is False
     assert "not automatically articulation" in semantic_warning(result).lower()
+    product = result_products(result)[ProductKind.NETWORK]
+    assert [item.record_id for item in product.evidence] == ["x:1", "x:2"]
 
 
 def test_only_reviewed_theoretical_output_can_present_validated_theoretical_labels():
