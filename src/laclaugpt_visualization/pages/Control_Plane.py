@@ -16,6 +16,7 @@ from laclaugpt_visualization.control_plane import (
     redact_config,
     secret_paths,
 )
+from laclaugpt_visualization.task_status import task_status_rows
 from laclaugpt_visualization.worker_status import RedisOperationalStatus
 
 st.set_page_config(page_title="LaclauGPT Control Plane", layout="wide")
@@ -107,6 +108,13 @@ control = RedisControlPlane(
     snapshot_dir=snapshot_dir,
     actor=actor,
 )
+operational = RedisOperationalStatus(
+    client,
+    prefix=settings.redis_key_prefix,
+    heartbeat_ttl_seconds=settings.redis_heartbeat_ttl_seconds,
+    event_limit=settings.redis_event_limit,
+    error_types=(redis.exceptions.RedisError, ConnectionError, OSError, TimeoutError, ValueError),
+).snapshot(settings.project_id)
 
 config_tab, messages_tab, tasks_tab, workers_tab = st.tabs(
     ["Configuration", "RAG / Agent messages", "Tasks", "Workers / events"]
@@ -267,7 +275,15 @@ with tasks_tab:
             st.warning(f"Analysis task stream unavailable: {exc}")
             tasks = []
         if tasks:
-            st.dataframe(tasks, use_container_width=True, hide_index=True)
+            st.dataframe(
+                task_status_rows(tasks, operational.workers),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "Redis can show current worker/lease visibility. `queued_or_acknowledged` is "
+                "intentionally ambiguous: completed/failed truth must come from durable task stores."
+            )
             task_ids = sorted({str(item["task_id"]) for item in tasks if item.get("task_id")})
             chosen = st.selectbox("Task command target", task_ids)
             c1, c2 = st.columns(2)
@@ -301,14 +317,7 @@ with tasks_tab:
             st.caption("No analysis tasks visible for this run.")
 
 with workers_tab:
-    status = RedisOperationalStatus(
-        client,
-        prefix=settings.redis_key_prefix,
-        heartbeat_ttl_seconds=settings.redis_heartbeat_ttl_seconds,
-        event_limit=settings.redis_event_limit,
-        error_types=(redis.exceptions.RedisError, ConnectionError, OSError, TimeoutError, ValueError),
-    ).snapshot(settings.project_id)
-    st.caption(status.note)
+    st.caption(operational.note)
     st.dataframe(
         [
             {
@@ -319,7 +328,7 @@ with workers_tab:
                 "task_id": item.current_task_id or "",
                 "age_seconds": round(item.age_seconds, 1),
             }
-            for item in status.workers
+            for item in operational.workers
         ],
         use_container_width=True,
         hide_index=True,
