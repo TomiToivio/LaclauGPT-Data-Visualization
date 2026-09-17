@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LaclauGPT Legacy / Specialized Dashboards</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 1rem; background: #070a12; color: #e9eef9; }
+    header, main { max-width: 1200px; margin: auto; }
+    .controls { display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; margin:1rem 0; }
+    button, select, input { font:inherit; }
+    #stage { border:1px solid currentColor; min-height:540px; overflow:auto; padding:.5rem; }
+    .research { background:#f7f7f7; color:#111; }
+    .note { max-width:80ch; }
+    svg { width:100%; height:520px; }
+    .edge { stroke:currentColor; stroke-opacity:.25; }
+    .node { fill:currentColor; }
+    @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Legacy / Specialized dashboards</h1>
+  <p class="note">Load a private-runtime <code>view_model.json</code>. No file is uploaded. Orbital/constellation geometry is decorative; semantic coordinates are analytical only when the model explicitly supplies projection metadata.</p>
+  <div class="controls">
+    <input id="file" type="file" accept="application/json">
+    <select id="mode"><option value="research">Research</option><option value="exhibition">Exhibition</option></select>
+    <button id="pause" type="button">Pause</button>
+    <span id="status" aria-live="polite">No model loaded.</span>
+  </div>
+</header>
+<main id="stage" class="research" tabindex="0"></main>
+<script type="module">
+  import { createPledgeDashboard } from "./pledge/pledge.js";
+  import { createArtDashboard } from "./art/constellation.js";
+  import { discourseWeather, topicLoom, grievanceAtlas } from "./pledge/views.js";
+  import { semanticNebula, differenceNebula } from "./art/semantic.js";
+
+  const file = document.querySelector("#file");
+  const mode = document.querySelector("#mode");
+  const pause = document.querySelector("#pause");
+  const stage = document.querySelector("#stage");
+  const status = document.querySelector("#status");
+  let model = null;
+  let controller = null;
+
+  function d3Summary(model) {
+    const host = document.createElement("section");
+    const svg = d3.select(host).append("svg").attr("viewBox", "0 0 1000 520");
+    if (model.dataset === "pledge") {
+      const weather = discourseWeather(model, {normalized:false});
+      const loom = topicLoom(model);
+      const atlas = grievanceAtlas(model);
+      const x = d3.scaleBand().domain(weather.map(d => d.date)).range([80, 940]).padding(.15);
+      const y = d3.scaleLinear().domain([0, d3.max(weather, d => d.count) || 1]).nice().range([440, 50]);
+      svg.selectAll("rect.weather").data(weather).join("rect").attr("class","node")
+        .attr("x", d => x(d.date)).attr("y", d => y(d.count)).attr("width", x.bandwidth()).attr("height", d => 440-y(d.count));
+      d3.select(host).append("p").text(`Discourse Weather: ${weather.length} date/country cells. Topic Loom: ${loom.length} observed co-occurrence edges. Grievance Atlas: ${atlas.geometry}.`);
+    } else if (model.dataset === "art") {
+      const edges = model.concept_edges || [];
+      const countries = [...new Set(edges.map(d => d.country))];
+      const concepts = [...new Set(edges.map(d => d.canonical_term))];
+      const left = new Map(countries.map((d,i) => [d, {x:170,y:70+i*Math.max(45,380/Math.max(countries.length,1))}]));
+      const right = new Map(concepts.map((d,i) => [d, {x:690,y:50+(i*41)%420}]));
+      svg.selectAll("line.edge").data(edges).join("line").attr("class","edge")
+        .attr("x1", d => left.get(d.country)?.x).attr("y1", d => left.get(d.country)?.y)
+        .attr("x2", d => right.get(d.canonical_term)?.x).attr("y2", d => right.get(d.canonical_term)?.y)
+        .attr("stroke-width", d => Math.max(1, Number(d.weight||1)));
+      const nebula = semanticNebula(model);
+      d3.select(host).append("p").text(`Social Contract Constellation: ${edges.length} documented edges. Semantic Nebula: ${nebula.geometry}. Difference Nebula uses within-country share differences and is descriptive only.`);
+      if (countries.length >= 2) differenceNebula(model, countries[0], countries[1]);
+    }
+    return host;
+  }
+
+  function render() {
+    if (!model) return;
+    stage.innerHTML = "";
+    stage.classList.toggle("research", mode.value === "research");
+    if (model.dataset === "pledge") controller = createPledgeDashboard(stage, model, {provenanceMode:"observed"});
+    else controller = createArtDashboard(stage, model, {researchMode: mode.value === "research"});
+    stage.appendChild(d3Summary(model));
+    status.textContent = `${model.dataset} / ${model.contract_version}; ${mode.value} mode.`;
+  }
+
+  file.addEventListener("change", async () => {
+    const selected = file.files?.[0]; if (!selected) return;
+    model = JSON.parse(await selected.text());
+    if (model.contract_version !== "legacy-view-v1") throw new Error("unsupported legacy contract");
+    render();
+  });
+  mode.addEventListener("change", render);
+  pause.addEventListener("click", () => { if (controller?.isPaused) controller = createArtDashboard(stage, model, {researchMode:mode.value === "research", reducedMotion:true}); });
+</script>
+</body>
+</html>

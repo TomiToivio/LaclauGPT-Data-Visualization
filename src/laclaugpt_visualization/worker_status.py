@@ -14,7 +14,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 WORKER_STATES = frozenset({"starting", "idle", "busy", "draining", "stopped", "error"})
-WORKER_ROLES = frozenset({"collection", "analysis", "visualization", "orchestration"})
+WORKER_ROLES = frozenset(
+    {"collection", "analysis", "visualization", "storage", "simulation", "orchestration"}
+)
 SAFE_EVENT_FIELDS = (
     "message_id",
     "task_id",
