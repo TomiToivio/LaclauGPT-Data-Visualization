@@ -21,7 +21,7 @@ def monitor(frame: pd.DataFrame) -> dict[str, object]:
         "documents": len(frame),
         "analyzed": int((status != "collection-only").sum()),
         "awaiting_analysis": int((status == "collection-only").sum()),
-        "awaiting_review": int(~reviewed.isin(["ACCEPTED", "CANONICAL", "verified"]).sum()),
+        "awaiting_review": int((~reviewed.isin(["ACCEPTED", "CANONICAL", "verified"])).sum()),
         "latest_source": source_time.max().isoformat() if len(source_time) and pd.notna(source_time.max()) else "",
         "latest_analysis": analysis_time.max().isoformat() if len(analysis_time) and pd.notna(analysis_time.max()) else "",
         "formations": explode_labels(frame, "formations"),
