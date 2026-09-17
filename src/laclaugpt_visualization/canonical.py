@@ -299,15 +299,11 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
         "human_readable_summary": result["human_readable_summary"],
         "human_readable_markdown": result["human_readable_markdown"],
     }
-    for index in range(1, 7):
-        canonical_aliases[f"ocr_{index}"] = ocr[index - 1] if index <= len(ocr) else ""
-        canonical_aliases[f"frame_{index}"] = frame_analysis[index - 1] if index <= len(frame_analysis) else ""
     for key, value in canonical_aliases.items():
         if value not in (None, "", [], {}):
             aliases[key] = value
-        else:
-            aliases.setdefault(key, value)
+    for key, value in aliases.items():
+        result.setdefault(key, value)
     for key in LEGACY_COLUMNS:
-        aliases.setdefault(key, "")
-        result[key] = aliases[key]
+        result.setdefault(key, "")
     return result
