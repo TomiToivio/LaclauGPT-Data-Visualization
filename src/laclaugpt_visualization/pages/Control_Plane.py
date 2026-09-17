@@ -9,14 +9,20 @@ from pathlib import Path
 import streamlit as st
 
 from laclaugpt_visualization.config import get_settings
-from laclaugpt_visualization.control_plane import Actor, RedisControlPlane, redact_config
+from laclaugpt_visualization.control_plane import (
+    MODULES,
+    Actor,
+    RedisControlPlane,
+    redact_config,
+    secret_paths,
+)
 from laclaugpt_visualization.worker_status import RedisOperationalStatus
 
 st.set_page_config(page_title="LaclauGPT Control Plane", layout="wide")
 st.title("LaclauGPT Control Plane")
 st.caption(
-    "Optional operational control plane. Redis carries configuration revisions, requests and "
-    "task coordination; durable stores and local snapshots remain the research memory."
+    "Optional operational control plane. Redis carries shared configuration revisions, "
+    "request/response messages and task coordination; durable stores remain research memory."
 )
 
 settings = get_settings()
@@ -26,34 +32,56 @@ permissions = frozenset(
     for item in os.getenv("LACLAUGPT_VIS_CONTROL_PERMISSIONS", "").split(",")
     if item.strip()
 )
+actor_kind = os.getenv("LACLAUGPT_VIS_ACTOR_KIND", "human")
+if actor_kind not in {"human", "agent", "cli", "system"}:
+    actor_kind = "human"
 actor = Actor(
     os.getenv("LACLAUGPT_VIS_ACTOR_ID", "dashboard-user"),
-    os.getenv("LACLAUGPT_VIS_ACTOR_KIND", "human"),
+    actor_kind,
     permissions,
 )
-
 snapshot_dir = settings.data_path("config", "snapshots")
-redis_enabled = settings.redis_url is not None and (
-    settings.cache_backend == "redis" or settings.messaging_backend == "redis"
-)
 
-if not redis_enabled:
-    st.info(
-        "Redis control plane is disabled. The normal dashboard remains fully usable. "
-        "Local sanitized configuration snapshots can still be inspected below."
-    )
-    snapshots = sorted(snapshot_dir.glob(f"{settings.project_id}-cfg_*.json"), reverse=True)
-    if snapshots:
-        selected = st.selectbox("Local snapshot", snapshots, format_func=lambda path: path.name)
-        st.json(json.loads(selected.read_text(encoding="utf-8")))
-    else:
+
+def _local_snapshots() -> list[Path]:
+    root = snapshot_dir / settings.project_id
+    return sorted(root.glob("*/current.json")) if root.exists() else []
+
+
+def _render_local_snapshots() -> None:
+    snapshots = _local_snapshots()
+    if not snapshots:
         st.caption("No local control-plane snapshots yet.")
+        return
+    selected = st.selectbox(
+        "Local durable snapshot",
+        snapshots,
+        format_func=lambda path: f"{path.parent.name} / current",
+    )
+    payload = json.loads(selected.read_text(encoding="utf-8"))
+    safe = redact_config(payload)
+    st.json(safe)
+    st.download_button(
+        "Export sanitized JSON snapshot",
+        data=json.dumps(safe, indent=2, sort_keys=True),
+        file_name=f"{settings.project_id}-{selected.parent.name}-config.json",
+        mime="application/json",
+    )
+
+
+if not settings.redis_url:
+    st.info(
+        "Redis control plane is disabled. The normal dashboard remains fully usable in local "
+        "mode; durable sanitized configuration snapshots can still be inspected/exported."
+    )
+    _render_local_snapshots()
     st.stop()
 
 try:
     import redis
 except ImportError:
     st.error("Install the optional remote dependencies to use the Redis control plane.")
+    _render_local_snapshots()
     st.stop()
 
 try:
@@ -63,8 +91,13 @@ try:
         socket_timeout=1.5,
         decode_responses=False,
     )
-except ValueError:
-    st.error("The private runtime Redis URL is invalid.")
+    client.ping()
+except (ValueError, redis.exceptions.RedisError):
+    st.warning(
+        "Redis control plane is unavailable. Durable dashboard data and local configuration "
+        "snapshots remain available."
+    )
+    _render_local_snapshots()
     st.stop()
 
 control = RedisControlPlane(
@@ -80,27 +113,48 @@ config_tab, messages_tab, tasks_tab, workers_tab = st.tabs(
 )
 
 with config_tab:
-    current = control.current_config()
-    current_dict = current.config if current else {}
+    module = st.selectbox("Configuration module", sorted(MODULES))
+    current = control.current_config(module)
+    current_payload = current.payload if current else {}
     st.caption(
         f"Current revision: {current.revision if current else 'none'} · "
-        f"actor: {current.actor_kind + ':' + current.actor_id if current else 'n/a'}"
+        f"publisher: {current.publisher if current else 'n/a'}"
     )
+
+    imported = st.file_uploader("Import local JSON snapshot", type=["json"], key="config-import")
+    initial = current_payload
+    if imported is not None:
+        try:
+            loaded = json.loads(imported.getvalue().decode("utf-8"))
+            initial = loaded.get("payload", loaded) if isinstance(loaded, dict) else loaded
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            st.error(f"Could not import JSON: {exc}")
+
     editor = st.text_area(
-        "Sanitized project configuration (JSON)",
-        value=json.dumps(current_dict, indent=2, sort_keys=True),
+        "Shared project configuration (JSON)",
+        value=json.dumps(redact_config(initial), indent=2, sort_keys=True),
         height=360,
     )
+    proposed = None
     try:
-        proposed = redact_config(json.loads(editor or "{}"))
-        if not isinstance(proposed, dict):
+        parsed = json.loads(editor or "{}")
+        if not isinstance(parsed, dict):
             raise ValueError("top-level configuration must be an object")
-        before = json.dumps(current_dict, indent=2, sort_keys=True).splitlines()
+        secrets = secret_paths(parsed)
+        if secrets:
+            raise ValueError("secret-like fields are not allowed in shared config: " + ", ".join(secrets))
+        proposed = parsed
+        before = json.dumps(current_payload, indent=2, sort_keys=True).splitlines()
         after = json.dumps(proposed, indent=2, sort_keys=True).splitlines()
         diff = "\n".join(difflib.unified_diff(before, after, fromfile="current", tofile="proposed"))
         st.code(diff or "No changes", language="diff")
+        st.download_button(
+            "Export proposed JSON snapshot",
+            data=json.dumps(redact_config(proposed), indent=2, sort_keys=True),
+            file_name=f"{settings.project_id}-{module}-proposed.json",
+            mime="application/json",
+        )
     except (json.JSONDecodeError, ValueError) as exc:
-        proposed = None
         st.error(f"Configuration is invalid: {exc}")
 
     can_publish = "config.publish" in permissions
@@ -108,59 +162,143 @@ with config_tab:
     if st.button("Publish revision", disabled=not (can_publish and confirm and proposed is not None)):
         try:
             published = control.publish_config(
-                proposed or {}, expected_revision=current.revision if current else None
+                proposed or {},
+                module=module,
+                expected_revision=current.revision if current else None,
             )
-        except (PermissionError, RuntimeError) as exc:
+        except (PermissionError, RuntimeError, ValueError, redis.exceptions.RedisError) as exc:
             st.error(str(exc))
         else:
-            st.success(f"Published {published.revision}; durable local snapshot written.")
+            st.success(
+                f"Published {published.revision}; durable snapshot written before Redis update."
+            )
     if not can_publish:
         st.caption("Read-only: this actor does not have `config.publish` permission.")
 
 with messages_tab:
-    st.caption("Requests are small reference-based messages. Large results stay in durable storage.")
-    message_type = st.selectbox("Message type", ["rag.query", "agent.request"])
-    text = st.text_area("Question / instruction")
-    refs = st.text_input("Optional reference IDs (comma-separated)")
-    if st.button("Send request", disabled="message.send" not in permissions or not text.strip()):
-        receipt = control.send_request(
-            message_type,
-            {"text": text, "refs": [item.strip() for item in refs.split(",") if item.strip()]},
-        )
-        st.session_state["control_request_id"] = receipt.request_id
-        st.success(f"Sent request {receipt.request_id}")
-    request_id = st.text_input(
-        "Correlation/request ID", value=st.session_state.get("control_request_id", "")
+    st.caption(
+        "Messages use the shared MessageEnvelope contract. Large research payloads stay in "
+        "durable storage and travel as payload/source references."
     )
-    if request_id:
-        st.json(control.correlated_responses(request_id))
+    service = st.selectbox("Recipient service", ["rag", "analysis", "collection", "simulation"])
+    message_type = st.selectbox(
+        "Message type",
+        ["rag.query", "agent.request", "human.annotation.created"],
+    )
+    run_id = st.text_input("Run ID", key="message-run")
+    config_revision = st.text_input("Pinned config revision", key="message-config")
+    text = st.text_area("Question / instruction")
+    payload_ref = st.text_input("Optional durable payload reference")
+    if st.button(
+        "Send request",
+        disabled=(
+            "message.send" not in permissions
+            or not text.strip()
+            or not run_id.strip()
+            or not config_revision.strip()
+        ),
+    ):
+        try:
+            receipt = control.send_request(
+                service,
+                run_id=run_id,
+                message_type=message_type,
+                config_revision=config_revision,
+                body={"text": text},
+                payload_ref=payload_ref,
+            )
+        except (PermissionError, ValueError, redis.exceptions.RedisError) as exc:
+            st.error(str(exc))
+        else:
+            st.session_state["control_correlation_id"] = receipt.correlation_id
+            st.success(f"Sent request {receipt.request_id} / correlation {receipt.correlation_id}")
+
+    correlation_id = st.text_input(
+        "Correlation ID",
+        value=st.session_state.get("control_correlation_id", ""),
+    )
+    if correlation_id:
+        try:
+            st.json(control.correlated_responses(correlation_id, service="visualization"))
+        except redis.exceptions.RedisError as exc:
+            st.warning(f"Response stream unavailable: {exc}")
 
 with tasks_tab:
-    task_type = st.selectbox("Task type", ["collection.run", "analysis.run", "reprocess", "media.download"])
-    run_ref = st.text_input("Run/source/reference ID")
-    confirm_task = st.checkbox("I confirm launching this distributed task")
+    st.caption(
+        "Run launch/cancel/retry commands use the shared MessageEnvelope bus. Existing Analysis "
+        "worker tasks are shown from the canonical analysis:<run>:tasks stream."
+    )
+    module = st.selectbox("Run service", ["collection", "analysis"])
+    run_id = st.text_input("Run ID", key="task-run")
+    module_config = control.current_config(module) if run_id else None
+    default_revision = module_config.revision if module_config else ""
+    config_revision = st.text_input(
+        "Pinned config revision",
+        value=default_revision,
+        key="task-config",
+    )
+    payload_ref = st.text_input("Optional run manifest / durable payload reference")
+    confirm_task = st.checkbox("I confirm launching this distributed run")
     if st.button(
-        "Trigger task",
-        disabled="task.trigger" not in permissions or not confirm_task or not run_ref.strip(),
+        "Request run",
+        disabled=(
+            "task.trigger" not in permissions
+            or not confirm_task
+            or not run_id.strip()
+            or not config_revision.strip()
+        ),
     ):
-        receipt = control.trigger_task(task_type, {"ref": run_ref})
-        st.success(
-            f"Queued {receipt.task_id} with config revision {receipt.config_revision or 'none'}"
-        )
-    events = control.task_events(count=100)
-    if events:
-        st.dataframe(events, use_container_width=True, hide_index=True)
-        task_ids = sorted({str(item.get("task_id")) for item in events if item.get("task_id")})
-        chosen = st.selectbox("Task command target", task_ids) if task_ids else ""
-        c1, c2 = st.columns(2)
-        if c1.button("Retry", disabled="task.retry" not in permissions or not chosen):
-            control.task_command(chosen, "retry")
-            st.success("Retry requested")
-        if c2.button("Cancel", disabled="task.cancel" not in permissions or not chosen):
-            control.task_command(chosen, "cancel")
-            st.success("Cancellation requested")
-    else:
-        st.caption("No task events visible.")
+        try:
+            receipt = control.request_run(
+                module,
+                run_id=run_id,
+                config_revision=config_revision,
+                payload_ref=payload_ref,
+            )
+        except (PermissionError, ValueError, redis.exceptions.RedisError) as exc:
+            st.error(str(exc))
+        else:
+            st.success(f"Run request sent with correlation ID {receipt.correlation_id}")
+
+    if module == "analysis" and run_id:
+        try:
+            tasks = control.analysis_tasks(run_id, count=100)
+        except redis.exceptions.RedisError as exc:
+            st.warning(f"Analysis task stream unavailable: {exc}")
+            tasks = []
+        if tasks:
+            st.dataframe(tasks, use_container_width=True, hide_index=True)
+            task_ids = sorted({str(item["task_id"]) for item in tasks if item.get("task_id")})
+            chosen = st.selectbox("Task command target", task_ids)
+            c1, c2 = st.columns(2)
+            if c1.button("Retry", disabled="task.retry" not in permissions):
+                try:
+                    control.task_command(
+                        "analysis",
+                        run_id=run_id,
+                        task_id=chosen,
+                        action="retry",
+                        config_revision=config_revision,
+                    )
+                except (PermissionError, ValueError, redis.exceptions.RedisError) as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("Retry request sent through shared message bus")
+            if c2.button("Cancel", disabled="task.cancel" not in permissions):
+                try:
+                    control.task_command(
+                        "analysis",
+                        run_id=run_id,
+                        task_id=chosen,
+                        action="cancel",
+                        config_revision=config_revision,
+                    )
+                except (PermissionError, ValueError, redis.exceptions.RedisError) as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("Cancellation request sent through shared message bus")
+        else:
+            st.caption("No analysis tasks visible for this run.")
 
 with workers_tab:
     status = RedisOperationalStatus(
@@ -186,8 +324,10 @@ with workers_tab:
         use_container_width=True,
         hide_index=True,
     )
-    st.caption("Worker/task telemetry is transient operational state, not canonical history.")
+    st.caption(
+        "Worker/task telemetry is transient operational state, not canonical research history."
+    )
 
 st.sidebar.markdown("### Permissions")
 st.sidebar.write(sorted(permissions) if permissions else ["read-only"])
-st.sidebar.caption("Agents use the same permission boundary as humans and CLI callers.")
+st.sidebar.caption("Agents use exactly the same permission boundary as humans and CLI callers.")
