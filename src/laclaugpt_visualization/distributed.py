@@ -5,7 +5,16 @@ import re
 from dataclasses import dataclass
 
 _PROJECT_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
-_MONGO_KINDS = {"records", "annotations", "reviews", "runs", "artifacts"}
+_MONGO_KINDS = {
+    "records",
+    "annotations",
+    "reviews",
+    "runs",
+    "artifacts",
+    "raw",
+    "processing",
+    "analyzed",
+}
 _S3_KINDS = {
     "raw",
     "canonical",
@@ -18,7 +27,8 @@ _S3_KINDS = {
     "exports",
     "runs",
 }
-_MODULES = {"collection", "analysis", "visualization"}
+# Keep this namespace vocabulary reusable across the modular LaclauGPT stack.
+_MODULES = {"collection", "analysis", "visualization", "storage", "simulation"}
 
 
 def validate_project_id(project_id: str) -> str:
@@ -79,6 +89,9 @@ class ProjectNamespace:
         if module not in _MODULES:
             raise ValueError(f"unknown module: {module}")
         return self.redis_key("worker", module, worker_id)
+
+    def lock_key(self, name: str) -> str:
+        return self.redis_key("lock", name)
 
     def mongo_collection(self, kind: str) -> str:
         if kind not in _MONGO_KINDS:
