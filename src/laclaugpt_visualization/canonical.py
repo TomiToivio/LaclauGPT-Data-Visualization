@@ -159,7 +159,7 @@ def flatten_canonical(record: dict[str, Any]) -> dict[str, Any]:
 
     ocr_rows = _list(intermediate.get("ocr")) or _list(content.get("ocr"))
     ocr = _text_items(ocr_rows)
-    frames = _list(intermediate.get("frames")) or _list(content.get("frames"))
+    frames = _list(content.get("frames")) or _list(intermediate.get("frames"))
     frame_analysis_rows = _list(intermediate.get("frame_analysis"))
     if not frame_analysis_rows:
         frame_analysis_rows = [
