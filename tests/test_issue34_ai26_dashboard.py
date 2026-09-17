@@ -7,10 +7,10 @@ import pytest
 
 from laclaugpt_visualization.ai26_dashboard import (
     RedisAI26ControlPlane,
+    _merge_record,
     ai26_collection_names,
     ai26_redis_contract,
     apply_ai26_filters,
-    _merge_record,
 )
 from laclaugpt_visualization.config import Settings
 from laclaugpt_visualization.data import normalize_frame
@@ -39,22 +39,22 @@ class FakeRedis:
 
 
 def settings(**overrides):
-    values = dict(
-        project_id="ai26",
-        profile="server",
-        machine="linux-server",
-        execution="web-service",
-        storage="distributed",
-        storage_backend="mongodb",
-        data_backend="mongodb",
-        cache_backend="redis",
-        object_backend="s3",
-        messaging_backend="redis",
-        mongodb_uri="mongodb://example.invalid",
-        redis_url="redis://example.invalid",
-        s3_endpoint_url="https://object.example.invalid",
-        s3_bucket="private-bucket",
-    )
+    values = {
+        "project_id": "ai26",
+        "profile": "server",
+        "machine": "linux-server",
+        "execution": "web-service",
+        "storage": "distributed",
+        "storage_backend": "mongodb",
+        "data_backend": "mongodb",
+        "cache_backend": "redis",
+        "object_backend": "s3",
+        "messaging_backend": "redis",
+        "mongodb_uri": "mongodb://example.invalid",
+        "redis_url": "redis://example.invalid",
+        "s3_endpoint_url": "https://object.example.invalid",
+        "s3_bucket": "private-bucket",
+    }
     values.update(overrides)
     return Settings(**values)
 
