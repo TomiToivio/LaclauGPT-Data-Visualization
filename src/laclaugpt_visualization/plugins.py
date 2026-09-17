@@ -11,9 +11,10 @@ Older ``interaction`` / ``research_assistant`` names remain aliases for compatib
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any
 
 from .products import DataProduct, ProductKind, ProductProvider
 
