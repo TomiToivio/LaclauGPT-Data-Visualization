@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .distributed import ProjectNamespace
@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     data_backend: Literal["files", "sqlite", "mongodb"] = "files"
     cache_backend: Literal["memory", "redis"] = "memory"
     object_backend: Literal["local", "s3"] = "local"
+    messaging_backend: Literal["none", "redis"] = "none"
 
     data_dir: Path = Path("data")
     output_dir: Path = Path("data/exports")
@@ -67,8 +68,16 @@ class Settings(BaseSettings):
     mongodb_database: str = "laclaugpt"
     mongodb_collection: str | None = None
 
-    redis_url: str | None = Field(default=None, repr=False)
+    # The umbrella messaging contract uses LACLAUGPT_REDIS_URL. Keep the historical
+    # visualization-specific alias for compatibility, but never place the value in Git.
+    redis_url: str | None = Field(
+        default=None,
+        repr=False,
+        validation_alias=AliasChoices("LACLAUGPT_REDIS_URL", "LACLAUGPT_VIS_REDIS_URL"),
+    )
     redis_key_prefix: str = "laclaugpt"
+    redis_heartbeat_ttl_seconds: int = 60
+    redis_event_limit: int = 25
 
     s3_endpoint_url: str | None = None
     s3_bucket: str | None = None
@@ -128,6 +137,7 @@ class Settings(BaseSettings):
             "data_backend": self.data_backend,
             "cache_backend": self.cache_backend,
             "object_backend": self.object_backend,
+            "messaging_backend": self.messaging_backend,
             "data_dir": str(self.data_dir),
             "analysis_data_dir": str(profile.analysis_data_root),
             "output_dir": str(self.output_dir),
@@ -136,6 +146,8 @@ class Settings(BaseSettings):
             "cache_max_entries": self.cache_max_entries,
             "mongodb_database": self.mongodb_database,
             "mongodb_collection": self.resolved_mongodb_collection,
+            "redis_heartbeat_ttl_seconds": self.redis_heartbeat_ttl_seconds,
+            "redis_event_limit": self.redis_event_limit,
             "s3_bucket": self.s3_bucket or "",
         }
 
@@ -145,10 +157,16 @@ class Settings(BaseSettings):
             raise ValueError("server port must be between 1 and 65535")
         if self.cache_max_entries < 1:
             raise ValueError("cache_max_entries must be positive")
+        if self.redis_heartbeat_ttl_seconds < 5:
+            raise ValueError("redis heartbeat TTL must be at least 5 seconds")
+        if self.redis_event_limit < 0:
+            raise ValueError("redis event limit must not be negative")
         if self.data_backend == "mongodb" and not self.mongodb_uri:
             raise ValueError("mongodb backend requires LACLAUGPT_VIS_MONGODB_URI")
         if self.cache_backend == "redis" and not self.redis_url:
-            raise ValueError("redis backend requires LACLAUGPT_VIS_REDIS_URL")
+            raise ValueError("redis cache backend requires LACLAUGPT_REDIS_URL")
+        if self.messaging_backend == "redis" and not self.redis_url:
+            raise ValueError("redis messaging backend requires LACLAUGPT_REDIS_URL")
         if self.object_backend == "s3" and not (self.s3_endpoint_url and self.s3_bucket):
             raise ValueError("s3 backend requires endpoint URL and bucket")
         if self.storage == "distributed":
