@@ -54,6 +54,13 @@ Start with:
 bash scripts/run_ai26_dashboard.sh
 ```
 
+or, equivalently, through the production CLI — for a `project_id=ai26` profile
+`serve` launches this same module:
+
+```bash
+.venv/bin/laclaugpt-visualize serve
+```
+
 The launcher binds to loopback by default, runs headless, keeps XSRF/CORS protections enabled, and refuses a non-AI26 project ID. Authentication is intentionally not implemented by issue #34. Do **not** expose the process to the public Internet. Use host/network restrictions now; add authenticated reverse-proxy access before any wider exposure.
 
 ## Information architecture
