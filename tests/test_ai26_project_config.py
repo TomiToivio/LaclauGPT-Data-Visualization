@@ -48,9 +48,9 @@ def test_required_private_overlay_fails_closed(tmp_path):
 def test_secret_keys_are_redacted_from_diagnostics():
     safe = sanitize_mapping(
         {
-            "mongodb_uri": "mongodb://user:password@example.invalid/db",
-            "redis_url": "redis://secret@example.invalid/0",
-            "nested": {"s3_secret_access_key": "secret", "display": "ok"},
+            "mongodb_uri": "synthetic-mongodb-endpoint",
+            "redis_url": "synthetic-redis-endpoint",
+            "nested": {"s3_secret_access_key": "synthetic-value", "display": "ok"},
         }
     )
     assert safe["mongodb_uri"] == "<redacted>"
