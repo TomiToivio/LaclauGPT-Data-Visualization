@@ -1,0 +1,8 @@
+{
+  "name": "laclaugpt-data-visualization-legacy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:legacy": "node --test web/legacy/legacy.test.mjs"
+  }
+}
