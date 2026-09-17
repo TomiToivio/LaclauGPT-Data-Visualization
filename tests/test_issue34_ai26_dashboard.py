@@ -13,6 +13,7 @@ from laclaugpt_visualization.ai26_dashboard import (
     _merge_record,
 )
 from laclaugpt_visualization.config import Settings
+from laclaugpt_visualization.data import normalize_frame
 
 
 class FakeRedis:
@@ -88,25 +89,27 @@ def test_merge_preserves_multilabel_formations_and_source_identity():
 
 
 def test_filters_keep_multilabel_records():
-    frame = pd.DataFrame(
-        [
-            {
-                "source_url": "a",
-                "source_platform": "x",
-                "source_country": "FI",
-                "source_language": "fi",
-                "formations": ["critical_ai", "accelerationist"],
-                "summary": "AI debate",
-            },
-            {
-                "source_url": "b",
-                "source_platform": "telegram",
-                "source_country": "US",
-                "source_language": "en",
-                "formations": ["doomer"],
-                "summary": "risk debate",
-            },
-        ]
+    frame = normalize_frame(
+        pd.DataFrame(
+            [
+                {
+                    "source_url": "a",
+                    "source_platform": "x",
+                    "source_country": "FI",
+                    "source_language": "fi",
+                    "formations": ["critical_ai", "accelerationist"],
+                    "summary": "AI debate",
+                },
+                {
+                    "source_url": "b",
+                    "source_platform": "telegram",
+                    "source_country": "US",
+                    "source_language": "en",
+                    "formations": ["doomer"],
+                    "summary": "risk debate",
+                },
+            ]
+        )
     )
     filtered = apply_ai26_filters(frame, {"formations": ["critical_ai"]})
     assert filtered["source_url"].tolist() == ["a"]
