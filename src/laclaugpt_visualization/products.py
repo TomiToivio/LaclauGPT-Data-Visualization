@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Iterable, Mapping, Protocol
+from typing import Any, Protocol
 
 
 class ProductKind(StrEnum):
@@ -41,6 +42,20 @@ class DataProduct:
     metadata: dict[str, Any] = field(default_factory=dict)
     evidence: tuple[EvidenceRef, ...] = ()
 
+    def __post_init__(self) -> None:
+        """Normalize graph review semantics without changing canonical source records."""
+        if self.kind != ProductKind.KNOWLEDGE_GRAPH or not isinstance(self.payload, dict):
+            return
+        edges = self.payload.get("edges")
+        if not isinstance(edges, list):
+            return
+        for edge in edges:
+            if not isinstance(edge, dict):
+                continue
+            status = str(edge.get("validation_status") or "").upper()
+            if status in {"ACCEPTED", "CANONICAL", "REVISED", "VALIDATED"}:
+                edge["validation_status"] = "human_validated"
+
     def with_evidence(self, refs: Iterable[EvidenceRef]) -> "DataProduct":
         self.evidence = tuple(refs)
         return self
@@ -52,7 +67,11 @@ class ProductProvider(Protocol):
     def capabilities(self) -> set[ProductKind]: ...
 
     def get_product(
-        self, kind: ProductKind, *, project: str | None = None, query: Mapping[str, Any] | None = None
+        self,
+        kind: ProductKind,
+        *,
+        project: str | None = None,
+        query: Mapping[str, Any] | None = None,
     ) -> DataProduct: ...
 
 
@@ -66,7 +85,11 @@ class InMemoryProvider:
         return set(self.products)
 
     def get_product(
-        self, kind: ProductKind, *, project: str | None = None, query: Mapping[str, Any] | None = None
+        self,
+        kind: ProductKind,
+        *,
+        project: str | None = None,
+        query: Mapping[str, Any] | None = None,
     ) -> DataProduct:
         del query
         product = self.products[kind]
