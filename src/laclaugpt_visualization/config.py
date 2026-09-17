@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .distributed import ProjectNamespace
@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     s3_secret_access_key: str | None = Field(default=None, repr=False)
     s3_region: str | None = None
     s3_prefix_root: str = "projects"
+
+    @model_validator(mode="after")
+    def resolve_storage_backend(self) -> "Settings":
+        """Map the new query policy onto the maintained legacy loader without UI coupling."""
+        if self.storage_backend == "mongodb":
+            self.data_backend = "mongodb"
+        elif self.storage_backend == "csv" and self.data_backend == "mongodb":
+            self.data_backend = "files"
+        elif self.storage_backend == "auto" and self.mongodb_uri:
+            self.data_backend = "mongodb"
+        return self
 
     @property
     def distributed_namespace(self) -> ProjectNamespace:
