@@ -12,6 +12,7 @@ _MONGO_KINDS = {
     "reviews",
     "runs",
     "artifacts",
+    "periodic_summaries",
     "raw",
     "processing",
     "analyzed",
