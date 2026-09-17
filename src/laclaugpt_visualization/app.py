@@ -12,6 +12,13 @@ from .config import get_settings
 from .data import filter_frame, load_frame
 from .plugins import default_registry
 from .products import DataProduct, InMemoryProvider, ProductKind
+from .provenance import (
+    UNKNOWN,
+    comparison_warning,
+    provenance_frame,
+    safe_provenance_events,
+    summarize_provenance,
+)
 from .research_views import (
     DASHBOARD_MODES,
     infer_dashboard_mode,
@@ -52,13 +59,54 @@ def _load_default_frame():
     return load_frame(candidates[0], settings) if candidates else None
 
 
+def _provenance_sidebar_filters(frame):
+    """Filter on safe provenance projections without changing canonical records."""
+    if frame.empty:
+        return frame
+    projected = provenance_frame(frame)
+    mask = projected.index.to_series().map(lambda _value: True)
+    filters = (
+        ("run_id", "Run"),
+        ("context_profile", "Context profile"),
+        ("codebook_id", "Codebook"),
+        ("codebook_version", "Codebook version"),
+        ("codebook_hash", "Codebook hash"),
+        ("effective_config_hash", "Config hash"),
+        ("model", "Model"),
+        ("backend", "Model backend"),
+        ("validation_status", "Validation state"),
+    )
+    for field, label in filters:
+        values = sorted(
+            {
+                str(value)
+                for value in projected[field]
+                if value not in (None, "", UNKNOWN)
+            }
+        )
+        if not values:
+            continue
+        selected = st.sidebar.multiselect(label, values)
+        if selected:
+            mask &= projected[field].astype(str).isin(selected)
+
+    rag_filter = st.sidebar.selectbox(
+        "RAG/context retrieval",
+        ("Any", "Enabled", "Disabled", "Unknown"),
+    )
+    if rag_filter != "Any":
+        expected = {"Enabled": True, "Disabled": False, "Unknown": None}[rag_filter]
+        mask &= projected["rag_enabled"].map(lambda value: value is expected)
+    return frame.loc[mask]
+
+
 def _sidebar_filters(frame):
     query = st.sidebar.text_input("Search")
     platforms = sorted(value for value in frame["source_platform"].unique() if value)
     countries = sorted(value for value in frame["source_country"].unique() if value)
     languages = sorted(value for value in frame["source_language"].unique() if value)
     formations = sorted({str(item) for values in frame["formations"] for item in values})
-    return filter_frame(
+    filtered = filter_frame(
         frame,
         query=query,
         platforms=st.sidebar.multiselect("Platforms", platforms),
@@ -66,6 +114,7 @@ def _sidebar_filters(frame):
         languages=st.sidebar.multiselect("Languages", languages),
         formations=st.sidebar.multiselect("Formations", formations),
     )
+    return _provenance_sidebar_filters(filtered)
 
 
 def _monitor_page(frame) -> None:
@@ -107,6 +156,66 @@ def _nonempty_legacy(row: Any) -> dict[str, Any]:
             continue
         values[key] = value
     return values
+
+
+def _render_provenance(row) -> None:
+    summary = summarize_provenance(row)
+    st.markdown("#### Analysis provenance")
+    primary = {
+        "run_id": summary["run_id"],
+        "study_id": summary["study_id"],
+        "arena": summary["arena"],
+        "dataset": summary["dataset"],
+        "country": summary["country"],
+        "language": summary["language"],
+        "effective_config_version": summary["effective_config_version"],
+        "effective_config_hash": summary["effective_config_hash"],
+        "execution_profile": summary["execution_profile"],
+        "context_profile": summary["context_profile"],
+        "codebook_id": summary["codebook_id"],
+        "codebook_version": summary["codebook_version"],
+        "codebook_hash": summary["codebook_hash"],
+        "model": summary["model"],
+        "backend": summary["backend"],
+        "task_profile": summary["task_profile"],
+        "pipeline_version": summary["pipeline_version"],
+        "validation_status": summary["validation_status"],
+    }
+    st.json(primary)
+
+    rag_label = (
+        "unknown / not recorded"
+        if summary["rag_enabled"] is None
+        else ("enabled" if summary["rag_enabled"] else "disabled")
+    )
+    memory_label = (
+        "unknown / not recorded"
+        if summary["context_memory_enabled"] is None
+        else ("enabled" if summary["context_memory_enabled"] else "disabled")
+    )
+    st.caption(f"RAG/retrieval: {rag_label} · context memory: {memory_label}")
+
+    with st.expander("Context / RAG provenance"):
+        st.json(
+            {
+                "embedding_model": summary["embedding_model"],
+                "index_version": summary["index_version"],
+                "retrieval_ids": summary["retrieval_ids"],
+                "context_source_refs": summary["context_source_refs"],
+                "previous_summary_id": summary["previous_summary_id"],
+                "collection_config_id": summary["collection_config_id"],
+            }
+        )
+        st.caption(
+            "Only safe identifiers are shown. Private prompts, codebook contents, "
+            "credentials and configuration payloads are intentionally not rendered."
+        )
+    with st.expander("Safe provenance events"):
+        events = safe_provenance_events(row)
+        if events:
+            st.json(events)
+        else:
+            st.caption("No safe provenance events recorded for this legacy/current record.")
 
 
 def _review_page(frame) -> None:
@@ -156,6 +265,8 @@ def _review_page(frame) -> None:
     with st.expander("Intermediate stage outputs"):
         st.json(row.get("intermediate") or {})
 
+    _render_provenance(row)
+
     st.markdown("#### New structured LaclauGPT analysis")
     st.json(
         {
@@ -179,9 +290,9 @@ def _review_page(frame) -> None:
                 "relations",
                 "uncertainties",
                 "abstentions",
-                "model_runs",
+                "codebook_refs",
+                "memory_refs",
                 "evidence",
-                "provenance",
             )
             if key in row
         }
@@ -248,8 +359,15 @@ def _research_data_page(frame) -> None:
     st.markdown("#### Full researcher dataframe")
     st.caption(
         "This table intentionally includes legacy EP24 aliases, intermediate stage outputs, "
-        "new LaclauGPT fields and the human-readable report fields."
+        "new LaclauGPT fields and safe provenance projections."
     )
+    provenance = provenance_frame(frame).add_prefix("prov_")
+    display = frame.join(provenance)
+    if "provenance" in display:
+        display["provenance"] = [
+            safe_provenance_events(row)
+            for row in frame.to_dict(orient="records")
+        ]
     preferred = [
         "source_url",
         "recording_date",
@@ -271,12 +389,22 @@ def _research_data_page(frame) -> None:
         "signifiers",
         "discourses",
         "formula_of_populism_analysis",
+        "prov_run_id",
+        "prov_context_profile",
+        "prov_codebook_id",
+        "prov_codebook_version",
+        "prov_codebook_hash",
+        "prov_effective_config_hash",
+        "prov_model",
+        "prov_backend",
+        "prov_rag_enabled",
+        "prov_validation_status",
         "raw_ref",
         "review_status",
     ]
-    ordered = [column for column in preferred if column in frame.columns]
-    ordered.extend(column for column in frame.columns if column not in ordered)
-    st.dataframe(frame[ordered], use_container_width=True, hide_index=True)
+    ordered = [column for column in preferred if column in display.columns]
+    ordered.extend(column for column in display.columns if column not in ordered)
+    st.dataframe(display[ordered], use_container_width=True, hide_index=True)
 
 
 def _timeline_map_page(frame) -> None:
@@ -350,12 +478,13 @@ def _reports_page(frame) -> None:
                 use_container_width=True,
                 hide_index=True,
             )
-    st.caption("Generated reports are research aids and require human verification before citation as findings.")
+    st.caption(
+        "Generated reports are research aids and require human verification before citation as findings."
+    )
 
 
 def _plugin_provider(frame) -> InMemoryProvider:
-    """Expose products already present in the maintained dashboard without new inference."""
-
+    """Expose products already present in the dashboard without performing new analysis."""
     products = {
         ProductKind.TABLE: DataProduct(ProductKind.TABLE, frame),
         ProductKind.RECORDS: DataProduct(ProductKind.RECORDS, frame),
@@ -433,6 +562,9 @@ def _plugin_library_page(frame, mode: str) -> None:
 
 
 def _render_mode(frame, mode: str) -> None:
+    warning = comparison_warning(frame)
+    if warning:
+        st.warning(warning)
     if mode == "legacy_ep24":
         labels = ["Researcher Review", "Research Data", "Timeline & Map", "Reports"]
         pages = [_review_page, _research_data_page, _timeline_map_page, _reports_page]
@@ -486,7 +618,8 @@ def run() -> None:
     settings.ensure_local_directories()
     frame = _load_default_frame()
     uploaded = st.sidebar.file_uploader(
-        "Open CSV, JSON or JSONL", type=["csv", "json", "jsonl", "ndjson"]
+        "Open CSV, JSON or JSONL",
+        type=["csv", "json", "jsonl", "ndjson"],
     )
     if uploaded is not None:
         temp = settings.data_path("tmp", "uploads", uploaded.name)
