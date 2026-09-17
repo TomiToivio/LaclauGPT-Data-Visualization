@@ -87,6 +87,22 @@ def semantic_warning(result: Mapping[str, Any]) -> str:
     return "Computational outputs remain evidence or measurements unless a reviewed theoretical analysis explicitly says otherwise."
 
 
+def _walk_record_ids(value: Any) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            if key in {"record_id", "source_url"} and isinstance(child, str) and child:
+                found.add(child)
+            elif key in {"record_ids", "evidence_record_ids"} and isinstance(child, (list, tuple, set)):
+                found.update(str(item) for item in child if str(item))
+            else:
+                found.update(_walk_record_ids(child))
+    elif isinstance(value, (list, tuple, set)):
+        for child in value:
+            found.update(_walk_record_ids(child))
+    return found
+
+
 def _evidence_refs(item: Mapping[str, Any]) -> tuple[EvidenceRef, ...]:
     refs: list[EvidenceRef] = []
     seen: set[str] = set()
@@ -105,6 +121,12 @@ def _evidence_refs(item: Mapping[str, Any]) -> tuple[EvidenceRef, ...]:
                 selector=dict(raw.get("selector") or {}),
             )
         )
+    # Older/compact analytical outputs often keep drill-down IDs next to an edge,
+    # peak, topic or sampled row rather than in a top-level evidence_refs array.
+    for record_id in sorted(_walk_record_ids(item.get("output", {}))):
+        if record_id not in seen:
+            seen.add(record_id)
+            refs.append(EvidenceRef(record_id=record_id))
     return tuple(refs)
 
 
