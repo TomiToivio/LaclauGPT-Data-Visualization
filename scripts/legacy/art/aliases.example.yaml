@@ -1,0 +1,13 @@
+version: art-normalization-v1
+aliases:
+  public artificial intelligence: public ai
+  public-interest ai: public ai
+  workers rights: worker rights
+noise:
+  - analysis
+  - summary
+  - response
+  - themes
+  - entities
+  - sentiment
+  - markdown
