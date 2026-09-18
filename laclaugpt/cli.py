@@ -12,13 +12,33 @@ from typing import Any
 from .mongo import analysis_status, find_document, list_documents
 
 LIST_FIELDS = (
-    "source_date", "source_name", "actor_name", "arena", "ai_formation",
-    "source_title", "source_url",
+    "source_date",
+    "source_name",
+    "actor_name",
+    "arena",
+    "ai_formation",
+    "source_title",
+    "source_url",
 )
+CSV_NESTED_FIELDS = ("phase0", "phase0_summary", "phase0_discourse", "phase0_ontology")
 
 
 def _json_default(value: Any) -> str:
     return str(value)
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=_json_default,
+    )
+
+
+def _clean_document(document: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in document.items() if key != "_id"}
 
 
 def _row(document: dict[str, Any]) -> dict[str, Any]:
@@ -29,8 +49,12 @@ def _row(document: dict[str, Any]) -> dict[str, Any]:
 
 def _filters(args: argparse.Namespace) -> dict[str, Any]:
     return {
-        "status": args.status, "since": args.since, "until": args.until,
-        "actor": args.actor, "arena": args.arena, "formation": args.formation,
+        "status": args.status,
+        "since": args.since,
+        "until": args.until,
+        "actor": args.actor,
+        "arena": args.arena,
+        "formation": args.formation,
         "language": args.language,
     }
 
@@ -44,21 +68,24 @@ def _print_table(documents: list[dict[str, Any]]) -> None:
 
 
 def _export(documents: list[dict[str, Any]], path: Path, fmt: str) -> None:
+    if fmt not in {"jsonl", "csv"}:
+        raise ValueError(f"unsupported export format: {fmt}")
+
     path.parent.mkdir(parents=True, exist_ok=True)
     if fmt == "jsonl":
         with path.open("w", encoding="utf-8") as handle:
             for document in documents:
-                clean = {key: value for key, value in document.items() if key != "_id"}
-                handle.write(json.dumps(clean, ensure_ascii=False, default=_json_default) + "\n")
+                handle.write(_json_dumps(_clean_document(document)) + "\n")
         return
-    fields = (*LIST_FIELDS, "analysis_status", "phase0_summary", "phase0_discourse", "phase0_ontology")
+
+    fields = (*LIST_FIELDS, "analysis_status", *CSV_NESTED_FIELDS)
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         for document in documents:
             row = _row(document)
-            for field in ("phase0_summary", "phase0_discourse", "phase0_ontology"):
-                row[field] = json.dumps(document.get(field), ensure_ascii=False, sort_keys=True, default=_json_default)
+            for field in CSV_NESTED_FIELDS:
+                row[field] = _json_dumps(document.get(field))
             writer.writerow(row)
 
 
@@ -91,14 +118,16 @@ def main(argv: list[str] | None = None) -> int:
             if document is None:
                 print("document not found", file=sys.stderr)
                 return 1
-            clean = {key: value for key, value in document.items() if key != "_id"}
+            clean = _clean_document(document)
             clean["analysis_status"] = analysis_status(document)
             print(json.dumps(clean, indent=2, ensure_ascii=False, default=_json_default))
             return 0
+
         documents = list_documents(limit=args.limit, **_filters(args))
         if args.command == "list":
             _print_table(documents)
             return 0
+
         output = args.output or Path("data/exports") / f"phase0.{args.format}"
         _export(documents, output, args.format)
         print(output)
