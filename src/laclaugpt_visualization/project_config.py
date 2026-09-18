@@ -43,6 +43,33 @@ class DashboardLimits(BaseModel):
     refresh_seconds: int = Field(default=30, ge=5, le=3600)
 
 
+class CapabilityToggle(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    enabled: bool = False
+
+
+class RDFGraphRAGPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+
+
+class RDFAnalysisPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+    required: bool = False
+    graphrag: RDFGraphRAGPolicy = Field(default_factory=RDFGraphRAGPolicy)
+
+
+class AnalysisPolicy(BaseModel):
+    """Downstream mirror of Analysis-owned capability policy used for UI gating."""
+
+    model_config = ConfigDict(extra="allow")
+    sna: bool = False
+    dna_statement_coding: CapabilityToggle = Field(default_factory=CapabilityToggle)
+    critical_ai: CapabilityToggle = Field(default_factory=CapabilityToggle)
+    rdf: RDFAnalysisPolicy = Field(default_factory=RDFAnalysisPolicy)
+
+
 class AI26DashboardProfile(BaseModel):
     """Public-safe dashboard semantics. Scientific classification remains upstream."""
 
@@ -57,6 +84,7 @@ class AI26DashboardProfile(BaseModel):
     cache_backend: str = "redis"
     messaging_backend: str = "redis"
     canonical_analysis_codebook: str
+    analysis: AnalysisPolicy = Field(default_factory=AnalysisPolicy)
     arenas: dict[str, str] = Field(default_factory=dict)
     formations: dict[str, FormationPresentation] = Field(default_factory=dict)
     filters: list[str] = Field(default_factory=list)

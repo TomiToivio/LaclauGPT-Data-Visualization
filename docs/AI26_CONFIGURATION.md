@@ -11,6 +11,30 @@ AI26 Visualization is a downstream presentation/control profile over the canonic
 
 The public dashboard profile is `configs/projects/ai26.yaml`. Its `canonical_analysis_codebook` points to the current public Analysis codebook instead of duplicating it.
 
+## Phase 1 capability parity
+
+Visualization mirrors the Analysis-owned Phase 1 capability switches under the same `analysis` namespace. These settings are downstream gates only; Visualization never turns on an upstream analytical stage.
+
+The current Phase 1 defaults are:
+
+```yaml
+analysis:
+  sna: false
+  dna_statement_coding:
+    enabled: false
+  critical_ai:
+    enabled: false
+  rdf:
+    enabled: false
+    required: false
+    graphrag:
+      enabled: false
+```
+
+Critical AI, DNA and SNA are therefore off by default. RDF is also optional and disabled by default. The ordinary dashboard and canonical graph projection remain usable without RDF.
+
+`optional_capabilities` remains a presentation-facing capability summary. Its Phase 1 values must agree with the nested `analysis` policy for `sna`, `dna`, `critical_ai`, `rdf` and `rdf_graphrag`.
+
 ## Canonical AI26 IDs
 
 Visualization preserves the six current public formation IDs exactly:
@@ -80,6 +104,25 @@ Relevant views should surface the public profile's safeguards, including:
 - topic prevalence is not discourse or hegemony;
 - source-family prior is not current-document ideology.
 
+## RDF policy
+
+RDF uses the single documented policy shape consumed directly by `RDFProjectPolicy.from_mapping()`:
+
+```yaml
+analysis:
+  rdf:
+    enabled: false
+    required: false
+    graphrag:
+      enabled: false
+```
+
+Do not use flat `rdf` or `rdf_graphrag` flags as the authoritative RDF policy. Runtime service configuration may provide an RDF endpoint, but it cannot override project policy and enable RDF.
+
+When RDF is disabled, the RDF explorer reports that it is disabled and stops cleanly. The ordinary dashboard, including canonical MongoDB/CSV graph projections, remains independent from RDF.
+
+Synthetic tests may enable RDF explicitly to verify the optional path without making RDF a Phase 1 requirement.
+
 ## Diagnostics and provenance
 
 `AI26DashboardProfile.safe_summary()` is the supported project-profile diagnostic representation. `Settings.safe_summary()` remains the runtime diagnostic representation. Secret-bearing runtime values must never be copied into the project profile.
@@ -94,8 +137,15 @@ A private overlay can safely contain non-secret presentation overrides such as:
 project_id: ai26
 limits:
   refresh_seconds: 15
+analysis:
+  rdf:
+    enabled: true
+    required: false
+    graphrag:
+      enabled: false
 optional_capabilities:
   rdf: true
+  rdf_graphrag: false
 private_overlay_required: true
 ```
 
