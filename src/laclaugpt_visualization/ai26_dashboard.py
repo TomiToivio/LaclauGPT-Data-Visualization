@@ -150,8 +150,6 @@ class LiveSnapshot:
     analyzed_age_hours: float | None
     query_ms: int
     page_size: int
-    newest_analyzed_at: str | None
-    analyzed_age_hours: float | None
 
 
 def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) -> LiveSnapshot:
@@ -620,8 +618,6 @@ def _diagnostics(settings: Settings, snapshot: LiveSnapshot, frame: pd.DataFrame
             "query_ms": snapshot.query_ms,
             "page_size": snapshot.page_size,
             "loaded_records": len(frame),
-            "newest_analyzed_at": snapshot.newest_analyzed_at,
-            "analyzed_age_hours": snapshot.analyzed_age_hours,
             "freshness_warning_hours": FRESHNESS_WARNING_HOURS,
             "mongo_collections": ai26_collection_names(settings),
             "redis_contract": ai26_redis_contract(settings),
