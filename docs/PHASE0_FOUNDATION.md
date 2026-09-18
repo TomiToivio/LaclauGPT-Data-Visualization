@@ -120,9 +120,12 @@ lock. The marker is intentionally grep-friendly:
 grep -R "TOMI-LOCKED" .
 ```
 
+<<<<<<< HEAD
 
 See `docs/PHASE0_VISUALIZATION.md` for the thin Phase 0 visualization compatibility layer: the MongoDB analysis inputs it reads and the minimal display/export path.
 
+=======
+>>>>>>> 4c14fa6db4ff0845a48c7ddeb2c3f9e200982565
 ## Status
 
 `laclaugpt/` does not exist in this repository yet; Tomi creates it manually.
