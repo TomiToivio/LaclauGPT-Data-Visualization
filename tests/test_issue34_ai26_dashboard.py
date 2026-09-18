@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -11,6 +12,7 @@ from laclaugpt_visualization.ai26_dashboard import (
     ai26_collection_names,
     ai26_redis_contract,
     apply_ai26_filters,
+    LiveSnapshot,
 )
 from laclaugpt_visualization.config import Settings
 from laclaugpt_visualization.data import normalize_frame
@@ -164,3 +166,19 @@ def test_rag_request_and_response_preserve_correlation_and_evidence_ids():
     response = control.rag_response(request_id)
     assert response["answer"] == "A bounded synthetic answer"
     assert response["evidence"][0]["source_record_id"] == "record-123"
+
+
+def test_live_snapshot_freshness_fields_are_explicit():
+    now = datetime.now(UTC)
+    snapshot = LiveSnapshot(
+        frame=pd.DataFrame(),
+        counts={"records": 0, "analyzed": 1, "processing": 0},
+        failures=(),
+        loaded_at=now.isoformat(),
+        query_ms=1,
+        page_size=100,
+        newest_analyzed_at=(now - timedelta(hours=2)).isoformat(),
+        analyzed_age_hours=2.0,
+    )
+    assert snapshot.newest_analyzed_at
+    assert snapshot.analyzed_age_hours == 2.0
