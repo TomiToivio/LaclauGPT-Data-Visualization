@@ -208,13 +208,11 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
         frame=normalize_frame(pd.DataFrame(merged)),
         counts=counts,
         failures=failures,
-        loaded_at=loaded_at,
+        loaded_at=_now(),
         newest_analyzed_at=newest_analyzed_at,
         analyzed_age_hours=analyzed_age_hours,
         query_ms=int((time.perf_counter() - started) * 1000),
         page_size=limit,
-        newest_analyzed_at=newest_analyzed_at,
-        analyzed_age_hours=analyzed_age_hours,
     )
 
 
