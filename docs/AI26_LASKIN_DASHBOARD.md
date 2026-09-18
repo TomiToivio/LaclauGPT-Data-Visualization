@@ -6,6 +6,7 @@ This runbook is the public, secret-free operator guide for issue #35. The dashbo
 
 - `project_id=ai26`.
 - MongoDB is the canonical durable source for collected/analyzed research data.
+- The live AI26 dashboard is owned by this repository and reads MongoDB directly. The legacy JSONL dashboard/export path in `LaclauGPT-Discourse-Analysis` is retired and must not be scheduled in parallel.
 - Redis is transient config/status/messaging/control-plane infrastructure, not the scientific database.
 - Allas/S3 is used only through the existing distributed contract. The dashboard must not download multimodal objects merely to render views.
 - The service is private-network only. Keep the default loopback bind unless an existing protected reverse proxy/private subnet path is deliberately used. Do not expose the unauthenticated Streamlit service directly to the public Internet.
@@ -157,6 +158,15 @@ Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as the source t
 - public checkout read-only and private root as the only explicit writable project path
 - restrictive umask and no-new-privileges hardening
 
+Before enabling the maintained service, retire the legacy split deployment left by the monolith:
+
+```bash
+systemctl --user disable --now ai26-dashboard.service ai26-export.service ai26-export.timer 2>/dev/null || true
+systemctl --user daemon-reload
+```
+
+Do not re-enable the old `ai26-export` timer. Its JSONL output is not a live dashboard input in the four-repository deployment, and the old preflight truncated files before writing them. If a portable JSONL export is needed later, implement it as an explicit artifact export in this repository using temp-file + atomic rename semantics rather than destructive pre-truncation.
+
 Typical operator commands after installing the unit as `laclaugpt-visualization-ai26.service`:
 
 ```bash
@@ -217,7 +227,9 @@ After preflight/service start, validate from the dashboard and sanitized diagnos
 9. configuration controls expose only explicitly mutable non-secret fields;
 10. restarting the dashboard does not lose durable research state;
 11. startup does not require loading the whole corpus;
-12. no image/video/audio objects are fetched merely for dashboard rendering.
+12. no image/video/audio objects are fetched merely for dashboard rendering;
+13. the Monitor view reports the timestamp/age of the newest analyzed record and visibly warns when analysis is stale or freshness is unknown;
+14. `ai26-dashboard.service`, `ai26-export.service` and `ai26-export.timer` from the legacy repository are inactive.
 
 For interruption testing, stop only services you are authorized to interrupt or use an isolated/reversible connectivity test. The dashboard should recover after MongoDB/Redis connectivity returns; a Redis status outage must not turn Redis into a substitute data store.
 

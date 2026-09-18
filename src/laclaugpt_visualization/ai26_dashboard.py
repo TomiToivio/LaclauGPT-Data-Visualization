@@ -146,6 +146,8 @@ class LiveSnapshot:
     counts: Mapping[str, int]
     failures: tuple[Mapping[str, Any], ...]
     loaded_at: str
+    newest_analyzed_at: str | None
+    analyzed_age_hours: float | None
     query_ms: int
     page_size: int
     newest_analyzed_at: str | None
@@ -206,7 +208,9 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
         frame=normalize_frame(pd.DataFrame(merged)),
         counts=counts,
         failures=failures,
-        loaded_at=_now(),
+        loaded_at=loaded_at,
+        newest_analyzed_at=newest_analyzed_at,
+        analyzed_age_hours=analyzed_age_hours,
         query_ms=int((time.perf_counter() - started) * 1000),
         page_size=limit,
         newest_analyzed_at=newest_analyzed_at,
@@ -387,6 +391,17 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
             f"({snapshot.newest_analyzed_at})."
         )
     values = monitor(frame)
+    if snapshot.analyzed_age_hours is None:
+        st.warning("No timestamped analyzed records are available, so analysis freshness is unknown.")
+    elif snapshot.analyzed_age_hours >= 6:
+        st.warning(
+            f"Analysis is stale: newest analyzed record is {snapshot.analyzed_age_hours:.1f} hours old "
+            f"({snapshot.newest_analyzed_at})."
+        )
+    else:
+        st.caption(
+            f"Analysis freshness: newest analyzed record is {snapshot.analyzed_age_hours:.1f} hours old."
+        )
     cols = st.columns(6)
     for column, (label, value) in zip(
         cols,
@@ -602,6 +617,8 @@ def _diagnostics(settings: Settings, snapshot: LiveSnapshot, frame: pd.DataFrame
         {
             "project_id": settings.project_id,
             "loaded_at": snapshot.loaded_at,
+            "newest_analyzed_at": snapshot.newest_analyzed_at,
+            "analyzed_age_hours": snapshot.analyzed_age_hours,
             "query_ms": snapshot.query_ms,
             "page_size": snapshot.page_size,
             "loaded_records": len(frame),
