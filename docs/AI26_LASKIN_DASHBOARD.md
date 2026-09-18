@@ -120,6 +120,32 @@ For an `ai26` profile `serve` launches `laclaugpt_visualization/ai26_dashboard.p
 
 This is suitable for verification only. Steady-state operation must be supervised by systemd or the existing equivalent service manager, not Hermes or an interactive shell.
 
+## Retire legacy AI26 services
+
+Issue #53 established that Laskin had two obsolete user units pointing at the legacy `LaclauGPT-Discourse-Analysis` checkout: `ai26-dashboard.service` on port 8502 and `ai26-export.service` plus its timer. They are not part of the supported Visualization deployment.
+
+The supported steady state is exactly one live AI26 dashboard from `/mnt/workspace/LaclauGPT-Data-Visualization`, backed directly by MongoDB on port 8501. JSONL export is not required for the live dashboard and must not run as an orphan background job.
+
+Before enabling the supported service, disable the legacy user units if they exist:
+
+```bash
+systemctl --user disable --now ai26-dashboard.service 2>/dev/null || true
+systemctl --user disable --now ai26-export.timer 2>/dev/null || true
+systemctl --user disable --now ai26-export.service 2>/dev/null || true
+systemctl --user reset-failed ai26-dashboard.service ai26-export.service ai26-export.timer 2>/dev/null || true
+```
+
+Do not re-enable any unit whose `WorkingDirectory` or `ExecStart` points to `/mnt/workspace/LaclauGPT-Discourse-Analysis`. In particular, do not use a preflight that truncates `*.jsonl` files before export. If a future intentionally separate export artifact is introduced, it must be implemented in this repository and written atomically via temporary files plus rename, never by clearing live files first.
+
+Verify the supported deployment has a single listener/service path:
+
+```bash
+systemctl --user list-units --type=service | grep -E 'ai26|laclaugpt-visualization' || true
+ss -ltnp | grep -E ':8501|:8502' || true
+```
+
+Port 8501 should belong to the Visualization checkout. Port 8502 should not be serving the deprecated dashboard.
+
 ## systemd service
 
 Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as the source template. Replace only `<laskin-user>` and `<laskin-group>` with the authorized account/group. The template deliberately pins:
@@ -193,7 +219,7 @@ After preflight/service start, validate from the dashboard and sanitized diagnos
 1. the active project is `ai26`;
 2. canonical MongoDB collections resolve through the shared namespace helpers;
 3. a bounded page/aggregate of current collected records is visible;
-4. current analysis results are visible;
+4. current analysis results are visible and the Monitor shows the newest analyzed-record age; a stale dataset raises a visible warning;
 5. periodic reports appear when present;
 6. GraphProjection/DNA/RDF panels degrade cleanly when a capability is absent;
 7. Redis worker/status information is project-scoped and transient;
@@ -245,8 +271,7 @@ If Redis is unavailable, durable MongoDB-backed views should remain conceptually
 - Port unavailable: identify the existing process before changing the standard port.
 - Public/wildcard bind detected: restore loopback/private-network binding unless an existing protected access layer explicitly requires otherwise.
 - Optional RAG/RDF/Hermes unavailable: the dashboard should surface the capability as unavailable/degraded, not fail the core corpus browser.
-- Preflight reports an active legacy AI26 unit: disable the old `ai26-dashboard.service`, `ai26-export.service` and `ai26-export.timer`; the maintained service is the single live dashboard.
-- Freshness warning: inspect the Analysis worker and queue. Visualization intentionally reports stale MongoDB state instead of masking it with a local JSONL snapshot.
+- Legacy `ai26-dashboard.service` / `ai26-export.service` / `ai26-export.timer` present: disable them; the supported live dashboard reads MongoDB directly from this repository and does not consume their JSONL output.
 
 ## Acceptance record
 

@@ -30,6 +30,7 @@ from .worker_status import RedisOperationalStatus
 AI26_PROJECT_ID = "ai26"
 DEFAULT_PAGE_SIZE = 500
 MAX_PAGE_SIZE = 5000
+FRESHNESS_WARNING_HOURS = 6
 MUTABLE_VISUALIZATION_SETTINGS = frozenset(
     {
         "refresh_seconds",
@@ -149,6 +150,8 @@ class LiveSnapshot:
     analyzed_age_hours: float | None
     query_ms: int
     page_size: int
+    newest_analyzed_at: str | None
+    analyzed_age_hours: float | None
 
 
 def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) -> LiveSnapshot:
@@ -170,9 +173,9 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
             "analyzed": db[names["analyzed"]].count_documents(query),
             "processing": db[names["processing"]].count_documents(query),
         }
-        newest_analysis = db[names["analyzed"]].find_one(
-            query,
-            sort=[("created_at", -1), ("_id", -1)],
+        newest_analyzed = db[names["analyzed"]].find_one(
+            {**query, "created_at": {"$exists": True, "$ne": None}},
+            sort=[("created_at", -1)],
             projection={"created_at": 1},
         )
     finally:
@@ -188,25 +191,18 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
         if str(_first(item, ("status", "state", "task_status")) or "").lower()
         in {"failed", "error", "dead_letter", "dead-letter"}
     )
-    loaded_at = _now()
     newest_analyzed_at = None
     analyzed_age_hours = None
-    if newest_analysis and newest_analysis.get("created_at"):
-        raw = newest_analysis["created_at"]
-        if isinstance(raw, datetime):
-            stamp = raw if raw.tzinfo else raw.replace(tzinfo=UTC)
+    if newest_analyzed and newest_analyzed.get("created_at"):
+        value = newest_analyzed["created_at"]
+        if isinstance(value, datetime):
+            dt = value if value.tzinfo else value.replace(tzinfo=UTC)
         else:
-            try:
-                stamp = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-            except ValueError:
-                stamp = None
-        if stamp is not None:
-            stamp = stamp.astimezone(UTC)
-            newest_analyzed_at = stamp.isoformat()
-            analyzed_age_hours = max(
-                0.0,
-                (datetime.now(UTC) - stamp).total_seconds() / 3600,
-            )
+            dt = datetime.fromisoformat(str(value))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+        newest_analyzed_at = dt.astimezone(UTC).isoformat()
+        analyzed_age_hours = max(0.0, (datetime.now(UTC) - dt.astimezone(UTC)).total_seconds() / 3600)
 
     return LiveSnapshot(
         frame=normalize_frame(pd.DataFrame(merged)),
@@ -217,6 +213,8 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
         analyzed_age_hours=analyzed_age_hours,
         query_ms=int((time.perf_counter() - started) * 1000),
         page_size=limit,
+        newest_analyzed_at=newest_analyzed_at,
+        analyzed_age_hours=analyzed_age_hours,
     )
 
 
@@ -380,6 +378,18 @@ def _sidebar(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
 
 
 def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
+    if snapshot.analyzed_age_hours is None:
+        st.warning("Analysis freshness unavailable: no analyzed record with created_at was found.")
+    elif snapshot.analyzed_age_hours >= FRESHNESS_WARNING_HOURS:
+        st.warning(
+            f"Analysis is stale: newest analyzed record is {snapshot.analyzed_age_hours:.1f} hours old "
+            f"({snapshot.newest_analyzed_at})."
+        )
+    else:
+        st.caption(
+            f"Analysis freshness: newest analyzed record is {snapshot.analyzed_age_hours:.1f} hours old "
+            f"({snapshot.newest_analyzed_at})."
+        )
     values = monitor(frame)
     if snapshot.analyzed_age_hours is None:
         st.warning("No timestamped analyzed records are available, so analysis freshness is unknown.")
@@ -612,6 +622,9 @@ def _diagnostics(settings: Settings, snapshot: LiveSnapshot, frame: pd.DataFrame
             "query_ms": snapshot.query_ms,
             "page_size": snapshot.page_size,
             "loaded_records": len(frame),
+            "newest_analyzed_at": snapshot.newest_analyzed_at,
+            "analyzed_age_hours": snapshot.analyzed_age_hours,
+            "freshness_warning_hours": FRESHNESS_WARNING_HOURS,
             "mongo_collections": ai26_collection_names(settings),
             "redis_contract": ai26_redis_contract(settings),
             "safe_config": settings.safe_summary(),

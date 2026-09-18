@@ -9,6 +9,20 @@ messaging_backend: redis
 canonical_analysis_codebook: TomiToivio/LaclauGPT-Data-Analysis:codebooks/public/ai26_v2.yaml
 private_overlay_required: false
 
+analysis:
+  # Mirror the Analysis-owned Phase 1 capability policy for downstream gating.
+  # Visualization never enables an upstream analytical stage on its own.
+  sna: false
+  dna_statement_coding:
+    enabled: false
+  critical_ai:
+    enabled: false
+  rdf:
+    enabled: false
+    required: false
+    graphrag:
+      enabled: false
+
 arenas:
   elites: AI labs, researchers, entrepreneurs, intellectuals and adjacent movements
   grassroots: Mobilisation around labour, culture, surveillance, environment, data centres, safety and deployment resistance
@@ -79,10 +93,11 @@ tabs:
   - Diagnostics
 
 optional_capabilities:
-  dna: true
+  dna: false
+  sna: false
   rdf: false
   rdf_graphrag: false
-  critical_ai: true
+  critical_ai: false
   rag_chat: true
   hermes: true
   redis_config_editing: true
