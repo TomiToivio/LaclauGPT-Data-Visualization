@@ -28,6 +28,9 @@ After the Phase 0 path works, restore richer capabilities one explicit feature a
 
 Anything marked `TOMI-LOCKED` remains a human-controlled invariant. Agents must not change a locked element unless Tomi explicitly authorizes changing that specific element.
 
+
+See `docs/PHASE0_VISUALIZATION.md` for the thin Phase 0 visualization compatibility layer: the MongoDB analysis inputs it reads and the minimal display/export path.
+
 ## Status
 
 `laclaugpt/` now contains the minimal Phase 0 visualization implementation. It is expected to evolve through small, tested Phase 0 changes before Phase 1 capabilities are restored around it.

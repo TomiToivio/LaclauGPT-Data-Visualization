@@ -150,8 +150,6 @@ class LiveSnapshot:
     analyzed_age_hours: float | None
     query_ms: int
     page_size: int
-    newest_analyzed_at: str | None
-    analyzed_age_hours: float | None
 
 
 def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) -> LiveSnapshot:
@@ -193,6 +191,7 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
     )
     newest_analyzed_at = None
     analyzed_age_hours = None
+    loaded_at = _now()
     if newest_analyzed and newest_analyzed.get("created_at"):
         value = newest_analyzed["created_at"]
         if isinstance(value, datetime):
@@ -213,8 +212,6 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
         analyzed_age_hours=analyzed_age_hours,
         query_ms=int((time.perf_counter() - started) * 1000),
         page_size=limit,
-        newest_analyzed_at=newest_analyzed_at,
-        analyzed_age_hours=analyzed_age_hours,
     )
 
 
@@ -622,8 +619,6 @@ def _diagnostics(settings: Settings, snapshot: LiveSnapshot, frame: pd.DataFrame
             "query_ms": snapshot.query_ms,
             "page_size": snapshot.page_size,
             "loaded_records": len(frame),
-            "newest_analyzed_at": snapshot.newest_analyzed_at,
-            "analyzed_age_hours": snapshot.analyzed_age_hours,
             "freshness_warning_hours": FRESHNESS_WARNING_HOURS,
             "mongo_collections": ai26_collection_names(settings),
             "redis_contract": ai26_redis_contract(settings),
