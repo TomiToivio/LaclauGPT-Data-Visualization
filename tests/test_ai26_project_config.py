@@ -1,9 +1,12 @@
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import yaml
 
 from laclaugpt_visualization.project_config import compose_ai26_profile, sanitize_mapping
+from laclaugpt_visualization.rdf import RDFProjectPolicy
+from laclaugpt_visualization.transforms import graph_projection
 
 PUBLIC = Path("configs/projects/ai26.yaml")
 
@@ -23,6 +26,65 @@ def test_public_ai26_profile_uses_canonical_ids_and_multilabel_semantics():
     }
     assert all(item.provisional and item.multi_label for item in profile.formations.values())
     assert "frequency is not hegemony" in profile.semantic_safeguards
+
+
+def test_public_ai26_phase1_capabilities_match_analysis_defaults():
+    profile = compose_ai26_profile(PUBLIC)
+
+    assert profile.analysis.sna is False
+    assert profile.analysis.dna_statement_coding.enabled is False
+    assert profile.analysis.critical_ai.enabled is False
+    assert profile.analysis.rdf.enabled is False
+    assert profile.analysis.rdf.required is False
+    assert profile.analysis.rdf.graphrag.enabled is False
+
+    assert profile.optional_capabilities["sna"] is False
+    assert profile.optional_capabilities["dna"] is False
+    assert profile.optional_capabilities["critical_ai"] is False
+    assert profile.optional_capabilities["rdf"] is False
+    assert profile.optional_capabilities["rdf_graphrag"] is False
+
+
+def test_visualization_profile_is_directly_compatible_with_rdf_policy_loader():
+    payload = yaml.safe_load(PUBLIC.read_text(encoding="utf-8"))
+    assert RDFProjectPolicy.from_mapping(payload) == RDFProjectPolicy()
+
+    enabled = {
+        **payload,
+        "analysis": {
+            **payload["analysis"],
+            "rdf": {
+                "enabled": True,
+                "required": False,
+                "graphrag": {"enabled": True},
+            },
+        },
+    }
+    assert RDFProjectPolicy.from_mapping(enabled) == RDFProjectPolicy(
+        enabled=True,
+        required=False,
+        graphrag_enabled=True,
+    )
+
+
+def test_rdf_disabled_does_not_disable_canonical_graph_projection():
+    frame = pd.DataFrame(
+        [
+            {
+                "source_author": "Actor A",
+                "relations": [
+                    {
+                        "source_ref": "Actor A",
+                        "target_ref": "safety",
+                        "relation_type": "articulates",
+                    }
+                ],
+            }
+        ]
+    )
+    projection = graph_projection(frame)
+    assert projection["nodes"]
+    assert projection["edges"]
 
 
 def test_private_overlay_can_change_display_settings_but_not_project_identity(tmp_path):
