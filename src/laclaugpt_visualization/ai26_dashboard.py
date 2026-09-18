@@ -196,7 +196,7 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
         if isinstance(value, datetime):
             dt = value if value.tzinfo else value.replace(tzinfo=UTC)
         else:
-            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(str(value))
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=UTC)
         newest_analyzed_at = dt.astimezone(UTC).isoformat()
