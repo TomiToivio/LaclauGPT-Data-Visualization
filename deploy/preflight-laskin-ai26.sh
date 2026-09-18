@@ -36,6 +36,23 @@ set +a
 [[ "${LACLAUGPT_VIS_SERVER_HOST:-127.0.0.1}" != "0.0.0.0" ]] || fail "refusing wildcard bind without an explicit protected access layer"
 info "AI26 distributed profile shape verified"
 
+# Issue #53: the Visualization repository owns the live AI26 dashboard. The legacy
+# Discourse-Analysis dashboard/export units must stay retired so no JSONL path is
+# continuously written without a consumer.
+if command -v systemctl >/dev/null 2>&1; then
+  legacy_units=(ai26-dashboard.service ai26-export.service ai26-export.timer)
+  active_legacy=()
+  for unit in "${legacy_units[@]}"; do
+    if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
+      active_legacy+=("$unit")
+    fi
+  done
+  if (( ${#active_legacy[@]} > 0 )); then
+    fail "legacy AI26 user units are still active: ${active_legacy[*]}; retire them before starting Visualization"
+  fi
+  info "legacy AI26 dashboard/export user units are inactive"
+fi
+
 # These commands emit only the application's sanitized profile/readiness output.
 "$VENV/bin/laclaugpt-visualize" profile
 "$VENV/bin/laclaugpt-visualize" health
