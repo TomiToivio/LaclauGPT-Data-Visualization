@@ -9,6 +9,7 @@ from laclaugpt_visualization.ep24 import (
     dimension_counts,
     legacy_change_summary,
     load_ep24_bundle,
+    normalize_ep24_frame,
     overview,
     qa_summary,
 )
@@ -101,9 +102,7 @@ def test_ep24_country_and_dimension_views_preserve_national_identity() -> None:
 
 
 def load_ep24_bundle_from_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    from laclaugpt_visualization.data import normalize_frame
-
-    return normalize_frame(frame)
+    return normalize_ep24_frame(frame)
 
 
 def test_ep24_overview_qa_and_legacy_summary_are_descriptive() -> None:
