@@ -1,0 +1,18 @@
+[Unit]
+Description=LaclauGPT EP24 visualization on CSC Pouta
+After=network.target
+
+[Service]
+Type=simple
+User=REPLACE_ME
+WorkingDirectory=/private/path/LaclauGPT-Data-Visualization
+Environment=LACLAUGPT_VIS_ANALYSIS_DATA_DIR=/private/path/LaclauGPT-Private/analysis/ep24
+Environment=LACLAUGPT_VIS_DATA_DIR=/private/path/visualization/ep24
+Environment=STREAMLIT_SERVER_ADDRESS=127.0.0.1
+Environment=STREAMLIT_SERVER_PORT=18502
+ExecStart=/bin/bash scripts/ep24/run_ep24_dashboard.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
