@@ -39,6 +39,29 @@ def _candidate_data_dirs(root: Path) -> list[Path]:
     return [path for index, path in enumerate(candidates) if path not in candidates[:index]]
 
 
+def normalize_ep24_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalize nested canonical or improved flat #245 exports losslessly.
+
+    Generic canonical reconstruction interprets a populated schema_version as a signal
+    that nested source/content/analysis sections are present. Improved EP24 CSV exports
+    may instead be intentionally flat, so suppress that signal only at this boundary and
+    restore the exported schema version afterwards.
+    """
+    if frame.empty:
+        return normalize_frame(frame)
+    nested_sections = {"source", "content", "analysis"}.intersection(frame.columns)
+    if nested_sections:
+        return normalize_frame(frame)
+    staged = frame.copy()
+    schema = staged["schema_version"].copy() if "schema_version" in staged else None
+    if schema is not None:
+        staged["schema_version"] = ""
+    normalized = normalize_frame(staged)
+    if schema is not None:
+        normalized["schema_version"] = schema.fillna("").astype(str).to_numpy()
+    return normalized
+
+
 def _read_csv(path: Path) -> pd.DataFrame:
     return pd.read_csv(path) if path.exists() else pd.DataFrame()
 
@@ -55,7 +78,7 @@ def _load_sqlite_records(path: Path) -> pd.DataFrame:
         if table is None:
             return pd.DataFrame()
         frame = pd.read_sql_query(f'SELECT * FROM "{table}"', connection)
-    return normalize_frame(frame)
+    return normalize_ep24_frame(frame)
 
 
 def load_ep24_bundle(root: str | Path | None) -> EP24Bundle:
@@ -69,7 +92,7 @@ def load_ep24_bundle(root: str | Path | None) -> EP24Bundle:
         for name in _RECORD_CSV_PRIORITY:
             path = data_dir / name
             if path.exists():
-                records = normalize_frame(pd.read_csv(path))
+                records = normalize_ep24_frame(pd.read_csv(path))
                 source_path = path
                 storage_kind = "csv"
                 break
