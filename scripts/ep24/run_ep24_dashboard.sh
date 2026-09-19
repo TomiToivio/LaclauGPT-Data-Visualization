@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR:?set LACLAUGPT_VIS_ANALYSIS_DATA_DIR to the private EP24 analysis root}"
+
+[[ -d "$LACLAUGPT_VIS_ANALYSIS_DATA_DIR" ]] || {
+  echo "EP24 analysis directory does not exist: $LACLAUGPT_VIS_ANALYSIS_DATA_DIR" >&2
+  exit 2
+}
+
+export LACLAUGPT_VIS_PROJECT_ID=ep24
+export LACLAUGPT_VIS_PROFILE=${LACLAUGPT_VIS_PROFILE:-server}
+export LACLAUGPT_VIS_STORAGE_BACKEND=csv
+export LACLAUGPT_VIS_DATA_BACKEND=files
+export LACLAUGPT_VIS_CACHE_BACKEND=memory
+export LACLAUGPT_VIS_MESSAGING_BACKEND=none
+export LACLAUGPT_VIS_OBJECT_BACKEND=local
+export LACLAUGPT_VIS_DATA_DIR=${LACLAUGPT_VIS_DATA_DIR:-data/ep24}
+export STREAMLIT_SERVER_ADDRESS=${STREAMLIT_SERVER_ADDRESS:-127.0.0.1}
+export STREAMLIT_SERVER_PORT=${STREAMLIT_SERVER_PORT:-18502}
+export STREAMLIT_SERVER_HEADLESS=true
+export STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+if [[ "$STREAMLIT_SERVER_ADDRESS" != "127.0.0.1" && "$STREAMLIT_SERVER_ADDRESS" != "localhost" && "$STREAMLIT_SERVER_ADDRESS" != "::1" ]]; then
+  if [[ ${LACLAUGPT_VIS_ALLOW_NONLOOPBACK:-0} != 1 ]]; then
+    echo "refusing non-loopback bind without LACLAUGPT_VIS_ALLOW_NONLOOPBACK=1" >&2
+    exit 2
+  fi
+fi
+
+exec laclaugpt-visualize
