@@ -207,16 +207,8 @@ def qa_summary(frame: pd.DataFrame, failures: pd.DataFrame | None = None) -> pd.
             }
         )
     if "analysis_status" in frame:
-        rows.append(
-            {
-                "metric": "not_analyzed",
-                "value": int(~frame["analysis_status"].astype(str).str.casefold().eq("analyzed").sum())
-                if False
-                else int(
-                    (~frame["analysis_status"].astype(str).str.casefold().eq("analyzed")).sum()
-                ),
-            }
-        )
+        analyzed = frame["analysis_status"].astype(str).str.casefold().eq("analyzed")
+        rows.append({"metric": "not_analyzed", "value": int((~analyzed).sum())})
     if "uncertainties" in frame:
         rows.append(
             {
