@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LaclauGPT Phase-1 Cytoscape prototype</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 1rem; }
+  #cy { height: 70vh; border: 1px solid #bbb; }
+  .warning { max-width: 72rem; }
+</style>
+<p class="warning"><strong>Phase 1 optional prototype.</strong> Descriptive network only: degree ≠ nodal point, layout proximity ≠ equivalence, cluster ≠ ideology, frequency ≠ hegemony.</p>
+<div id="cy"></div>
+<script type="module">
+  import cytoscape from "https://cdn.jsdelivr.net/npm/cytoscape@3.33.1/+esm";
+
+  const elements = [
+    { data: { id: "actor:a", label: "Actor A", kind: "actor", source_urls: ["https://example.invalid/1"] } },
+    { data: { id: "actor:b", label: "Actor B", kind: "actor", source_urls: ["https://example.invalid/2"] } },
+    { data: { id: "concept:public-ai", label: "Public AI", kind: "concept" } },
+    { data: { id: "e1", source: "actor:a", target: "concept:public-ai", type: "mentions", evidence_refs: ["ev-1"] } },
+    { data: { id: "e2", source: "actor:b", target: "concept:public-ai", type: "mentions", evidence_refs: ["ev-2"] } }
+  ];
+
+  const cy = cytoscape({
+    container: document.getElementById("cy"),
+    elements,
+    style: [
+      { selector: "node", style: { label: "data(label)", "text-valign": "center" } },
+      { selector: 'node[kind = "actor"]', style: { shape: "ellipse" } },
+      { selector: 'node[kind = "concept"]', style: { shape: "round-rectangle" } },
+      { selector: "edge", style: { "curve-style": "bezier", "target-arrow-shape": "triangle" } }
+    ],
+    layout: { name: "cose" }
+  });
+
+  cy.on("tap", "node, edge", event => {
+    const data = event.target.data();
+    console.info("Evidence/provenance drill-down payload", data.source_urls ?? [], data.evidence_refs ?? []);
+  });
+</script>
