@@ -10,6 +10,14 @@ import streamlit as st
 from .canonical import LEGACY_COLUMNS
 from .config import get_settings
 from .data import filter_frame, load_frame
+from .ep24 import (
+    country_counts as ep24_country_counts,
+    dimension_counts as ep24_dimension_counts,
+    legacy_change_summary as ep24_legacy_change_summary,
+    load_ep24_bundle,
+    overview as ep24_overview,
+    qa_summary as ep24_qa_summary,
+)
 from .plugins import default_registry
 from .products import DataProduct, InMemoryProvider, ProductKind
 from .provenance import (
@@ -49,6 +57,10 @@ def _load_default_frame():
     settings.ensure_local_directories()
     if settings.data_backend == "mongodb":
         return load_mongodb(settings)
+    if settings.project_id.casefold() == "ep24" and settings.analysis_data_dir:
+        bundle = load_ep24_bundle(settings.analysis_data_dir)
+        if not bundle.records.empty:
+            return bundle.records
     if settings.data_backend == "sqlite" and settings.sqlite_path.exists():
         return load_frame(settings.sqlite_path, settings)
     roots = [settings.analysis_data_dir, settings.data_dir]
@@ -484,6 +496,97 @@ def _reports_page(frame) -> None:
     )
 
 
+
+def _ep24_improved_page(frame) -> None:
+    """Research views for the improved #245 Finland/Poland handoff."""
+    settings = get_settings()
+    bundle = load_ep24_bundle(settings.analysis_data_dir or settings.data_dir)
+    values = ep24_overview(frame, bundle.failures)
+
+    st.markdown("#### EP24 improved Finland / Poland analysis")
+    st.caption(
+        "Local-file research view for Data-Analysis #245. Source, legacy, "
+        "researcher-grounded and model-derived values remain inspectable rather than "
+        "being flattened into a single score."
+    )
+    metrics = st.columns(6)
+    metrics[0].metric("Documents", values["documents"])
+    metrics[1].metric("Finland", values["finland"])
+    metrics[2].metric("Poland", values["poland"])
+    metrics[3].metric("Analyzed", values["analyzed"])
+    metrics[4].metric("Failures", values["failures"])
+    metrics[5].metric("Codebook refs", values["codebook_refs"])
+    st.caption(
+        f"Storage: {bundle.storage_kind}"
+        + (f" · {bundle.source_path}" if bundle.source_path else " · no #245 bundle found")
+    )
+
+    countries = ep24_country_counts(frame)
+    if not countries.empty:
+        st.plotly_chart(
+            px.bar(countries, x="country", y="documents", title="Country coverage"),
+            use_container_width=True,
+        )
+
+    dimensions = {
+        "Signifiers": "signifiers",
+        "Nodal points": "nodal_points",
+        "Actors / entities": "entities",
+        "Themes / topics": "topics",
+        "Frontiers": "frontier",
+        "Affects": "affects",
+    }
+    for tab, (title, field) in zip(st.tabs(list(dimensions)), dimensions.items(), strict=True):
+        with tab:
+            table = ep24_dimension_counts(frame, field)
+            if table.empty:
+                st.caption(f"No {title.lower()} exported in the current view.")
+            else:
+                st.dataframe(table.head(200), use_container_width=True, hide_index=True)
+                st.plotly_chart(
+                    px.bar(
+                        table.groupby(["country", field], as_index=False)["count"].sum()
+                        .sort_values("count", ascending=False)
+                        .head(40),
+                        x="count",
+                        y=field,
+                        color="country",
+                        orientation="h",
+                        barmode="group",
+                        title=f"{title}: Finland / Poland",
+                    ),
+                    use_container_width=True,
+                )
+
+    st.markdown("#### Relations")
+    relation_table = relations(frame)
+    if relation_table.empty:
+        st.caption("No relation edges exported in the current view.")
+    else:
+        st.dataframe(relation_table.head(500), use_container_width=True, hide_index=True)
+        st.caption("The edge table is primary; graph layout is descriptive, not theoretical proof.")
+
+    st.markdown("#### Legacy vs improved")
+    if bundle.legacy_comparison.empty:
+        st.caption("legacy_comparison.csv is not present in the current #245 handoff.")
+    else:
+        summary = ep24_legacy_change_summary(bundle.legacy_comparison)
+        st.dataframe(summary, use_container_width=True, hide_index=True)
+        with st.expander("Inspect comparison rows"):
+            st.dataframe(bundle.legacy_comparison.head(1000), use_container_width=True, hide_index=True)
+
+    st.markdown("#### QA / provenance")
+    st.dataframe(
+        ep24_qa_summary(frame, bundle.failures),
+        use_container_width=True,
+        hide_index=True,
+    )
+    if not bundle.failures.empty:
+        with st.expander("Failed rows / stages"):
+            st.dataframe(bundle.failures.head(1000), use_container_width=True, hide_index=True)
+    st.caption(CAVEAT)
+
+
 def _run_ids(frame) -> set[str]:
     if frame.empty:
         return set()
@@ -706,6 +809,9 @@ def _render_mode(frame, mode: str) -> None:
             _reports_page,
             _research_data_page,
         ]
+    if get_settings().project_id.casefold() == "ep24":
+        labels.insert(0, "EP24 Improved")
+        pages.insert(0, _ep24_improved_page)
     labels.extend(["Live Status", "Plugin Library"])
     pages.extend([_live_status_page, lambda current_frame: _plugin_library_page(current_frame, mode)])
     for tab, page in zip(st.tabs(labels), pages, strict=True):
@@ -716,7 +822,7 @@ def _render_mode(frame, mode: str) -> None:
 def run() -> None:
     st.set_page_config(page_title="LaclauGPT Data Visualization", layout="wide")
     st.title("LaclauGPT Data Visualization")
-    st.caption("Legacy EP24 + canonical live + hybrid researcher workbench.")
+    st.caption("Canonical live + improved/legacy EP24 + hybrid researcher workbench.")
     st.warning(CAVEAT)
     settings = get_settings()
     settings.ensure_local_directories()
