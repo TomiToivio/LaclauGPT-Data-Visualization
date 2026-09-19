@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LaclauGPT Phase-1 Sigma prototype</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 1rem; }
+  #sigma { height: 75vh; border: 1px solid #bbb; }
+</style>
+<p><strong>Phase 1 optional scale prototype.</strong> Use Sigma/Graphology for large browser graphs where WebGL scale matters. Layout and centrality remain descriptive, not discourse-theoretical conclusions.</p>
+<div id="sigma"></div>
+<script type="module">
+  import Graph from "https://cdn.jsdelivr.net/npm/graphology@0.26.0/+esm";
+  import Sigma from "https://cdn.jsdelivr.net/npm/sigma@3.0.2/+esm";
+
+  const graph = new Graph({ multi: true, type: "undirected" });
+  const size = 1500;
+  for (let i = 0; i < size; i += 1) {
+    const angle = (i / size) * Math.PI * 2;
+    graph.addNode("n" + i, {
+      label: "Synthetic " + i,
+      x: Math.cos(angle) + ((i % 17) / 100),
+      y: Math.sin(angle) + ((i % 23) / 100),
+      size: 2,
+      evidence_ref: "synthetic:" + i
+    });
+  }
+  for (let i = 0; i < size * 3; i += 1) {
+    const source = "n" + (i % size);
+    const target = "n" + ((i * 37 + 11) % size);
+    if (source !== target) graph.addEdgeWithKey("e" + i, source, target, { kind: "synthetic" });
+  }
+  new Sigma(graph, document.getElementById("sigma"));
+</script>
