@@ -271,7 +271,7 @@ def filter_frame(
             allowed = {str(value) for value in selected}
             result = result[
                 result[column].map(
-                    lambda values: bool(allowed.intersection(map(str, values)))
+                    lambda values, allowed=allowed: bool(allowed.intersection(map(str, values)))
                 )
             ]
     if start is not None:
