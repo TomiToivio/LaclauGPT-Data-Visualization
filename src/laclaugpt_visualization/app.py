@@ -119,6 +119,10 @@ def _sidebar_filters(frame):
     countries = sorted(value for value in frame["source_country"].unique() if value)
     languages = sorted(value for value in frame["source_language"].unique() if value)
     formations = sorted({str(item) for values in frame["formations"] for item in values})
+    entities = sorted({str(item) for values in frame["entities"] for item in values})
+    topics = sorted({str(item) for values in frame["topics"] for item in values})
+    signifiers = sorted({str(item) for values in frame["signifiers"] for item in values})
+    frontiers = sorted({str(item) for values in frame["frontier"] for item in values})
     filtered = filter_frame(
         frame,
         query=query,
@@ -126,6 +130,10 @@ def _sidebar_filters(frame):
         countries=st.sidebar.multiselect("Countries", countries),
         languages=st.sidebar.multiselect("Languages", languages),
         formations=st.sidebar.multiselect("Formations", formations),
+        entities=st.sidebar.multiselect("Actors / entities", entities),
+        topics=st.sidebar.multiselect("Themes / topics", topics),
+        signifiers=st.sidebar.multiselect("Signifiers", signifiers),
+        frontiers=st.sidebar.multiselect("Frontiers", frontiers),
     )
     return _provenance_sidebar_filters(filtered)
 
