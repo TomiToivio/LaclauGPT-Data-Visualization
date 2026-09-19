@@ -10,14 +10,12 @@ import streamlit as st
 from .canonical import LEGACY_COLUMNS
 from .config import get_settings
 from .data import filter_frame, load_frame
-from .ep24 import (
-    country_counts as ep24_country_counts,
-    dimension_counts as ep24_dimension_counts,
-    legacy_change_summary as ep24_legacy_change_summary,
-    load_ep24_bundle,
-    overview as ep24_overview,
-    qa_summary as ep24_qa_summary,
-)
+from .ep24 import country_counts as ep24_country_counts
+from .ep24 import dimension_counts as ep24_dimension_counts
+from .ep24 import legacy_change_summary as ep24_legacy_change_summary
+from .ep24 import load_ep24_bundle
+from .ep24 import overview as ep24_overview
+from .ep24 import qa_summary as ep24_qa_summary
 from .plugins import default_registry
 from .products import DataProduct, InMemoryProvider, ProductKind
 from .provenance import (
