@@ -237,6 +237,10 @@ def filter_frame(
     languages: Iterable[str] | None = None,
     authors: Iterable[str] | None = None,
     formations: Iterable[str] | None = None,
+    entities: Iterable[str] | None = None,
+    topics: Iterable[str] | None = None,
+    signifiers: Iterable[str] | None = None,
+    frontiers: Iterable[str] | None = None,
     start: Any | None = None,
     end: Any | None = None,
 ) -> pd.DataFrame:
@@ -255,11 +259,21 @@ def filter_frame(
         if selected:
             allowed = {str(value) for value in selected}
             result = result[result[column].isin(allowed)]
-    if formations:
-        allowed = {str(value) for value in formations}
-        result = result[
-            result["formations"].map(lambda values: bool(allowed.intersection(map(str, values))))
-        ]
+    list_filters = {
+        "formations": formations,
+        "entities": entities,
+        "topics": topics,
+        "signifiers": signifiers,
+        "frontier": frontiers,
+    }
+    for column, selected in list_filters.items():
+        if selected:
+            allowed = {str(value) for value in selected}
+            result = result[
+                result[column].map(
+                    lambda values, allowed=allowed: bool(allowed.intersection(map(str, values)))
+                )
+            ]
     if start is not None:
         result = result[result["source_timestamp"] >= pd.Timestamp(start, tz="UTC")]
     if end is not None:
