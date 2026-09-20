@@ -268,11 +268,23 @@ def _render_artifacts(row: Any) -> None:
                 st.warning(f"Artifact unavailable ({type(exc).__name__}).")
                 continue
             suffix = path.suffix.lower()
-            if artifact.content_type and artifact.content_type.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+            is_image = (
+                bool(artifact.content_type and artifact.content_type.startswith("image/"))
+                or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+            )
+            is_video = (
+                bool(artifact.content_type and artifact.content_type.startswith("video/"))
+                or suffix in {".mp4", ".webm", ".mov", ".m4v"}
+            )
+            is_audio = (
+                bool(artifact.content_type and artifact.content_type.startswith("audio/"))
+                or suffix in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
+            )
+            if is_image:
                 st.image(str(path))
-            elif artifact.content_type and artifact.content_type.startswith("video/") or suffix in {".mp4", ".webm", ".mov", ".m4v"}:
+            elif is_video:
                 st.video(str(path))
-            elif artifact.content_type and artifact.content_type.startswith("audio/") or suffix in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}:
+            elif is_audio:
                 st.audio(str(path))
             else:
                 st.download_button(
