@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from laclaugpt_visualization.config import Settings
 from laclaugpt_visualization.storage import (
+    ArtifactUnavailable,
     artifact_references,
     download_s3_object,
     resolve_artifact_reference,
@@ -122,3 +123,40 @@ def test_download_rejects_project_escape_before_network_transfer(monkeypatch, tm
         assert "unsafe S3/Allas artifact reference" in str(exc)
     else:
         raise AssertionError("cross-project reference should have been rejected")
+
+
+def test_missing_object_is_reported_without_backend_details(monkeypatch, tmp_path):
+    class FakeClient:
+        def download_file(self, *args):
+            raise RuntimeError("NoSuchKey: private-bucket/projects/ai26/secret.mp4")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "boto3",
+        SimpleNamespace(client=lambda *args, **kwargs: FakeClient()),
+    )
+    settings = _s3_settings()
+
+    try:
+        download_s3_object(settings, "media/missing.mp4", tmp_path / "missing.mp4")
+    except ArtifactUnavailable as exc:
+        assert str(exc) == "configured S3/Allas artifact is unavailable"
+        assert "private-bucket" not in str(exc)
+    else:
+        raise AssertionError("missing object should be reported as unavailable")
+
+
+def test_missing_credentials_are_reported_without_secret_details(monkeypatch, tmp_path):
+    def client(*args, **kwargs):
+        raise RuntimeError("NoCredentialsError: access-key=do-not-show")
+
+    monkeypatch.setitem(sys.modules, "boto3", SimpleNamespace(client=client))
+    settings = _s3_settings()
+
+    try:
+        download_s3_object(settings, "media/video.mp4", tmp_path / "video.mp4")
+    except ArtifactUnavailable as exc:
+        assert str(exc) == "configured S3/Allas artifact is unavailable"
+        assert "access-key" not in str(exc)
+    else:
+        raise AssertionError("missing credentials should be reported as unavailable")
