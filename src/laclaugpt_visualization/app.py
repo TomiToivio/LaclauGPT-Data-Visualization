@@ -25,6 +25,7 @@ from .graph_explorer import (
 )
 from .phase0_browser import render_phase0_browser
 from .plugins import default_registry
+from .plugin_pages import discover_plugin_pages, render_plugin_page
 from .products import DataProduct, InMemoryProvider, ProductKind
 from .provenance import (
     UNKNOWN,
@@ -847,6 +848,104 @@ def _backend_capabilities() -> set[str]:
     return capabilities
 
 
+
+def _activate_builtin_plugin_renderers(registry) -> None:
+    """Bind maintained Phase-1 views to matching plugin contracts."""
+
+    def render_table(products, context):
+        st.dataframe(
+            products[ProductKind.TABLE].payload,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    def render_timeline(products, context):
+        timeline = products[ProductKind.TIMELINE].payload
+        st.plotly_chart(
+            px.line(
+                timeline,
+                x="period",
+                y="documents",
+                color="time_kind",
+                markers=True,
+            ),
+            use_container_width=True,
+        )
+
+    def render_map(products, context):
+        points = products[ProductKind.GEODATA].payload
+        st.plotly_chart(
+            px.scatter_geo(
+                points,
+                lat="latitude",
+                lon="longitude",
+                hover_name="label",
+                hover_data=["location", "event_type", "source_url"],
+            ),
+            use_container_width=True,
+        )
+
+    def render_network(products, context):
+        network = products[ProductKind.NETWORK].payload
+        st.caption(
+            f"Plugin graph: {len(network.get('nodes', []))} nodes, "
+            f"{len(network.get('edges', []))} edges"
+        )
+        st.json(network)
+
+    for name, renderer in {
+        "table": render_table,
+        "timeline": render_timeline,
+        "map": render_map,
+        "network": render_network,
+    }.items():
+        try:
+            registry.get(name).render = renderer
+        except KeyError:
+            continue
+
+
+def _plugin_driven_tabs(frame, mode: str):
+    """Build optional tabs without making core browsing depend on plugins."""
+    try:
+        registry = default_registry()
+        _activate_builtin_plugin_renderers(registry)
+        provider = _plugin_provider(frame)
+        plugin_pages = discover_plugin_pages(
+            registry,
+            provider,
+            rag_enabled=ProductKind.RETRIEVAL in provider.capabilities(),
+            backend_capabilities=_backend_capabilities(),
+            fields=set(frame.columns),
+            mode=mode,
+        )
+    except Exception:
+        return [], []
+
+    labels = []
+    pages = []
+    for plugin_page in plugin_pages:
+        labels.append(f"Plugin · {plugin_page.title}")
+
+        def render_optional(current_frame, page=plugin_page, current_registry=registry):
+            current_provider = _plugin_provider(current_frame)
+            result = render_plugin_page(
+                current_registry,
+                page,
+                current_provider,
+                context={"mode": mode},
+                project=get_settings().project_id,
+            )
+            if not result.ok:
+                st.warning(
+                    f"Optional plugin {page.plugin.spec.name!r} failed and was isolated: "
+                    f"{result.error}"
+                )
+
+        pages.append(render_optional)
+    return labels, pages
+
+
 def _plugin_library_page(frame, mode: str) -> None:
     st.markdown("#### Plugin library")
     st.caption(
@@ -939,6 +1038,9 @@ def _render_mode(frame, mode: str) -> None:
         pages.insert(0, _ep24_improved_page)
     labels.extend(["Live Status", "Plugin Library"])
     pages.extend([_live_status_page, lambda current_frame: _plugin_library_page(current_frame, mode)])
+    plugin_labels, plugin_pages = _plugin_driven_tabs(frame, mode)
+    labels.extend(plugin_labels)
+    pages.extend(plugin_pages)
     for tab, page in zip(st.tabs(labels), pages, strict=True):
         with tab:
             page(frame)
