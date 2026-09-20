@@ -145,12 +145,13 @@ def _sidebar_filters(frame):
 
 def _monitor_page(frame) -> None:
     values = monitor(frame)
-    cols = st.columns(5)
+    cols = st.columns(6)
     cols[0].metric("Documents", values["documents"])
     cols[1].metric("Analyzed", values["analyzed"])
     cols[2].metric("Awaiting analysis", values["awaiting_analysis"])
-    cols[3].metric("Latest source", values["latest_source"] or "n/a")
-    cols[4].metric("Latest analysis", values["latest_analysis"] or "n/a")
+    cols[3].metric("Errors", values["errors"])
+    cols[4].metric("Latest source", values["latest_source"] or "n/a")
+    cols[5].metric("Latest update", values["latest_analysis"] or "n/a")
     for key, title in (
         ("formations", "Formations"),
         ("signifiers", "Signifiers"),
@@ -163,6 +164,7 @@ def _monitor_page(frame) -> None:
                 px.bar(table.head(20), x="count", y=label_column, orientation="h", title=title),
                 use_container_width=True,
             )
+    st.caption(values["frequency_note"])
     st.caption(CAVEAT)
 
 
