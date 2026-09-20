@@ -24,6 +24,14 @@ def load_local_frame(settings: Settings) -> pd.DataFrame:
     return load_frame(candidates[0], settings) if candidates else normalize_frame(pd.DataFrame())
 
 
+
+def load_canonical_mongodb(settings: Settings, *, limit: int | None = 100) -> pd.DataFrame:
+    """Load only canonical Phase 1 records without compatibility-store fallback."""
+    if not settings.mongodb_uri:
+        raise BackendUnavailable("Canonical Phase 1 browser requires LACLAUGPT_VIS_MONGODB_URI.")
+    backend = MongoQueryBackend.from_settings(settings)
+    return backend.records(limit=limit).payload
+
 def load_mongodb(settings: Settings, query: dict[str, Any] | None = None) -> pd.DataFrame:
     """Load project-scoped records, falling back only when ``storage_backend=auto``.
 
