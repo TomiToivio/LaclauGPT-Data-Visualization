@@ -103,14 +103,15 @@ def deterministic_multimethod_snapshot(artifact: Mapping[str, Any]) -> dict[str,
     )
 
     conflict = dna_edges(artifact, "actor_conflict")
-    conflict_records = (
-        conflict.sort_values(
-            [column for column in ("source", "target") if column in conflict],
-            kind="stable",
-        ).to_dict(orient="records")
-        if not conflict.empty
-        else []
-    )
+    conflict_sort = [column for column in ("source", "target") if column in conflict]
+    if conflict.empty:
+        conflict_records = []
+    elif conflict_sort:
+        conflict_records = conflict.sort_values(conflict_sort, kind="stable").to_dict(
+            orient="records"
+        )
+    else:
+        conflict_records = conflict.to_dict(orient="records")
     return {
         "actor_concept": statement_records,
         "frame_flow": flow_records,
