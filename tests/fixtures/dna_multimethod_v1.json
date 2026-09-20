@@ -1,0 +1,16 @@
+{
+  "schema": "laclaugpt.multimethod.v1",
+  "analysis_run_id": "fixture-dna-run",
+  "statements": [
+    {"statement_id":"s1","source_url":"https://example.org/source/1","source_record_id":"record-1","actor_id":"actor-a","actor_name":"Actor A","concept_id":"concept-x","concept_label":"Concept X","stance":"support","confidence":0.9,"validation_status":"provisional","abstained":false,"evidence":{"quote":"Actor A supports Concept X"}},
+    {"statement_id":"s2","source_url":"https://example.org/source/2","source_record_id":"record-2","actor_id":"actor-b","actor_name":"Actor B","concept_id":"concept-x","concept_label":"Concept X","stance":"support","confidence":0.8,"validation_status":"reviewed","abstained":false,"evidence":{"quote":"Actor B supports Concept X"}},
+    {"statement_id":"s3","source_url":"https://example.org/source/3","source_record_id":"record-3","actor_id":"actor-c","actor_name":"Actor C","concept_id":"concept-x","concept_label":"Concept X","stance":"unknown","confidence":0.4,"validation_status":"provisional","abstained":true,"evidence":{"quote":"Actor C is unclear"}}
+  ],
+  "dna": {
+    "coverage": {"total":3,"abstained":1},
+    "actor_congruence":[{"source":"actor-a","target":"actor-b","weight":1.0}],
+    "actor_conflict":[],
+    "concept_congruence":[],
+    "concept_conflict":[]
+  }
+}
