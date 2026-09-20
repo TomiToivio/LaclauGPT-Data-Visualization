@@ -1,8 +1,10 @@
 """Storage adapters for visualization inputs and cached artifacts."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
+from urllib.parse import urlsplit, urlunsplit
 
 import pandas as pd
 
@@ -107,25 +109,156 @@ def redis_control_key(
     raise ValueError(f"unsupported control document type: {document_type}")
 
 
+class ArtifactUnavailable(RuntimeError):
+    """Object storage could not return a configured artifact safely."""
+
+
+@dataclass(frozen=True)
+class ArtifactReference:
+    """Safe, read-only description of a canonical artifact reference."""
+
+    reference: str
+    display_reference: str
+    key: str | None
+    filename: str
+    content_type: str | None = None
+    downloadable: bool = False
+    reason: str = ""
+
+
+_ARTIFACT_REF_KEYS = ("object_ref", "media_ref", "file_ref", "ref", "key", "path", "url")
+
+
+def _reference_value(value: Any) -> tuple[str, str | None]:
+    if isinstance(value, str):
+        return value.strip(), None
+    if not isinstance(value, Mapping):
+        return "", None
+    reference = next(
+        (str(value.get(key)).strip() for key in _ARTIFACT_REF_KEYS if value.get(key)),
+        "",
+    )
+    content_type = value.get("content_type") or value.get("mime_type") or value.get("media_type")
+    return reference, str(content_type).strip() if content_type else None
+
+
+def safe_artifact_reference(reference: str) -> str:
+    """Strip credentials/query fragments before a reference is shown in UI or logs."""
+    reference = str(reference or "").strip()
+    if not reference:
+        return ""
+    parsed = urlsplit(reference)
+    if not parsed.scheme:
+        return urlunsplit(("", "", parsed.path, "", ""))
+    host = parsed.hostname or ""
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    return urlunsplit((parsed.scheme, host, parsed.path, "", ""))
+
+
+def _project_s3_key(settings: Settings, reference: str) -> tuple[str | None, str]:
+    """Resolve a reference into the current project's object prefix without escaping it."""
+    parsed = urlsplit(reference)
+    if parsed.scheme in {"s3", "allas"}:
+        if parsed.netloc and settings.s3_bucket and parsed.netloc != settings.s3_bucket:
+            return None, "reference points to a different bucket"
+        raw_key = parsed.path.lstrip("/")
+    elif parsed.scheme:
+        return None, "reference is not an S3/Allas object"
+    else:
+        raw_key = reference.lstrip("/")
+
+    parts = [part for part in raw_key.split("/") if part not in {"", "."}]
+    if not parts or ".." in parts:
+        return None, "reference is empty or escapes its project prefix"
+    clean = "/".join(parts)
+    prefix = f"{settings.s3_prefix_root.strip('/')}/{settings.project_id}/"
+    root = f"{settings.s3_prefix_root.strip('/')}/"
+    if clean.startswith(root) and not clean.startswith(prefix):
+        return None, "reference belongs to a different project"
+    key = clean if clean.startswith(prefix) else f"{prefix}{clean}"
+    return key, ""
+
+
+def resolve_artifact_reference(settings: Settings, value: Any) -> ArtifactReference:
+    """Resolve one canonical media/file reference without contacting object storage."""
+    reference, content_type = _reference_value(value)
+    display = safe_artifact_reference(reference)
+    filename = Path(urlsplit(reference).path or reference).name or "artifact"
+    if not reference:
+        return ArtifactReference("", "", None, filename, content_type, False, "empty reference")
+    if settings.object_backend != "s3":
+        return ArtifactReference(
+            reference,
+            display,
+            None,
+            filename,
+            content_type,
+            False,
+            "object storage is not configured",
+        )
+    if not settings.s3_endpoint_url or not settings.s3_bucket:
+        return ArtifactReference(
+            reference,
+            display,
+            None,
+            filename,
+            content_type,
+            False,
+            "S3/Allas endpoint or bucket is unavailable",
+        )
+    key, reason = _project_s3_key(settings, reference)
+    return ArtifactReference(reference, display, key, filename, content_type, key is not None, reason)
+
+
+def artifact_references(row: Mapping[str, Any]) -> list[Any]:
+    """Collect canonical artifact references without treating source_url as an object."""
+    found: list[Any] = []
+    seen: set[str] = set()
+    for field in ("media_references", "file_references", "frames"):
+        values = row.get(field) or []
+        if not isinstance(values, list):
+            values = [values]
+        for value in values:
+            reference, _ = _reference_value(value)
+            if not reference or reference in seen:
+                continue
+            seen.add(reference)
+            found.append(value)
+    for field in ("video_file", "audio_file"):
+        value = row.get(field)
+        reference, _ = _reference_value(value)
+        if reference and reference not in seen:
+            seen.add(reference)
+            found.append(value)
+    return found
+
+
 def download_s3_object(settings: Settings, key: str, destination: str | Path) -> Path:
-    """Download an object from the configured project's S3/Allas prefix."""
+    """Download one current-project S3/Allas object; never uploads or rewrites source identity."""
     settings.validate_remote_requirements()
+    resolved_key, reason = _project_s3_key(settings, key)
+    if resolved_key is None:
+        raise ValueError(f"unsafe S3/Allas artifact reference: {reason}")
     try:
         import boto3
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("Install laclaugpt-data-visualization[remote] for S3") from exc
 
-    client = boto3.client(
-        "s3",
-        endpoint_url=settings.s3_endpoint_url,
-        aws_access_key_id=settings.s3_access_key_id,
-        aws_secret_access_key=settings.s3_secret_access_key,
-        region_name=settings.s3_region,
-    )
-    clean = key.lstrip("/")
-    project_prefix = f"{settings.s3_prefix_root}/{settings.project_id}/"
-    resolved_key = clean if clean.startswith(project_prefix) else f"{project_prefix}{clean}"
+    client_kwargs: dict[str, Any] = {"endpoint_url": settings.s3_endpoint_url}
+    if settings.s3_region:
+        client_kwargs["region_name"] = settings.s3_region
+    if settings.s3_access_key_id:
+        client_kwargs["aws_access_key_id"] = settings.s3_access_key_id
+    if settings.s3_secret_access_key:
+        client_kwargs["aws_secret_access_key"] = settings.s3_secret_access_key
+
     target = Path(destination)
     target.parent.mkdir(parents=True, exist_ok=True)
-    client.download_file(settings.s3_bucket, resolved_key, str(target))
+    try:
+        client = boto3.client("s3", **client_kwargs)
+        client.download_file(settings.s3_bucket, resolved_key, str(target))
+    except Exception as exc:
+        target.unlink(missing_ok=True)
+        raise ArtifactUnavailable("configured S3/Allas artifact is unavailable") from exc
     return target
