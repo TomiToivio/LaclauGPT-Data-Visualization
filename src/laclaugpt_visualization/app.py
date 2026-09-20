@@ -45,7 +45,7 @@ from .spatiotemporal import (
     spatiotemporal_map_points,
     spatiotemporal_timeline_counts,
 )
-from .review import Review, SQLiteReviewStore
+from .review import (\n    Review,\n    SQLiteReviewStore,\n    canonical_review_source_url,\n    save_canonical_review,\n)
 from .storage import load_mongodb
 from .transforms import explore, graph_projection, monitor, relations
 from .worker_status import RedisOperationalStatus
@@ -267,11 +267,24 @@ def _review_page(frame) -> None:
     if frame.empty:
         st.info("No records in the current view.")
         return
+
+    canonical_mask = frame.apply(
+        lambda item: canonical_review_source_url(item.to_dict()) is not None,
+        axis=1,
+    )
+    canonical_frame = frame.loc[canonical_mask]
+    if canonical_frame.empty:
+        st.info(
+            "Researcher Review is available only for canonical Phase 1 records. "
+            "Phase 0 inspection remains read-only."
+        )
+        return
+
     settings = get_settings()
     store = SQLiteReviewStore(settings.data_path("database", "reviews.sqlite3"))
-    options = frame["source_url"].fillna("").astype(str).tolist()
+    options = canonical_frame["source_url"].fillna("").astype(str).tolist()
     source_url = st.selectbox("Record", options)
-    row = frame[frame["source_url"] == source_url].iloc[0]
+    row = canonical_frame[canonical_frame["source_url"] == source_url].iloc[0]
     st.subheader(row.get("summary") or row.get("human_readable_summary") or source_url)
     st.caption(f"{row.get('source_platform', '')} · {row.get('source_author', '')}")
 
@@ -347,32 +360,46 @@ def _review_page(frame) -> None:
     statuses = ["PROVISIONAL", "ACCEPTED", "REJECTED", "REVISED", "CANONICAL", "SUPERSEDED"]
     status = st.selectbox("Review status", statuses, index=statuses.index(existing.status))
     note = st.text_area("Researcher note", value=existing.note)
+    corrections_text = st.text_area(
+        "Corrections (JSON object)",
+        value=json.dumps(existing.corrections, ensure_ascii=False, indent=2),
+    )
     dubious = st.checkbox("Dubious", value=existing.dubious)
     exclude = st.checkbox("Recommend exclusion", value=existing.exclude)
     wrong_language = st.checkbox("Wrong language", value=existing.wrong_language)
     rerun_analysis = st.checkbox("Request analysis rerun", value=existing.rerun_analysis)
     rerun_asr = st.checkbox("Request ASR rerun", value=existing.rerun_asr)
     rerun_ocr = st.checkbox("Request OCR rerun", value=existing.rerun_ocr)
+    reprocess_media = st.checkbox(
+        "Request media reprocessing", value=existing.reprocess_media
+    )
     if st.button("Save review"):
-        store.save(
-            Review(
-                source_url=source_url,
-                reviewer=existing.reviewer,
-                status=status,
-                note=note,
-                dubious=dubious,
-                exclude=exclude,
-                wrong_language=wrong_language,
-                corrections=existing.corrections,
-                rerun_analysis=rerun_analysis,
-                rerun_asr=rerun_asr,
-                rerun_ocr=rerun_ocr,
-                reprocess_media=existing.reprocess_media,
-                split_request=existing.split_request,
-                cut_request=existing.cut_request,
-                review_version=existing.review_version + 1,
-            )
+        try:
+            corrections = json.loads(corrections_text or "{}")
+            if not isinstance(corrections, dict):
+                raise ValueError("Corrections must be a JSON object.")
+        except (json.JSONDecodeError, ValueError) as exc:
+            st.error(f"Review not saved: {exc}")
+            return
+
+        review = Review(
+            source_url=source_url,
+            reviewer=existing.reviewer,
+            status=status,
+            note=note,
+            dubious=dubious,
+            exclude=exclude,
+            wrong_language=wrong_language,
+            corrections=corrections,
+            rerun_analysis=rerun_analysis,
+            rerun_asr=rerun_asr,
+            rerun_ocr=rerun_ocr,
+            reprocess_media=reprocess_media,
+            split_request=existing.split_request,
+            cut_request=existing.cut_request,
+            review_version=existing.review_version + 1,
         )
+        save_canonical_review(row.to_dict(), review, store)
         st.success("Review saved to the private local review store.")
 
 
