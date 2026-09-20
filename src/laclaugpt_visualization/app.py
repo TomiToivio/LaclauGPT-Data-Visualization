@@ -374,6 +374,92 @@ def _explore_page(frame) -> None:
     st.caption(CAVEAT)
 
 
+def _graph_explorer_page(frame) -> None:
+    """Phase-1 source/provenance/Laclau graph explorer over the shared graph contract."""
+    st.markdown("#### RDF / knowledge graph explorer")
+    st.caption(
+        "A bounded research view over the backend-neutral laclaugpt.graph.v1 contract. "
+        "Phase 1 exposes source/provenance and Laclau layers; DNA/SNA stay gated to Phase 2."
+    )
+
+    controls = st.columns([2, 1, 1, 1])
+    query = controls[0].text_input("Graph search", key="graph_search")
+    max_nodes = controls[1].number_input(
+        "Max nodes", min_value=10, max_value=1000, value=250, step=10
+    )
+    max_edges = controls[2].number_input(
+        "Max edges", min_value=10, max_value=2500, value=500, step=10
+    )
+    min_weight = controls[3].number_input(
+        "Min edge weight", min_value=0.0, value=0.0, step=0.5
+    )
+
+    graph = projection_envelope(
+        frame, max_nodes=int(max_nodes), max_edges=int(max_edges)
+    )
+    node_types = sorted({str(node.get("type")) for node in graph.nodes})
+    edge_types = sorted({str(edge.get("type")) for edge in graph.edges})
+
+    filter_cols = st.columns(3)
+    selected_layers = filter_cols[0].multiselect(
+        "Layers",
+        ["source", "provenance", "laclau"],
+        default=["source", "provenance", "laclau"],
+    )
+    selected_nodes = filter_cols[1].multiselect("Node types", node_types)
+    selected_edges = filter_cols[2].multiselect("Edge types", edge_types)
+
+    visible = filter_explorer_graph(
+        graph,
+        query=query,
+        node_types=selected_nodes,
+        edge_types=selected_edges,
+        layers=selected_layers,
+        min_weight=float(min_weight),
+    )
+    metrics = st.columns(4)
+    metrics[0].metric("Visible nodes", len(visible.nodes))
+    metrics[1].metric("Visible edges", len(visible.edges))
+    metrics[2].metric("Backend", str(visible.metadata.get("backend", "unknown")))
+    metrics[3].metric("Truncated", "yes" if visible.truncated else "no")
+
+    if not visible.nodes:
+        st.info("No graph nodes match the current filters.")
+        return
+
+    st.plotly_chart(plotly_network_figure(visible), use_container_width=True)
+    st.caption(
+        "Layout distance and degree are navigational aids only. They do not establish "
+        "nodal status, hegemony, equivalence, antagonism, polarization or ideological formation."
+    )
+
+    edge_lookup = {
+        f"{edge.get('source')} → {edge.get('target')} · {edge.get('type')}": edge
+        for edge in visible.edges
+    }
+    if edge_lookup:
+        st.markdown("##### Evidence / provenance inspector")
+        selected = st.selectbox("Relation", list(edge_lookup), key="graph_relation")
+        st.json(evidence_for_edge(edge_lookup[selected]))
+
+    left, right = st.columns(2)
+    with left:
+        st.download_button(
+            "Export visible subgraph as JSON-LD",
+            data=jsonld_bytes(visible),
+            file_name="laclaugpt-subgraph.jsonld",
+            mime="application/ld+json",
+        )
+    with right:
+        st.caption(
+            "Turtle export remains provider-dependent; JSON-LD is available for every "
+            "backend-neutral graph payload."
+        )
+
+    with st.expander("Inspect graph contract payload"):
+        st.json(visible.as_dict())
+
+
 def _research_data_page(frame) -> None:
     st.markdown("#### Full researcher dataframe")
     st.caption(
