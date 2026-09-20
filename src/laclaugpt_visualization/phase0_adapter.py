@@ -35,6 +35,19 @@ def _list(value: Any) -> list[Any]:
     return deepcopy(value) if isinstance(value, list) else []
 
 
+def _text_value(*values: Any) -> str:
+    """Return the first non-empty scalar while treating DataFrame NaN as missing."""
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, float) and value != value:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
 def _labels(value: Any) -> list[str]:
     """Extract already-present labels without interpreting their meaning."""
     result: list[str] = []
@@ -102,28 +115,25 @@ def adapt_phase0(record: dict[str, Any]) -> dict[str, Any]:
     discourse = discourse_raw if isinstance(discourse_raw, dict) else {}
     stages = _stage_snapshot(source)
 
-    source_url = str(
-        source.get("source_url")
-        or validated.get("source_url")
-        or metadata.get("source_url")
-        or ""
+    source_url = _text_value(
+        source.get("source_url"),
+        validated.get("source_url"),
+        metadata.get("source_url"),
     )
-    source_date = (
-        source.get("source_date")
-        or validated.get("source_date")
-        or metadata.get("source_date")
-        or ""
+    source_date = _text_value(
+        source.get("source_date"),
+        validated.get("source_date"),
+        metadata.get("source_date"),
     )
-    actor = (
-        source.get("actor_name")
-        or validated.get("actor_name")
-        or metadata.get("actor_name")
-        or source.get("source_name")
-        or ""
+    actor = _text_value(
+        source.get("actor_name"),
+        validated.get("actor_name"),
+        metadata.get("actor_name"),
+        source.get("source_name"),
     )
-    language = source.get("language") or metadata.get("language") or ""
-    title = source.get("title") or validated.get("title") or metadata.get("title") or ""
-    arena = source.get("arena") or metadata.get("arena") or ""
+    language = _text_value(source.get("language"), metadata.get("language"))
+    title = _text_value(source.get("title"), validated.get("title"), metadata.get("title"))
+    arena = _text_value(source.get("arena"), metadata.get("arena"))
 
     entities = _labels(validated.get("entities") or summary.get("entities"))
     topics = _labels(validated.get("topics") or summary.get("topics"))
@@ -135,9 +145,9 @@ def adapt_phase0(record: dict[str, Any]) -> dict[str, Any]:
 
     formations: list[str] = []
     for field in ("ai_formation", "political_formation"):
-        value = source.get(field) or metadata.get(field)
-        if value is not None and str(value).strip():
-            formations.append(str(value).strip())
+        value = _text_value(source.get(field), metadata.get(field))
+        if value:
+            formations.append(value)
 
     summary_text = str(validated.get("summary") or summary.get("summary") or "")
     document_id = str(source.get("document_id") or source_url)
