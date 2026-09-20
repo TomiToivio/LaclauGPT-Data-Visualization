@@ -79,6 +79,7 @@ def relations(frame: pd.DataFrame) -> pd.DataFrame:
     columns = [
         "source", "target", "type", "document_id", "source_url", "weight",
         "edge_status", "evidence_refs", "summary", "timestamp",
+        "source_timestamp", "collection_timestamp", "analysis_timestamp",
     ]
     rows: list[dict[str, Any]] = []
     for _, row in frame.iterrows():
@@ -109,6 +110,9 @@ def relations(frame: pd.DataFrame) -> pd.DataFrame:
                     "evidence_refs": evidence,
                     "summary": str(row.get("human_readable_summary") or row.get("summary") or ""),
                     "timestamp": row.get("source_timestamp") or row.get("analysis_timestamp") or "",
+                    "source_timestamp": row.get("source_timestamp") or "",
+                    "collection_timestamp": row.get("collection_timestamp") or "",
+                    "analysis_timestamp": row.get("analysis_timestamp") or "",
                 }
             )
     return pd.DataFrame(rows, columns=columns)
@@ -161,6 +165,9 @@ def graph_projection(
                 "record_count": 0,
                 "source_urls": [],
                 "evidence_refs": [],
+                "source_timestamps": [],
+                "collection_timestamps": [],
+                "analysis_timestamps": [],
             },
         )
         current["weight"] += float(edge["weight"])
@@ -171,6 +178,14 @@ def graph_projection(
             text = str(ref)
             if text and text not in current["evidence_refs"]:
                 current["evidence_refs"].append(text)
+        for field, target in (
+            ("source_timestamp", "source_timestamps"),
+            ("collection_timestamp", "collection_timestamps"),
+            ("analysis_timestamp", "analysis_timestamps"),
+        ):
+            timestamp = str(edge.get(field) or "").strip()
+            if timestamp and timestamp not in current[target]:
+                current[target].append(timestamp)
 
     all_edges = list(grouped.values())
     degree: Counter[str] = Counter()
@@ -225,6 +240,88 @@ def graph_projection(
         ),
         "limits": {"nodes": node_limit, "edges": edge_limit},
     }
+
+
+_TEMPORAL_CLOCKS = {
+    "source": "source_timestamp",
+    "collection": "collection_timestamp",
+    "analysis": "analysis_timestamp",
+}
+
+
+def _utc_boundary(value: object, *, label: str) -> pd.Timestamp | None:
+    if value in (None, ""):
+        return None
+    try:
+        timestamp = pd.Timestamp(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid {label} timestamp: {value!r}") from exc
+    if timestamp.tzinfo is None:
+        return timestamp.tz_localize("UTC")
+    return timestamp.tz_convert("UTC")
+
+
+def temporal_graph_projection(
+    frame: pd.DataFrame,
+    *,
+    clock: str,
+    start: object = None,
+    end: object = None,
+    max_edges: int = 500,
+    max_nodes: int = 500,
+) -> dict[str, object]:
+    """Build a bounded graph for one explicit canonical clock and inclusive window.
+
+    No fallback between source, collection and analysis clocks is allowed. Records with a
+    missing timestamp for the selected clock are excluded and reported in metadata.
+    """
+    if clock not in _TEMPORAL_CLOCKS:
+        allowed = ", ".join(sorted(_TEMPORAL_CLOCKS))
+        raise ValueError(f"clock must be one of: {allowed}")
+
+    start_ts = _utc_boundary(start, label="start")
+    end_ts = _utc_boundary(end, label="end")
+    if start_ts is not None and end_ts is not None and start_ts > end_ts:
+        raise ValueError("start timestamp must not be after end timestamp")
+
+    column = _TEMPORAL_CLOCKS[clock]
+    if column in frame:
+        timestamps = pd.to_datetime(frame[column], errors="coerce", utc=True)
+    else:
+        timestamps = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]")
+
+    mask = timestamps.notna()
+    if start_ts is not None:
+        mask &= timestamps >= start_ts
+    if end_ts is not None:
+        mask &= timestamps <= end_ts
+
+    selected = frame.loc[mask].copy()
+    if not selected.empty:
+        selected["_temporal_timestamp"] = timestamps.loc[selected.index]
+        sort_columns = ["_temporal_timestamp"]
+        for candidate in ("source_url", "document_id"):
+            if candidate in selected:
+                sort_columns.append(candidate)
+        selected = selected.sort_values(sort_columns, kind="stable").drop(
+            columns=["_temporal_timestamp"]
+        )
+
+    projection = graph_projection(
+        selected,
+        max_edges=max_edges,
+        max_nodes=max_nodes,
+    )
+    projection["temporal"] = {
+        "clock": clock,
+        "timestamp_column": column,
+        "start": start_ts.isoformat() if start_ts is not None else "",
+        "end": end_ts.isoformat() if end_ts is not None else "",
+        "records_in_window": int(mask.sum()),
+        "records_missing_timestamp": int(timestamps.isna().sum()),
+        "inclusive_boundaries": True,
+    }
+    return projection
 
 
 def explore(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
