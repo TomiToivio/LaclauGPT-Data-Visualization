@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from types import ModuleType
 
 from laclaugpt_visualization.config import Settings
+from laclaugpt_visualization.data import load_frame
 from laclaugpt_visualization.worker_status import RedisOperationalStatus
 
 
@@ -166,3 +167,35 @@ def test_run_filter_prevents_cross_run_status_mix():
     )
     snapshot = RedisOperationalStatus(redis).snapshot("demo26", run_ids={"run-a"}, now=now)
     assert [worker.worker_id for worker in snapshot.workers] == ["a"]
+
+
+def test_redis_status_configuration_does_not_participate_in_document_loading(tmp_path, monkeypatch):
+    source = tmp_path / "records.jsonl"
+    source.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "source_url": "https://example.invalid/post/1",
+                "source": {"platform": "synthetic"},
+                "content": {"text": "offline fixture"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        _env_file=None,
+        messaging_backend="redis",
+        redis_url="redis://example.invalid:6379/0",
+    )
+
+    class RedisMustNotBeImported(ModuleType):
+        def __getattr__(self, name):
+            raise AssertionError(f"document loading touched Redis attribute: {name}")
+
+    monkeypatch.setitem(sys.modules, "redis", RedisMustNotBeImported("redis"))
+
+    frame = load_frame(source, settings)
+
+    assert frame["source_url"].tolist() == ["https://example.invalid/post/1"]
+    assert frame["document_id"].tolist() == ["https://example.invalid/post/1"]
