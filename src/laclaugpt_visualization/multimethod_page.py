@@ -23,6 +23,7 @@ from .multimethod_views import (
     frames_frame,
     load_multimethod_artifact,
     mca_tables,
+    validate_multimethod_artifact,
     statements_frame,
     temporal_dna,
 )
@@ -36,8 +37,11 @@ def _artifact_picker(roots: list[Path]) -> dict[str, Any] | None:
             payload = uploaded.getvalue().decode("utf-8")
             import json
             artifact = json.loads(payload)
-            if artifact.get("schema") != "laclaugpt.multimethod.v1":
-                raise ValueError("not a laclaugpt.multimethod.v1 artifact")
+            if not isinstance(artifact, dict):
+                raise ValueError("multimethod artifact must be a JSON object")
+            errors = validate_multimethod_artifact(artifact)
+            if errors:
+                raise ValueError("; ".join(errors))
             return artifact
         except (UnicodeDecodeError, ValueError, TypeError) as exc:
             st.error(f"Cannot open multimethod artifact: {exc}")
