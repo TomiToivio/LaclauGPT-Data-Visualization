@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
+from collections.abc import Mapping
+from itertools import pairwise
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import pandas as pd
 
@@ -55,16 +57,15 @@ def validate_multimethod_artifact(artifact: Mapping[str, Any]) -> list[str]:
             errors.append(f"statements[{index}] is missing source_url")
 
     mca = artifact.get("mca")
-    if mca:
-        if not isinstance(mca, Mapping) or mca.get("schema") != SOCIAL_SPACE_SCHEMA:
-            errors.append(f"mca must use schema {SOCIAL_SPACE_SCHEMA}")
+    if mca and (not isinstance(mca, Mapping) or mca.get("schema") != SOCIAL_SPACE_SCHEMA):
+        errors.append(f"mca must use schema {SOCIAL_SPACE_SCHEMA}")
     return errors
 
 
 def load_multimethod_artifact(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f"expected {MULTIMETHOD_SCHEMA}")
+        raise TypeError(f"expected {MULTIMETHOD_SCHEMA}")
     errors = validate_multimethod_artifact(payload)
     if errors:
         raise ValueError("; ".join(errors))
@@ -255,7 +256,7 @@ def frame_flow(artifact: Mapping[str, Any]) -> pd.DataFrame:
     edges: dict[tuple[str, str], set[str]] = defaultdict(set)
     for statement_id, kinds in grouped.items():
         unique = sorted(set(filter(None, kinds)), key=lambda value: rank.get(value, 999))
-        for left, right in zip(unique, unique[1:], strict=False):
+        for left, right in pairwise(unique):
             edges[(left, right)].add(statement_id)
     return pd.DataFrame([
         {"source": left, "target": right, "count": len(ids), "statement_ids": sorted(ids)}
