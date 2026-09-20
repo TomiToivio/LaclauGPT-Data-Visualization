@@ -40,7 +40,7 @@ from .research_views import (
     timeline_counts,
 )
 from .review import Review, SQLiteReviewStore
-from .storage import load_mongodb
+from .storage import artifact_references, download_s3_object, load_mongodb, resolve_artifact_reference
 from .transforms import explore, graph_projection, monitor, relations
 from .worker_status import RedisOperationalStatus
 
@@ -244,6 +244,46 @@ def _render_provenance(row) -> None:
             st.caption("No safe provenance events recorded for this legacy/current record.")
 
 
+
+def _render_artifacts(row: Any) -> None:
+    """Render safe canonical artifact references and fetch only after explicit user action."""
+    settings = get_settings()
+    references = artifact_references(row)
+    if not references:
+        return
+    st.markdown("#### Referenced artifacts")
+    for index, value in enumerate(references):
+        artifact = resolve_artifact_reference(settings, value)
+        label = artifact.display_reference or "(unavailable reference)"
+        st.code(label, language=None)
+        if not artifact.downloadable or not artifact.key:
+            st.caption(artifact.reason or "Reference is not downloadable through configured object storage.")
+            continue
+        if st.button("Resolve from object storage", key=f"artifact-{index}-{artifact.key}"):
+            destination = settings.data_path("tmp", "artifacts", artifact.filename)
+            try:
+                path = download_s3_object(settings, artifact.key, destination)
+            except Exception as exc:
+                # Keep credentials/endpoints out of the UI: only the exception type is exposed.
+                st.warning(f"Artifact unavailable ({type(exc).__name__}).")
+                continue
+            suffix = path.suffix.lower()
+            if artifact.content_type and artifact.content_type.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+                st.image(str(path))
+            elif artifact.content_type and artifact.content_type.startswith("video/") or suffix in {".mp4", ".webm", ".mov", ".m4v"}:
+                st.video(str(path))
+            elif artifact.content_type and artifact.content_type.startswith("audio/") or suffix in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}:
+                st.audio(str(path))
+            else:
+                st.download_button(
+                    "Download resolved artifact",
+                    data=path.read_bytes(),
+                    file_name=artifact.filename,
+                    mime=artifact.content_type or "application/octet-stream",
+                    key=f"artifact-download-{index}-{artifact.key}",
+                )
+
+
 def _review_page(frame) -> None:
     if frame.empty:
         st.info("No records in the current view.")
@@ -272,6 +312,7 @@ def _review_page(frame) -> None:
     if row.get("frame_analysis") or row.get("frames"):
         st.markdown("#### Multimodal / frame analysis")
         st.write(row.get("frame_analysis") or row.get("frames"))
+    _render_artifacts(row)
 
     legacy_values = _nonempty_legacy(row)
     st.markdown("#### Legacy researcher fields")
