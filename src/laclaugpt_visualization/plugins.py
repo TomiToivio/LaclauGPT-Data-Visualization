@@ -293,7 +293,7 @@ def first_party_plugins() -> tuple[RegisteredPlugin, ...]:
         # Graph/discourse views. These display precomputed analytical objects only.
         _plugin("network", "Generic relation/network graph", v, PluginCategory.NETWORK, requires=(ProductKind.NETWORK,), orientation="graph", interactions=("zoom", "pan", "edge_filter", "community_filter", "evidence_drilldown"), exports=("graphml", "json"), source="transforms.graph_projection"),
         _plugin("discourse_graph", "Discourse graph", v, PluginCategory.NETWORK, requires=(ProductKind.KNOWLEDGE_GRAPH,), interactions=("select_node", "select_relation", "inspect_evidence"), placeholder=True),
-        _plugin("actor_network", "Actor/entity network", v, PluginCategory.NETWORK, requires=(ProductKind.NETWORK,), placeholder=True),
+        _plugin("actor_network", "Actor/entity SNA network", v, PluginCategory.NETWORK, requires=(ProductKind.NETWORK,), orientation="graph", interactions=("zoom", "pan", "edge_filter", "evidence_drilldown"), exports=("json",), source="sna.sna_envelope (explicit upstream NETWORK product only)"),
         _plugin("bipartite_network", "Bipartite/multiplex projection", v, PluginCategory.NETWORK, requires=(ProductKind.NETWORK,), placeholder=True),
         _plugin("graph_delta", "Graph-over-time delta", v, PluginCategory.NETWORK, requires=(ProductKind.NETWORK, ProductKind.TIMELINE), placeholder=True),
         _plugin("sankey", "Alluvial/Sankey articulation view", v, PluginCategory.NETWORK, requires=(ProductKind.TABLE,), placeholder=True),
