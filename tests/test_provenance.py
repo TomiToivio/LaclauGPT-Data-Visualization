@@ -9,6 +9,8 @@ from laclaugpt_visualization.data import load_frame
 from laclaugpt_visualization.provenance import (
     UNKNOWN,
     comparison_warning,
+    compatibility_provenance,
+    has_canonical_provenance,
     mixed_provenance_dimensions,
     provenance_frame,
     safe_provenance_events,
@@ -157,7 +159,7 @@ def test_legacy_record_reports_unknown_instead_of_fabricating_provenance() -> No
     assert summary["context_profile"] == UNKNOWN
     assert summary["country"] == "PL"
     assert summary["language"] == "pl"
-    assert summary["validation_status"] == "PROVISIONAL"
+    assert summary["validation_status"] == UNKNOWN
     assert summary["rag_enabled"] is None
     assert summary["context_memory_enabled"] is None
 
@@ -206,3 +208,57 @@ def test_provenance_projection_supports_json_csv_and_sqlite(tmp_path) -> None:
         assert projected.iloc[0]["codebook_hash"] == "cb-aaa"
         assert projected.iloc[0]["model"] == "gemma4"
         assert bool(projected.iloc[0]["rag_enabled"]) is True
+
+
+
+def test_model_and_codebook_shaped_fields_do_not_create_canonical_provenance() -> None:
+    row = {
+        "source_url": "synthetic://phase0",
+        "source_country": "FI",
+        "source_language": "fi",
+        "model_runs": [{"provider": "fake", "model": "must-not-render"}],
+        "codebook_refs": ["must-not-render"],
+        "run_id": "must-not-render",
+        "review_status": "PROVISIONAL",
+        "provenance": [],
+    }
+    assert has_canonical_provenance(row) is False
+    summary = summarize_provenance(row)
+    assert summary["run_id"] == UNKNOWN
+    assert summary["model"] == UNKNOWN
+    assert summary["backend"] == UNKNOWN
+    assert summary["codebook_id"] == UNKNOWN
+    assert summary["validation_status"] == UNKNOWN
+    assert summary["country"] == "FI"
+    assert summary["language"] == "fi"
+
+
+def test_phase0_compatibility_projection_is_missing_safe_and_excludes_raw_payloads() -> None:
+    row = {
+        "phase0_stage_status": {
+            "summary": {"status": "ok"},
+            "discourse": {"status": "pending"},
+        },
+        "phase0_compatibility": {
+            "contract": "phase0-analysis-compatibility-v1",
+            "canonical_phase1_record": False,
+            "source_identity": "source_url",
+            "label_semantics": {"discourse_signifiers": "candidate"},
+            "raw_phase0": {"phase0_summary_raw": "private-ish raw debugging payload"},
+        },
+    }
+    projected = compatibility_provenance(row)
+    assert projected["contract"] == "phase0-analysis-compatibility-v1"
+    assert projected["canonical_phase1_record"] is False
+    assert projected["source_identity"] == "source_url"
+    assert projected["stage_status"]["summary"]["status"] == "ok"
+    assert "raw_phase0" not in projected
+    assert "private-ish raw debugging payload" not in json.dumps(projected)
+
+
+def test_canonical_provenance_gate_accepts_genuine_event_list() -> None:
+    record = _record()
+    assert has_canonical_provenance(record) is True
+    summary = summarize_provenance(record)
+    assert summary["run_id"] == "run-1"
+    assert summary["codebook_hash"] == "cb-aaa"
