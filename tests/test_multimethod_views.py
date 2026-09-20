@@ -8,6 +8,7 @@ from laclaugpt_visualization.multimethod_views import (
     actor_concept_edges,
     axis_contributions,
     cross_method_profile,
+    deterministic_multimethod_snapshot,
     dna_edges,
     evidence_for_statement_ids,
     filter_statements,
@@ -16,6 +17,7 @@ from laclaugpt_visualization.multimethod_views import (
     load_multimethod_artifact,
     mca_tables,
     temporal_dna,
+    validate_multimethod_artifact,
 )
 
 
@@ -130,4 +132,47 @@ def test_empty_sparse_and_invalid_schema(tmp_path):
     assert load_multimethod_artifact(path)["schema"] == "laclaugpt.multimethod.v1"
     path.write_text(json.dumps({"schema": "wrong"}), encoding="utf-8")
     with pytest.raises(ValueError):
+        load_multimethod_artifact(path)
+
+
+def test_current_contract_requires_traceable_unique_statements():
+    data = artifact()
+    assert validate_multimethod_artifact(data) == []
+
+    missing_source = artifact()
+    missing_source["statements"][0].pop("source_url")
+    assert "missing source_url" in validate_multimethod_artifact(missing_source)[0]
+
+    duplicate = artifact()
+    duplicate["statements"][1]["statement_id"] = "s1"
+    assert any("duplicate statement_id: s1" in item for item in validate_multimethod_artifact(duplicate))
+
+
+def test_deterministic_chart_input_snapshot_preserves_source_urls():
+    data = artifact()
+    expected = deterministic_multimethod_snapshot(data)
+
+    reordered = artifact()
+    reordered["statements"] = list(reversed(reordered["statements"]))
+    reordered["frames"] = list(reversed(reordered["frames"]))
+    assert deterministic_multimethod_snapshot(reordered) == expected
+
+    actor_rows = expected["actor_concept"]
+    assert [row["statement_id"] for row in actor_rows] == ["s1", "s2", "s3"]
+    assert [row["source_url"] for row in actor_rows] == [
+        "https://example.invalid/1",
+        "https://example.invalid/2",
+        "https://example.invalid/3",
+    ]
+
+
+def test_invalid_embedded_mca_contract_is_rejected(tmp_path):
+    data = artifact()
+    data["mca"]["schema"] = "wrong"
+    errors = validate_multimethod_artifact(data)
+    assert errors == ["mca must use schema laclaugpt.social-space.v1"]
+
+    path = tmp_path / "bad-mca.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="social-space"):
         load_multimethod_artifact(path)
