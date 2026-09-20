@@ -1,4 +1,4 @@
-"""Opt-in, read-only browser for bounded Phase 0 record lists.
+"""Opt-in, read-only browser for bounded Phase 0 record lists and inspection.
 
 This module deliberately keeps the Phase 0 MongoDB contract separate from the
 canonical Phase 1 storage path. Importing it never imports or connects to
@@ -7,6 +7,7 @@ actually used.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
@@ -15,6 +16,7 @@ from .phase0_adapter import adapt_phase0, looks_like_phase0
 
 PHASE0_BROWSER_MAX_LIMIT = 200
 BrowserStatus = Literal["loading", "ready", "empty", "error", "config-error"]
+_STAGE_ORDER = ("preprocess", "summary", "postprocess", "discourse")
 
 
 class Phase0BrowserConfigurationError(ValueError):
@@ -73,6 +75,19 @@ def _browser_rows(records: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
     return tuple(rows)
 
 
+def _client_factory_or_default(client_factory: Callable[..., Any] | None) -> Callable[..., Any]:
+    if client_factory is not None:
+        return client_factory
+    try:
+        from pymongo import MongoClient
+    except ImportError as exc:
+        raise RuntimeError(
+            "Phase 0 browser requires the optional MongoDB dependency; "
+            "install laclaugpt-data-visualization[remote]."
+        ) from exc
+    return MongoClient
+
+
 def load_phase0_browser_records(
     settings: Settings,
     *,
@@ -80,18 +95,8 @@ def load_phase0_browser_records(
 ) -> list[dict[str, Any]]:
     """Read a bounded Phase 0 list and adapt it without mutating source documents."""
     validate_phase0_browser_settings(settings)
-
-    if client_factory is None:
-        try:
-            from pymongo import MongoClient
-        except ImportError as exc:
-            raise RuntimeError(
-                "Phase 0 browser requires the optional MongoDB dependency; "
-                "install laclaugpt-data-visualization[remote]."
-            ) from exc
-        client_factory = MongoClient
-
-    client = client_factory(
+    factory = _client_factory_or_default(client_factory)
+    client = factory(
         settings.phase0_mongodb_uri,
         serverSelectionTimeoutMS=settings.mongodb_connect_timeout_ms,
         connectTimeoutMS=settings.mongodb_connect_timeout_ms,
@@ -114,6 +119,112 @@ def load_phase0_browser_records(
         close = getattr(client, "close", None)
         if callable(close):
             close()
+
+
+def find_phase0_document(
+    settings: Settings,
+    source_url: str,
+    *,
+    client_factory: Callable[..., Any] | None = None,
+) -> dict[str, Any] | None:
+    """Resolve one raw Phase 0 record by immutable source_url identity."""
+    validate_phase0_browser_settings(settings)
+    if not source_url:
+        return None
+    factory = _client_factory_or_default(client_factory)
+    client = factory(
+        settings.phase0_mongodb_uri,
+        serverSelectionTimeoutMS=settings.mongodb_connect_timeout_ms,
+        connectTimeoutMS=settings.mongodb_connect_timeout_ms,
+        appname="laclaugpt-phase0-browser",
+        connect=False,
+    )
+    try:
+        collection = client[settings.phase0_mongodb_database][
+            phase0_collection_name(settings.resolved_phase0_project_id)
+        ]
+        document = collection.find_one({"source_url": source_url}, {"_id": False})
+        return document if isinstance(document, dict) and looks_like_phase0(document) else None
+    except (ConnectionError, OSError, TimeoutError) as exc:
+        raise RuntimeError("Configured Phase 0 MongoDB is unavailable.") from exc
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
+
+def inspection_payload(document: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Build a read-only inspection payload without reinterpreting analysis."""
+    if document is None:
+        return None
+    if "phase0_compatibility" in document:
+        adapted = deepcopy(document)
+    else:
+        adapted = adapt_phase0(deepcopy(document))
+    compatibility = adapted.get("phase0_compatibility")
+    compatibility = compatibility if isinstance(compatibility, dict) else {}
+    raw = compatibility.get("raw_phase0")
+    raw = raw if isinstance(raw, dict) else {}
+    discourse = raw.get("phase0_discourse")
+    discourse = discourse if isinstance(discourse, dict) else {}
+
+    candidates = {
+        key: deepcopy(discourse.get(key, []))
+        for key in (
+            "signifiers",
+            "articulations",
+            "demands",
+            "chains_equivalence",
+            "chains_difference",
+            "collective_subjects",
+            "frontiers",
+            "affects",
+            "nodal_point_candidates",
+            "floating_signifier_candidates",
+            "empty_signifier_candidates",
+            "future_vision_candidates",
+            "formation_evidence",
+            "counter_evidence",
+            "uncertainty_notes",
+        )
+        if key in discourse
+    }
+    stage_status = adapted.get("phase0_stage_status")
+    stage_status = stage_status if isinstance(stage_status, dict) else {}
+    errors: dict[str, Any] = {}
+    for stage in _STAGE_ORDER:
+        snapshot = stage_status.get(stage)
+        snapshot = snapshot if isinstance(snapshot, dict) else {}
+        if str(snapshot.get("status", "")).casefold() == "error":
+            errors[stage] = deepcopy(snapshot.get("error"))
+    if raw.get("phase0_summary_validation_error"):
+        errors["summary_validation"] = deepcopy(raw["phase0_summary_validation_error"])
+    discourse_meta = raw.get("phase0_discourse_error_metadata")
+    if discourse_meta:
+        errors["discourse_validation"] = deepcopy(discourse_meta)
+
+    raw_debug = {
+        key: deepcopy(raw[key])
+        for key in (
+            "phase0_summary_raw",
+            "phase0_discourse_raw",
+            "phase0_summary_error_metadata",
+            "phase0_discourse_error_metadata",
+        )
+        if key in raw
+    }
+    return {
+        "source_url": str(adapted.get("source_url") or ""),
+        "document_id": str(adapted.get("document_id") or ""),
+        "title": str(adapted.get("content_title") or ""),
+        "summary": str(adapted.get("summary") or ""),
+        "analysis_status": str(adapted.get("analysis_status") or ""),
+        "stage_status": deepcopy(stage_status),
+        "candidate_semantics": "candidate / provisional",
+        "discourse_candidates": candidates,
+        "validation_errors": errors,
+        "raw_debug": raw_debug,
+    }
 
 
 def phase0_browser_state(
@@ -139,11 +250,11 @@ def phase0_browser_state(
 
 
 def render_phase0_browser(ui: Any, settings: Settings) -> None:
-    """Render the single guarded list route. No inspect/review/monitor behavior lives here."""
+    """Render the guarded list plus source_url-keyed read-only inspection."""
     ui.markdown("### Phase 0 browser")
     ui.caption(
         "Read-only bounded list through the Phase 0 compatibility adapter. "
-        "source_url remains the record identity."
+        "source_url remains the record identity; discourse labels remain candidate / provisional."
     )
     with ui.spinner("Loading bounded Phase 0 record list…"):
         state = phase0_browser_state(settings)
@@ -158,8 +269,45 @@ def render_phase0_browser(ui: Any, settings: Settings) -> None:
         ui.info(state.message)
         return
 
+    rows = list(state.rows)
     ui.caption(
         f"Showing at most {settings.phase0_browser_limit} records from "
         f"{phase0_collection_name(settings.resolved_phase0_project_id)}."
     )
-    ui.dataframe(list(state.rows), use_container_width=True, hide_index=True)
+    ui.dataframe(rows, use_container_width=True, hide_index=True)
+
+    options = [str(row.get("source_url") or "") for row in rows if row.get("source_url")]
+    if not options or not hasattr(ui, "selectbox"):
+        return
+    selected = ui.selectbox("Inspect source_url", options)
+    if not selected:
+        return
+    try:
+        document = find_phase0_document(settings, str(selected))
+    except Exception as exc:
+        ui.error(f"Phase 0 document could not be loaded: {exc}")
+        return
+    payload = inspection_payload(document)
+    if payload is None:
+        ui.error("Document not found for the selected source_url.")
+        return
+
+    ui.markdown("#### Summary")
+    if hasattr(ui, "write"):
+        ui.write(payload["summary"] or "No validated/fallback summary is present.")
+    ui.markdown("#### Stage status")
+    if hasattr(ui, "json"):
+        ui.json(payload["stage_status"])
+    ui.markdown("#### Discourse candidates")
+    ui.caption("All labels in this section are candidate / provisional.")
+    if hasattr(ui, "json"):
+        if payload["discourse_candidates"]:
+            ui.json(payload["discourse_candidates"])
+        elif hasattr(ui, "caption"):
+            ui.caption("No discourse candidates are present yet.")
+        if payload["validation_errors"]:
+            ui.markdown("#### Validation errors")
+            ui.json(payload["validation_errors"])
+        if payload["raw_debug"]:
+            ui.markdown("#### Raw debugging responses")
+            ui.json(payload["raw_debug"])
