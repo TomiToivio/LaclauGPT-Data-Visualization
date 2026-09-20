@@ -6,7 +6,7 @@ queries itself.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -33,7 +33,7 @@ class GraphQuery:
     max_edges: int = 500
     continuation: str | None = None
 
-    def bounded(self) -> "GraphQuery":
+    def bounded(self) -> GraphQuery:
         layers = tuple(layer for layer in self.layers if layer in GRAPH_LAYERS)
         return GraphQuery(
             roots=tuple(self.roots[:50]),
@@ -65,7 +65,7 @@ class GraphEnvelope:
     provenance: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, Any], query: GraphQuery) -> "GraphEnvelope":
+    def from_payload(cls, payload: Mapping[str, Any], query: GraphQuery) -> GraphEnvelope:
         bounded = query.bounded()
         nodes = tuple(payload.get("nodes") or ())
         edges = tuple(payload.get("edges") or ())
