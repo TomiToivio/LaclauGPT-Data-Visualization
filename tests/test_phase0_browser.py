@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+import json
+from pathlib import Path
+
+import pytest
 
 from laclaugpt_visualization.config import Settings
 from laclaugpt_visualization.phase0_browser import (
     PHASE0_BROWSER_MAX_LIMIT,
     Phase0BrowserConfigurationError,
+    inspection_payload,
     load_phase0_browser_records,
     phase0_browser_state,
     phase0_collection_name,
@@ -194,3 +199,49 @@ def test_renderer_shows_list_when_loader_state_is_ready(monkeypatch) -> None:
     render_phase0_browser(ui, settings)
 
     assert any(kind == "dataframe" for kind, *_ in ui.events)
+
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "phase0"
+
+
+def _fixture(name: str) -> dict:
+    return json.loads((FIXTURE_DIR / name).read_text(encoding="utf-8"))
+
+
+def test_inspection_analyzed_keeps_source_url_identity_and_candidate_label() -> None:
+    payload = inspection_payload(_fixture("analyzed.json"))
+    assert payload is not None
+    assert payload["source_url"] == "https://example.test/phase0/analyzed"
+    assert payload["analysis_status"] == "analyzed"
+    assert payload["summary"] == "Validated synthetic summary."
+    assert payload["candidate_semantics"] == "candidate / provisional"
+    assert payload["discourse_candidates"]["nodal_point_candidates"] == ["AI"]
+
+
+def test_inspection_awaiting_does_not_infer_analysis() -> None:
+    payload = inspection_payload(_fixture("partial.json"))
+    assert payload is not None
+    assert payload["analysis_status"] == "awaiting-analysis"
+    assert payload["stage_status"]["summary"]["status"] == "pending"
+    assert payload["discourse_candidates"] == {}
+
+
+@pytest.mark.parametrize(
+    ("name", "error_key", "raw_key"),
+    [
+        ("summary_validation_error.json", "summary_validation", "phase0_summary_raw"),
+        ("discourse_error.json", "discourse", "phase0_discourse_raw"),
+    ],
+)
+def test_inspection_errors_preserve_validation_and_raw_debug(
+    name: str, error_key: str, raw_key: str
+) -> None:
+    payload = inspection_payload(_fixture(name))
+    assert payload is not None
+    assert payload["analysis_status"] == "error"
+    assert error_key in payload["validation_errors"]
+    assert raw_key in payload["raw_debug"]
+
+
+def test_inspection_missing_document_is_explicit() -> None:
+    assert inspection_payload(None) is None
