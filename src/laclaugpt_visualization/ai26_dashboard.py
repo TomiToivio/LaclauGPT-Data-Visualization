@@ -429,18 +429,59 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
 
 
 def _explore(frame: pd.DataFrame) -> None:
-    views = explore(frame)
-    for target, column in zip(("formations", "topics", "entities"), st.columns(3), strict=True):
+    if frame.empty:
+        st.info("No records match the current filters.")
+        st.caption(CAVEAT)
+        return
+
+    try:
+        with st.spinner("Building canonical Explore views…"):
+            views = canonical_explore(frame)
+    except (KeyError, TypeError, ValueError) as exc:
+        st.error(f"Explore view could not be built: {exc}")
+        st.caption(CAVEAT)
+        return
+
+    timeline = views["timeline"]
+    st.markdown("#### Timeline")
+    if timeline.empty:
+        st.info("No canonical timestamps are available in the current view.")
+    else:
+        st.plotly_chart(
+            px.line(
+                timeline,
+                x="period",
+                y="documents",
+                color="time_kind",
+                markers=True,
+                title="Source, collection, analysis and event clocks",
+            ),
+            use_container_width=True,
+        )
+
+    targets = ("formations", "topics", "entities", "signifiers")
+    for target, column in zip(targets, st.columns(4), strict=True):
+        table = views[target]
         column.markdown(f"#### {target.title()}")
-        column.dataframe(views[target].head(40), use_container_width=True, hide_index=True)
-    rows = []
-    for formations, signifiers in zip(frame["formations"], frame["signifiers"], strict=False):
-        for formation in formations or []:
-            for signifier in signifiers or []:
-                rows.append({"formation": str(formation), "signifier": str(signifier)})
-    if rows:
-        cross = pd.DataFrame(rows).value_counts(["formation", "signifier"]).reset_index(name="count")
-        st.markdown("#### Formation × signifier")
+        if table.empty:
+            column.info("No values")
+            continue
+        column.plotly_chart(
+            px.bar(
+                table.head(20),
+                x="count",
+                y=target,
+                orientation="h",
+            ),
+            use_container_width=True,
+        )
+        column.dataframe(table.head(40), use_container_width=True, hide_index=True)
+
+    cross = views["formation_signifier"]
+    st.markdown("#### Formation × signifier")
+    if cross.empty:
+        st.info("No formation/signifier overlap is available in the current view.")
+    else:
         st.dataframe(cross.head(100), use_container_width=True, hide_index=True)
     st.caption(CAVEAT)
 
