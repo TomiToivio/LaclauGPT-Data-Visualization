@@ -1,252 +1,159 @@
 # AI26 dashboard on Laskin
 
-This runbook is the public, secret-free operator guide for issue #35. The dashboard checkout is fixed at `/mnt/workspace/LaclauGPT-Data-Visualization`; authorized private AI26 configuration/state is fixed under `/mnt/workspace/LaclauGPT-Private`. Do not copy private values into this repository.
+This is the public, secret-free Phase 1 deployment runbook for the AI26 visualization service on Laskin. The deployment uses the unified Visualization application and the canonical Collection → Analysis → Visualization contract. It does not fork analysis logic or embed private AI26 settings in this repository.
 
-## Safety and source-of-truth rules
+## Phase 1 contract
 
-- `project_id=ai26`.
-- MongoDB is the canonical durable source for collected/analyzed research data.
-- The live AI26 dashboard is owned by this repository and reads MongoDB directly. The legacy JSONL dashboard/export path in `LaclauGPT-Discourse-Analysis` is retired and must not be scheduled in parallel.
-- Redis is transient config/status/messaging/control-plane infrastructure, not the scientific database.
-- Allas/S3 is used only through the existing distributed contract. The dashboard must not download multimodal objects merely to render views.
-- The service is private-network only. Keep the default loopback bind unless an existing protected reverse proxy/private subnet path is deliberately used. Do not expose the unauthenticated Streamlit service directly to the public Internet.
-- Secrets, endpoints, private codebooks, notes, cookies, tokens and credentials belong in `LaclauGPT-Private`, never in this public repository or public issue comments.
+- `phase-1` is the canonical active/stable development branch.
+- `main` must match the validated Phase 1 state after integration.
+- Select AI26 explicitly with `LACLAUGPT_VIS_PROJECT_ID=ai26`.
+- Select the canonical Phase 1 browser contract with `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`.
+- The dashboard is a human-in-the-loop research interface. It presents upstream evidence and analysis for review; it does not perform discourse inference.
+- Descriptive prominence is not theoretical proof. Frequency is not hegemony, graph centrality is not nodal status, proximity is not equivalence, and a conflict edge or two-cluster layout is not by itself antagonism or polarisation.
+- Private codebooks, credentials, hostnames, researcher notes, row-level research data and machine-specific paths stay outside the public repository.
 
-## Required paths
+## Runtime layout
 
-```text
-/mnt/workspace/LaclauGPT-Data-Visualization
-/mnt/workspace/LaclauGPT-Private
-/mnt/workspace/LaclauGPT-Private/config/ai26/visualization/laskin.env
-```
-
-Before any install/update, verify the checkout identity:
+No Laskin path is hard-coded in the repository. Choose the deployment paths locally and expose them through the service template or environment:
 
 ```bash
-cd /mnt/workspace/LaclauGPT-Data-Visualization
-pwd -P
-git rev-parse --show-toplevel
+export LACLAUGPT_VIS_REPO_ROOT=/path/to/LaclauGPT-Data-Visualization
+export LACLAUGPT_VIS_ENV_FILE=/path/to/private/ai26-visualization.env
+export LACLAUGPT_VIS_VENV="$LACLAUGPT_VIS_REPO_ROOT/.venv"   # optional override
 ```
 
-Both outputs must be `/mnt/workspace/LaclauGPT-Data-Visualization`.
-
-## Private environment contract
-
-Create or maintain the real environment file only in the private repository at:
-
-```text
-/mnt/workspace/LaclauGPT-Private/config/ai26/visualization/laskin.env
-```
-
-Reuse the current AI26 distributed values already used by Collection and Analysis. Do not create a visualization-only MongoDB database, Redis namespace or project identifier.
-
-The effective non-secret shape is:
+The private environment file should point runtime writes at a private data root and may configure optional remote adapters. A production-style AI26 profile is:
 
 ```dotenv
 LACLAUGPT_VIS_PROFILE=server
 LACLAUGPT_VIS_MACHINE=linux-server
 LACLAUGPT_VIS_EXECUTION=web-service
-LACLAUGPT_VIS_STORAGE=distributed
 LACLAUGPT_VIS_PROJECT_ID=ai26
+LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical
+
+# Query/runtime policy. Keep secrets in the private environment only.
 LACLAUGPT_VIS_STORAGE_BACKEND=mongodb
 LACLAUGPT_VIS_DATA_BACKEND=mongodb
 LACLAUGPT_VIS_CACHE_BACKEND=redis
 LACLAUGPT_VIS_MESSAGING_BACKEND=redis
 LACLAUGPT_VIS_OBJECT_BACKEND=s3
+
 LACLAUGPT_VIS_SERVER_HOST=127.0.0.1
 LACLAUGPT_VIS_SERVER_PORT=8501
-LACLAUGPT_VIS_DATA_DIR=/mnt/workspace/LaclauGPT-Private/runtime/ai26/visualization
-LACLAUGPT_VIS_OUTPUT_DIR=/mnt/workspace/LaclauGPT-Private/runtime/ai26/visualization/exports
+LACLAUGPT_VIS_DATA_DIR=/private/runtime/ai26/visualization
+LACLAUGPT_VIS_OUTPUT_DIR=/private/runtime/ai26/visualization/exports
 ```
 
-Add the actual shared MongoDB/Redis/Allas variables from the authorized private configuration. Keep their values out of shell history, logs and public Git output where possible.
+MongoDB, Redis and S3-compatible/Allas settings are optional application capabilities and must be supplied only when the corresponding backend is selected. CI and public tests use synthetic/local data and do not require any remote service.
 
-## Install/update
+The supported storage hierarchy is:
 
-From the exact public checkout:
+1. canonical local/runtime files as fallback,
+2. MongoDB for canonical records/analysis when configured,
+3. Redis for optional cache, pub-sub and operational state,
+4. S3-compatible/Allas references for artifacts when configured.
+
+AI26 and other studies remain isolated through the explicit `project_id` namespace.
+
+## Install
 
 ```bash
-cd /mnt/workspace/LaclauGPT-Data-Visualization
-git status --short
-git pull --ff-only
+cd "$LACLAUGPT_VIS_REPO_ROOT"
 python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/pip install -e '.[remote]'
 ```
 
-For developer validation on Laskin, install the dev extras too:
+For development validation:
 
 ```bash
 .venv/bin/pip install -e '.[remote,dev]'
-.venv/bin/pytest
+python scripts/check_public_tree.py
 .venv/bin/ruff check .
+.venv/bin/pytest
+npm run test:legacy
 ```
 
-Do not resolve a dirty or divergent working tree by discarding local work automatically.
+## Preflight and health
 
-## Sanitized preflight
-
-Run:
+The preflight derives the repository root from its own location unless `LACLAUGPT_VIS_REPO_ROOT` is provided. The private env path must be explicit:
 
 ```bash
+export LACLAUGPT_VIS_ENV_FILE=/path/to/private/ai26-visualization.env
 bash deploy/preflight-laskin-ai26.sh
 ```
 
-The preflight verifies the exact checkout/private-root paths, the expected AI26 distributed profile shape, conservative bind behavior, and then calls the application's sanitized `profile` and `health` commands. It does not print secret connection strings.
-
-Useful manual diagnostics:
+It verifies AI26 selection, the canonical Phase 1 contract, Linux web-service execution, safe binding, retirement of obsolete legacy services, and then runs the sanitized application commands:
 
 ```bash
-set -a
-. /mnt/workspace/LaclauGPT-Private/config/ai26/visualization/laskin.env
-set +a
 .venv/bin/laclaugpt-visualize profile
 .venv/bin/laclaugpt-visualize health
 ```
 
-The profile/health output should show `project_id=ai26`, server/linux-server execution, distributed storage, MongoDB data access and Redis capabilities without revealing credentials.
+`health` reports configuration/readiness without printing credentials. Optional capability failures must be shown as unavailable/degraded rather than causing unrelated views to crash.
 
-## Manual production-equivalent start
+## Start manually
 
 ```bash
-cd /mnt/workspace/LaclauGPT-Data-Visualization
 set -a
-. /mnt/workspace/LaclauGPT-Private/config/ai26/visualization/laskin.env
+. "$LACLAUGPT_VIS_ENV_FILE"
 set +a
-exec .venv/bin/laclaugpt-visualize serve
+exec "$LACLAUGPT_VIS_REPO_ROOT/.venv/bin/laclaugpt-visualize" serve
 ```
 
-For an `ai26` profile `serve` launches `laclaugpt_visualization/ai26_dashboard.py` — the AI26 research workbench with the Monitor / Explore / Networks / Records / Reports / RAG / Configuration / Hermes / Diagnostics views. It is not the generic `app.py` workbench. The profile's project id selects the module, and `laclaugpt-visualize health` reports `not-ready` if that module is missing, so the deployment cannot silently serve the wrong dashboard.
+With `project_id=ai26`, `serve` selects the packaged AI26 research workbench. The application exposes Monitor, Explore, Networks when an explicit upstream network product exists, Records/Researcher Review, Reports and diagnostics. Records awaiting analysis remain visible and must not break the dashboard.
 
-This is suitable for verification only. Steady-state operation must be supervised by systemd or the existing equivalent service manager, not Hermes or an interactive shell.
+## systemd
 
-## Retire legacy AI26 services
+Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as a template. Replace these placeholders locally:
 
-Issue #53 established that Laskin had two obsolete user units pointing at the legacy `LaclauGPT-Discourse-Analysis` checkout: `ai26-dashboard.service` on port 8502 and `ai26-export.service` plus its timer. They are not part of the supported Visualization deployment.
+- `<service-user>` and `<service-group>`
+- `<visualization-root>`
+- `<private-env-file>`
+- `<private-runtime-root>`
 
-The supported steady state is exactly one live AI26 dashboard from `/mnt/workspace/LaclauGPT-Data-Visualization`, backed directly by MongoDB on port 8501. JSONL export is not required for the live dashboard and must not run as an orphan background job.
+The checked-in template deliberately contains no credential, private hostname or Laskin-specific filesystem path.
 
-Before enabling the supported service, disable the legacy user units if they exist:
-
-```bash
-systemctl --user disable --now ai26-dashboard.service 2>/dev/null || true
-systemctl --user disable --now ai26-export.timer 2>/dev/null || true
-systemctl --user disable --now ai26-export.service 2>/dev/null || true
-systemctl --user reset-failed ai26-dashboard.service ai26-export.service ai26-export.timer 2>/dev/null || true
-```
-
-Do not re-enable any unit whose `WorkingDirectory` or `ExecStart` points to `/mnt/workspace/LaclauGPT-Discourse-Analysis`. In particular, do not use a preflight that truncates `*.jsonl` files before export. If a future intentionally separate export artifact is introduced, it must be implemented in this repository and written atomically via temporary files plus rename, never by clearing live files first.
-
-Verify the supported deployment has a single listener/service path:
-
-```bash
-systemctl --user list-units --type=service | grep -E 'ai26|laclaugpt-visualization' || true
-ss -ltnp | grep -E ':8501|:8502' || true
-```
-
-Port 8501 should belong to the Visualization checkout. Port 8502 should not be serving the deprecated dashboard.
-
-## systemd service
-
-Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as the source template. Replace only `<laskin-user>` and `<laskin-group>` with the authorized account/group. The template deliberately pins:
-
-- `WorkingDirectory=/mnt/workspace/LaclauGPT-Data-Visualization`
-- private environment file under `/mnt/workspace/LaclauGPT-Private`
-- `.venv/bin/laclaugpt-visualize health` as `ExecStartPre`
-- `.venv/bin/laclaugpt-visualize serve` as the long-running process
-- restart on process failure
-- public checkout read-only and private root as the only explicit writable project path
-- restrictive umask and no-new-privileges hardening
-
-Before enabling the maintained service, retire the legacy split deployment left by the monolith:
-
-```bash
-systemctl --user disable --now ai26-dashboard.service ai26-export.service ai26-export.timer 2>/dev/null || true
-systemctl --user daemon-reload
-```
-
-Do not re-enable the old `ai26-export` timer. Its JSONL output is not a live dashboard input in the four-repository deployment, and the old preflight truncated files before writing them. If a portable JSONL export is needed later, implement it as an explicit artifact export in this repository using temp-file + atomic rename semantics rather than destructive pre-truncation.
-
-Typical operator commands after installing the unit as `laclaugpt-visualization-ai26.service`:
+After installing the customized unit:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now laclaugpt-visualization-ai26.service
 sudo systemctl status laclaugpt-visualization-ai26.service
 sudo systemctl restart laclaugpt-visualization-ai26.service
-sudo systemctl stop laclaugpt-visualization-ai26.service
 journalctl -u laclaugpt-visualization-ai26.service -n 200 --no-pager
 ```
 
-### User-service variant (no root required)
+A user-service installation is also valid. Remove `User=` and `Group=`, install under `~/.config/systemd/user/`, use `WantedBy=default.target`, and run the equivalent `systemctl --user` commands.
 
-On hosts without passwordless sudo the same unit works as a **user** service. Install the template under `~/.config/systemd/user/`, drop the `User=`/`Group=` lines and the `[Install] WantedBy=multi-user.target` target, and use `WantedBy=default.target`:
+## Retire the legacy split deployment
+
+The legacy JSONL dashboard/export path from the former monolithic deployment is not part of the supported Phase 1 visualization service. Before enabling the unified service, retire those units if present:
 
 ```bash
-systemctl --user daemon-reload
-systemctl --user enable --now laclaugpt-visualization-ai26.service
-systemctl --user status laclaugpt-visualization-ai26.service
-systemctl --user restart laclaugpt-visualization-ai26.service
-systemctl --user stop laclaugpt-visualization-ai26.service
-journalctl --user -u laclaugpt-visualization-ai26.service -n 200 --no-pager
+systemctl --user disable --now ai26-dashboard.service ai26-export.service ai26-export.timer 2>/dev/null || true
 ```
 
-A user service stops at logout unless lingering is enabled. Enable it once so steady-state operation does not depend on an interactive session:
+Do not re-enable an obsolete exporter merely to feed the dashboard. If a portable export is introduced later, write it through a temporary file plus atomic rename rather than truncating a live file before replacement.
+
+## Researcher-facing verification
+
+After start, verify that:
+
+1. the active project is `ai26` and the browser contract is `canonical`;
+2. Monitor shows corpus size, analyzed versus awaiting-analysis state, source/platform activity and descriptive formation/signifier/actor summaries;
+3. Researcher Review preserves stable `source_url`, evidence, summary, structured analysis, provenance, uncertainty/abstention and human review state;
+4. Explore renders timeline and available formation/topic/entity/signifier distributions;
+5. graph/SNA views appear only when an explicit upstream network product exists;
+6. newly written Collection → Analysis outputs become visible through the configured runtime backend without code changes;
+7. records awaiting analysis, malformed/rejected records, stale data, empty filters and unavailable optional services produce useful states instead of crashes;
+8. AI26 data does not mix with Brazil26 or any other project namespace;
+9. no visualization-side discourse inference is performed.
+
+## Update and restart
 
 ```bash
-loginctl enable-linger "$USER"
-loginctl show-user "$USER" | grep Linger    # expect Linger=yes
-```
-
-### Manual health/status command
-
-The readiness check is the supported way to inspect a deployment without seeing secrets:
-
-```bash
-set -a; . /mnt/workspace/LaclauGPT-Private/config/ai26/visualization/laskin.env; set +a
-.venv/bin/laclaugpt-visualize health     # exit 0 = ready, 1 = not-ready
-.venv/bin/laclaugpt-visualize profile    # non-secret effective configuration
-```
-
-`health` reports `not-ready` when a backend requirement is unmet or when the dashboard module for the configured project is missing, so a service that cannot serve its own dashboard is never reported healthy.
-
-Do not paste journal output into public issues without checking it for research content and private infrastructure identifiers.
-
-## Live AI26 validation
-
-After preflight/service start, validate from the dashboard and sanitized diagnostics:
-
-1. the active project is `ai26`;
-2. canonical MongoDB collections resolve through the shared namespace helpers;
-3. a bounded page/aggregate of current collected records is visible;
-4. current analysis results are visible and the Monitor shows the newest analyzed-record age; a stale dataset raises a visible warning;
-5. periodic reports appear when present;
-6. GraphProjection/DNA/RDF panels degrade cleanly when a capability is absent;
-7. Redis worker/status information is project-scoped and transient;
-8. RAG/chat uses the existing upstream service/message contract;
-9. configuration controls expose only explicitly mutable non-secret fields;
-10. restarting the dashboard does not lose durable research state;
-11. startup does not require loading the whole corpus;
-12. no image/video/audio objects are fetched merely for dashboard rendering;
-13. the Monitor view reports the timestamp/age of the newest analyzed record and visibly warns when analysis is stale or freshness is unknown;
-14. `ai26-dashboard.service`, `ai26-export.service` and `ai26-export.timer` from the legacy repository are inactive.
-
-For interruption testing, stop only services you are authorized to interrupt or use an isolated/reversible connectivity test. The dashboard should recover after MongoDB/Redis connectivity returns; a Redis status outage must not turn Redis into a substitute data store.
-
-## Private access
-
-The public-safe default is `127.0.0.1:8501`. Use the existing Laskin access pattern, such as an SSH tunnel or already protected reverse proxy/private subnet. A simple operator tunnel from a trusted workstation is typically:
-
-```bash
-ssh -L 8501:127.0.0.1:8501 <laskin-host>
-```
-
-Then browse to the local forwarded port. Host names and account names belong in private/local documentation if they are sensitive.
-
-## Update procedure
-
-```bash
-cd /mnt/workspace/LaclauGPT-Data-Visualization
+cd "$LACLAUGPT_VIS_REPO_ROOT"
 git status --short
 git pull --ff-only
 .venv/bin/pip install -e '.[remote]'
@@ -255,24 +162,8 @@ sudo systemctl restart laclaugpt-visualization-ai26.service
 sudo systemctl status laclaugpt-visualization-ai26.service
 ```
 
-If preflight fails, do not restart the known-good service merely to force the new checkout live.
+If preflight fails, leave the known-good service in place and fix the configuration or checkout before restarting.
 
-## Rollback/recovery
+## Logs and privacy
 
-Keep the previous known-good Git commit SHA in the private operator notes or deployment state. For a code rollback, stop the service, restore the known-good commit using the team's normal Git workflow, reinstall the editable package if dependencies changed, run preflight, then restart. Do not roll back or delete MongoDB/Redis/Allas data as part of a Visualization code rollback.
-
-If Redis is unavailable, durable MongoDB-backed views should remain conceptually authoritative while transient status/config/messaging features report degradation. If MongoDB is unavailable, report the backend failure clearly rather than silently presenting stale local data as current AI26 state.
-
-## Troubleshooting
-
-- `health` fails before start: inspect its sanitized error class and verify the private environment points at the current shared AI26 services.
-- Wrong project/namespace: fix the private environment; never compensate by creating a new visualization database.
-- Permission error under the public checkout: runtime writes should point into the private runtime directory, not the public repository.
-- Port unavailable: identify the existing process before changing the standard port.
-- Public/wildcard bind detected: restore loopback/private-network binding unless an existing protected access layer explicitly requires otherwise.
-- Optional RAG/RDF/Hermes unavailable: the dashboard should surface the capability as unavailable/degraded, not fail the core corpus browser.
-- Legacy `ai26-dashboard.service` / `ai26-export.service` / `ai26-export.timer` present: disable them; the supported live dashboard reads MongoDB directly from this repository and does not consume their JSONL output.
-
-## Acceptance record
-
-Record live validation results in private deployment notes. Public issue/PR comments may state pass/fail and sanitized counts, versions or commit SHAs, but must not contain credentials, private endpoints, codebooks, research rows or sensitive provenance paths.
+Use the service manager journal for process logs. Do not paste logs into public issues without checking for research content, private endpoints, credentials or private provenance paths. Runtime data and researcher notes must remain under the configured private runtime root, never inside the public Git checkout.

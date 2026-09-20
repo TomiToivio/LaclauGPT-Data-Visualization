@@ -80,7 +80,7 @@ def temporal_window(
         "timestamp_field": _CLOCK_COLUMNS[clock],
         "start": start_ts.isoformat() if start_ts is not None else None,
         "end": end_ts.isoformat() if end_ts is not None else None,
-        "records_total": int(len(frame)),
+        "records_total": len(frame),
         "records_with_explicit_timestamp": int(explicit.sum()),
         "records_missing_timestamp": int((~explicit).sum()),
         "records_in_window": int(mask.sum()),
@@ -228,16 +228,16 @@ def temporal_graph_projection(
         degree[edge["source"]] += int(edge["record_count"])
         degree[edge["target"]] += int(edge["record_count"])
 
-    allowed_nodes = {
-        label for label, _count in sorted(
-            degree.items(), key=lambda item: (-item[1], item[0])
-        )[:max_nodes]
-    }
-    edges = [
-        edge
-        for edge in all_edges
-        if edge["source"] in allowed_nodes and edge["target"] in allowed_nodes
-    ][:max_edges]
+    edges: list[dict[str, Any]] = []
+    allowed_nodes: set[str] = set()
+    for edge in all_edges:
+        endpoints = {str(edge["source"]), str(edge["target"])}
+        if len(allowed_nodes | endpoints) > max_nodes:
+            continue
+        edges.append(edge)
+        allowed_nodes.update(endpoints)
+        if len(edges) >= max_edges:
+            break
 
     visible_degree: Counter[str] = Counter()
     for edge in edges:
@@ -261,11 +261,11 @@ def temporal_graph_projection(
         "nodes": nodes,
         "edges": edges,
         "bounded": True,
-        "truncated": len(degree) > max_nodes or len(all_edges) > max_edges,
+        "truncated": len(degree) > len(allowed_nodes) or len(all_edges) > len(edges),
         "limits": {"nodes": max_nodes, "edges": max_edges},
         "temporal": {
             **temporal,
-            "relations_in_window": int(len(raw)),
-            "aggregated_edges": int(len(all_edges)),
+            "relations_in_window": len(raw),
+            "aggregated_edges": len(all_edges),
         },
     }

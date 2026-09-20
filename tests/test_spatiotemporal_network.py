@@ -170,4 +170,4 @@ def test_network_projection_handles_malformed_relations_without_losing_traceabil
     assert edge["weight"] == 1.0
     assert edge["source_urls"] == ["synthetic://record/1"]
     assert edge["evidence_refs"] == ["e-bad-weight"]
-    assert edge["edge_status"] == "human-validated"
+    assert edge["edge_status"] == "human-reviewed"

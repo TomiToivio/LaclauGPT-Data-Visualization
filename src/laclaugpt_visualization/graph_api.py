@@ -6,12 +6,12 @@ queries itself.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 GRAPH_LAYERS = frozenset({"source", "provenance", "laclau", "dna", "sna"})
-PHASE2_LAYERS = frozenset({"dna"})
+_LAYER_MIN_PHASE = {"source": 0, "provenance": 0, "laclau": 0, "sna": 1, "dna": 2}
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +33,7 @@ class GraphQuery:
     max_edges: int = 500
     continuation: str | None = None
 
-    def bounded(self) -> "GraphQuery":
+    def bounded(self) -> GraphQuery:
         layers = tuple(layer for layer in self.layers if layer in GRAPH_LAYERS)
         return GraphQuery(
             roots=tuple(self.roots[:50]),
@@ -65,7 +65,7 @@ class GraphEnvelope:
     provenance: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, Any], query: GraphQuery) -> "GraphEnvelope":
+    def from_payload(cls, payload: Mapping[str, Any], query: GraphQuery) -> GraphEnvelope:
         bounded = query.bounded()
         nodes = tuple(payload.get("nodes") or ())
         edges = tuple(payload.get("edges") or ())
@@ -193,8 +193,9 @@ class ArangoGraphBackend:
 
 
 def layer_enabled(layer: str, *, phase: int) -> bool:
-    """Phase-safe layer gate. DNA stays gated to Phase 2; isolated SNA is available in Phase 1."""
-    return layer in GRAPH_LAYERS and not (layer in PHASE2_LAYERS and phase < 2)
+    """Return whether a graph layer is available in the requested development phase."""
+    minimum = _LAYER_MIN_PHASE.get(layer)
+    return minimum is not None and phase >= minimum
 
 
 def evidence_refs(item: Mapping[str, Any]) -> tuple[str, ...]:

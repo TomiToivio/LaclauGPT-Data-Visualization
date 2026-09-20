@@ -5,12 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=<laskin-user>
-Group=<laskin-group>
-WorkingDirectory=/mnt/workspace/LaclauGPT-Data-Visualization
-EnvironmentFile=/mnt/workspace/LaclauGPT-Private/config/ai26/visualization/laskin.env
-ExecStartPre=/mnt/workspace/LaclauGPT-Data-Visualization/.venv/bin/laclaugpt-visualize health
-ExecStart=/mnt/workspace/LaclauGPT-Data-Visualization/.venv/bin/laclaugpt-visualize serve
+User=<service-user>
+Group=<service-group>
+WorkingDirectory=<visualization-root>
+Environment=LACLAUGPT_VIS_REPO_ROOT=<visualization-root>
+Environment=LACLAUGPT_VIS_ENV_FILE=<private-env-file>
+EnvironmentFile=<private-env-file>
+ExecStartPre=<visualization-root>/deploy/preflight-laskin-ai26.sh
+ExecStart=<visualization-root>/.venv/bin/laclaugpt-visualize serve
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
@@ -19,8 +21,8 @@ PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadOnlyPaths=/mnt/workspace/LaclauGPT-Data-Visualization
-ReadWritePaths=/mnt/workspace/LaclauGPT-Private
+ReadOnlyPaths=<visualization-root>
+ReadWritePaths=<private-runtime-root>
 UMask=0077
 
 [Install]
