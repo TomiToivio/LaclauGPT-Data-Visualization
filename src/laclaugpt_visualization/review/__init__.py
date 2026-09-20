@@ -5,7 +5,7 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Mapping, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -39,6 +39,50 @@ class Review(BaseModel):
 class ReviewStore(Protocol):
     def save(self, review: Review) -> None: ...
     def get(self, source_url: str) -> Review | None: ...
+
+
+def canonical_review_source_url(record: Mapping[str, Any]) -> str | None:
+    """Return the canonical source identity when a row is eligible for Phase 1 review.
+
+    Phase 0 compatibility rows and legacy-only rows deliberately return None.
+    The function accepts either a canonical nested record or its flattened
+    visualization row, where raw_record retains the canonical payload.
+    """
+    if record.get("phase0_compatibility"):
+        return None
+
+    raw = record.get("raw_record")
+    candidate = raw if isinstance(raw, Mapping) else record
+    if any(str(key).startswith("phase0") for key in candidate):
+        return None
+
+    source_url = str(candidate.get("source_url") or record.get("source_url") or "").strip()
+    if not source_url:
+        return None
+
+    canonical_shape = bool(candidate.get("schema_version")) or any(
+        isinstance(candidate.get(section), Mapping)
+        for section in ("source", "content", "analysis")
+    )
+    return source_url if canonical_shape else None
+
+
+def save_canonical_review(
+    record: Mapping[str, Any],
+    review: Review,
+    store: ReviewStore,
+) -> None:
+    """Persist review state only for a canonical record.
+
+    Review state is written exclusively through the review store. The supplied
+    source/canonical analysis mapping is never modified.
+    """
+    source_url = canonical_review_source_url(record)
+    if source_url is None:
+        raise ValueError("Researcher Review is available only for canonical Phase 1 records")
+    if review.source_url != source_url:
+        raise ValueError("review source_url must match the canonical record source_url")
+    store.save(review)
 
 
 class SQLiteReviewStore:
