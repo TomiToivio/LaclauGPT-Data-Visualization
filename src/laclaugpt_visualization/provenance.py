@@ -146,6 +146,29 @@ def _events(row: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [event for event in value if isinstance(event, Mapping)]
 
 
+def has_canonical_provenance(row: Mapping[str, Any]) -> bool:
+    """Return True only when canonical provenance events are genuinely present."""
+    return bool(_events(row))
+
+
+def compatibility_provenance(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Expose only explicit Phase 0 compatibility/source-stage metadata.
+
+    Raw Phase 0 analysis payloads are deliberately excluded: compatibility metadata
+    must not be promoted into canonical run/model/codebook provenance.
+    """
+    compat = _mapping(row.get("phase0_compatibility"))
+    stages = _mapping(row.get("phase0_stage_status"))
+    visible: dict[str, Any] = {}
+    for key in ("contract", "canonical_phase1_record", "source_identity", "label_semantics"):
+        value = compat.get(key)
+        if _present(value):
+            visible[key] = value
+    if stages:
+        visible["stage_status"] = dict(stages)
+    return visible
+
+
 def _candidate_mappings(row: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     raw = _mapping(row.get("raw_record"))
     analysis = _mapping(raw.get("analysis"))
@@ -245,8 +268,30 @@ def _apply_nested_runtime_fields(row: Mapping[str, Any], summary: dict[str, Any]
 
 
 def summarize_provenance(row: Mapping[str, Any]) -> dict[str, Any]:
-    """Create a compact safe provenance summary for one normalized record."""
+    """Create a compact safe provenance summary for one normalized record.
+
+    Rich run/model/codebook provenance is available only when the record actually
+    carries canonical provenance events. This prevents Phase 0 compatibility fields,
+    model-run-shaped payloads, or legacy aliases from being mistaken for canonical
+    provenance.
+    """
     summary: dict[str, Any] = {}
+    if not has_canonical_provenance(row):
+        for field in FIELD_ALIASES:
+            summary[field] = UNKNOWN
+        for field in BOOL_ALIASES:
+            summary[field] = None
+        for field in LIST_ALIASES:
+            summary[field] = []
+
+        for field, fallback in (
+            ("country", row.get("source_country")),
+            ("language", row.get("source_language")),
+        ):
+            if _present(fallback):
+                summary[field] = str(fallback)
+        return summary
+
     for field, aliases in FIELD_ALIASES.items():
         value = _first(row, aliases)
         summary[field] = str(value) if _present(value) else UNKNOWN
