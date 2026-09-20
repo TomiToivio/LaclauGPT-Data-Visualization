@@ -79,12 +79,12 @@ def _edge_status(relation: dict[str, Any], review_status: str) -> str:
         "canonical",
     }:
         return "human-reviewed"
-    if review_status.upper() in {"ACCEPTED", "CANONICAL", "REVISED"}:
-        return "human-reviewed"
     if explicit in {"inferred", "generated", "llm", "model"}:
         return "inferred"
     if explicit in {"observed", "extracted", "source"}:
         return "extracted"
+    if review_status.upper() in {"ACCEPTED", "CANONICAL", "REVISED"}:
+        return "human-reviewed-record"
     return "unrecorded"
 
 
