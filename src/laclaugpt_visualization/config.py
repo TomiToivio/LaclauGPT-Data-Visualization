@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     storage: Literal["local", "distributed", "custom"] = "local"
     caller: str = "human-cli"
 
+    # Explicit browser contract selection. Phase 0 remains the compatibility default;
+    # canonical Phase 1 is opt-in and never inferred from backend availability.
+    browser_data_contract: Literal["phase0", "canonical"] = "phase0"
+
     # ``storage_backend`` is the researcher-facing read/query selection. The older
     # ``data_backend`` remains the deployment/storage adapter setting for compatibility.
     storage_backend: Literal["auto", "mongodb", "csv"] = "auto"
@@ -130,7 +134,7 @@ class Settings(BaseSettings):
     s3_prefix_root: str = "projects"
 
     @model_validator(mode="after")
-    def resolve_storage_backend(self) -> "Settings":
+    def resolve_storage_backend(self) -> Settings:
         """Map the new query policy onto the maintained legacy loader without UI coupling."""
         if self.storage_backend == "mongodb":
             self.data_backend = "mongodb"
@@ -196,6 +200,7 @@ class Settings(BaseSettings):
             "execution": profile.execution,
             "storage": profile.storage,
             "caller": self.caller,
+            "browser_data_contract": self.browser_data_contract,
             "storage_backend": self.storage_backend,
             "data_backend": self.data_backend,
             "cache_backend": self.cache_backend,

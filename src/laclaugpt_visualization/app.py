@@ -47,7 +47,7 @@ from .spatiotemporal import (
     spatiotemporal_timeline_counts,
 )
 from .review import (\n    Review,\n    SQLiteReviewStore,\n    canonical_review_source_url,\n    save_canonical_review,\n)
-from .storage import load_mongodb
+from .storage import load_canonical_mongodb, load_mongodb
 from .transforms import explore, graph_projection, monitor, relations
 from .worker_status import RedisOperationalStatus
 
@@ -83,6 +83,37 @@ def _load_default_frame():
                 candidates.extend(sorted(Path(root).glob(suffix)))
     return load_frame(candidates[0], settings) if candidates else None
 
+
+
+def _render_canonical_browser(settings) -> None:
+    """Render canonical Phase 1 records without compatibility-store fallback."""
+    st.markdown("### Canonical Phase 1 browser")
+    st.caption(
+        "Read-only canonical records from the Analysis/Visualization contract. "
+        "source_url remains the record identity."
+    )
+    try:
+        frame = load_canonical_mongodb(settings)
+    except (RuntimeError, ValueError) as exc:
+        st.error(f"Canonical Phase 1 browser could not load records: {exc}")
+        return
+    if frame.empty:
+        st.info("No canonical Phase 1 records are available in the configured collection.")
+        return
+    preferred = [
+        "source_url",
+        "source_timestamp",
+        "source_author",
+        "source_language",
+        "source_platform",
+        "analysis_status",
+        "summary",
+    ]
+    columns = [column for column in preferred if column in frame.columns]
+    st.caption(
+        f"Canonical source: {settings.mongodb_database}/{settings.resolved_mongodb_collection}"
+    )
+    st.dataframe(frame[columns] if columns else frame, use_container_width=True, hide_index=True)
 
 def _provenance_sidebar_filters(frame):
     """Filter on safe provenance projections without changing canonical records."""
@@ -1139,7 +1170,28 @@ def run() -> None:
     if settings.phase0_browser_enabled:
         entry = st.sidebar.radio("Application", ("Workbench", "Phase 0 browser"))
         if entry == "Phase 0 browser":
-            render_phase0_browser(st, settings)
+            source_contract = st.sidebar.radio(
+                "Data source contract",
+                ("phase0", "canonical"),
+                index=("phase0", "canonical").index(settings.browser_data_contract),
+                format_func=lambda value: (
+                    "Phase 0 compatibility contract"
+                    if value == "phase0"
+                    else "Canonical Phase 1 contract"
+                ),
+            )
+            st.sidebar.caption(
+                "Current source contract: "
+                + (
+                    "Phase 0 compatibility contract"
+                    if source_contract == "phase0"
+                    else "Canonical Phase 1 contract"
+                )
+            )
+            if source_contract == "phase0":
+                render_phase0_browser(st, settings)
+            else:
+                _render_canonical_browser(settings)
             return
     frame = _load_default_frame()
     uploaded = st.sidebar.file_uploader(
