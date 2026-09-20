@@ -110,7 +110,7 @@ class ArtifactReference:
     key: str | None
     filename: str
     content_type: str | None = None
-    downloadable: bool = false
+    downloadable: bool = False
     reason: str = ""
 
 
@@ -137,7 +137,7 @@ def safe_artifact_reference(reference: str) -> str:
         return ""
     parsed = urlsplit(reference)
     if not parsed.scheme:
-        return reference
+        return urlunsplit(("", "", parsed.path, "", ""))
     host = parsed.hostname or ""
     if parsed.port:
         host = f"{host}:{parsed.port}"
