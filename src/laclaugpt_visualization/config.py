@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     # Phase 0 environment contract and never changes the canonical Phase 1 loader.
     phase0_browser_enabled: bool = False
     phase0_browser_limit: int = 100
+
+    # Specialized Phase 1 dashboards are restored one at a time and remain opt-in.
+    # Issue #96 restores only the Pledge dashboard.
+    specialized_pledge_dashboard_enabled: bool = False
     phase0_mongodb_uri: str | None = Field(
         default=None,
         repr=False,
@@ -213,6 +217,7 @@ class Settings(BaseSettings):
             "vector_max_results": self.vector_max_results,
             "phase0_browser_enabled": self.phase0_browser_enabled,
             "phase0_browser_limit": self.phase0_browser_limit,
+            "specialized_pledge_dashboard_enabled": self.specialized_pledge_dashboard_enabled,
             "phase0_mongodb_database": self.phase0_mongodb_database,
             "phase0_project_id": self.resolved_phase0_project_id,
             "redis_heartbeat_ttl_seconds": self.redis_heartbeat_ttl_seconds,
