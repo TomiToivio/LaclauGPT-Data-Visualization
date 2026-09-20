@@ -13,6 +13,7 @@ from .canonical import flatten_canonical, reconstruct_canonical
 from .config import Settings
 from .legacy_ep24 import adapt as adapt_ep24
 from .legacy_ep24 import looks_like_ep24
+from .phase0_adapter import adapt_phase0, looks_like_phase0
 
 _LIST_COLUMNS = (
     "entities",
@@ -62,6 +63,8 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:
+    if looks_like_phase0(record):
+        return adapt_phase0(record)
     candidate = reconstruct_canonical(record)
     if candidate.get("source_url") and (
         candidate.get("schema_version")
