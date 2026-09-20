@@ -1,0 +1,30 @@
+{
+  "source_url": "https://example.test/phase0/discourse-error",
+  "phase0_summary_validated": {
+    "source_url": "https://example.test/phase0/discourse-error",
+    "summary": "Summary completed before discourse failed.",
+    "signifiers": [
+      "safety"
+    ]
+  },
+  "phase0_discourse_raw": "<model-response>",
+  "phase0_discourse_error_metadata": {
+    "kind": "validation_error",
+    "message": "discourse output invalid"
+  },
+  "phase0": {
+    "preprocess": {
+      "status": "ok"
+    },
+    "summary": {
+      "status": "ok"
+    },
+    "postprocess": {
+      "status": "ok"
+    },
+    "discourse": {
+      "status": "error",
+      "error": "discourse output invalid"
+    }
+  }
+}

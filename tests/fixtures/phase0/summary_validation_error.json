@@ -1,0 +1,18 @@
+{
+  "source_url": "https://example.test/phase0/summary-error",
+  "phase0_summary_raw": "{not-valid-json",
+  "phase0_summary_validation_error": "summary failed schema validation",
+  "phase0_summary_error_metadata": {
+    "kind": "validation_error",
+    "retryable": true
+  },
+  "phase0": {
+    "preprocess": {
+      "status": "ok"
+    },
+    "summary": {
+      "status": "error",
+      "error": "summary failed schema validation"
+    }
+  }
+}

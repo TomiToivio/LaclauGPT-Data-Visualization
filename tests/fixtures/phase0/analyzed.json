@@ -1,0 +1,91 @@
+{
+  "document_id": "phase0-fixture-analyzed",
+  "source_url": "https://example.test/phase0/analyzed",
+  "source_date": "2026-09-18T12:00:00Z",
+  "actor_name": "Synthetic Research Lab",
+  "arena": "elites",
+  "language": "en",
+  "title": "Synthetic AI policy statement",
+  "ai_formation": "ai critical",
+  "metadata": {
+    "political_formation": "left"
+  },
+  "phase0_summary": {
+    "summary": "Unvalidated fallback summary.",
+    "entities": [
+      {
+        "label": "Synthetic Research Lab"
+      }
+    ],
+    "topics": [
+      {
+        "name": "AI policy"
+      }
+    ],
+    "signifiers": [
+      {
+        "text": "safety"
+      }
+    ]
+  },
+  "phase0_summary_validated": {
+    "document_id": "phase0-fixture-analyzed",
+    "source_url": "https://example.test/phase0/analyzed",
+    "source_date": "2026-09-18T12:00:00Z",
+    "actor_name": "Synthetic Research Lab",
+    "title": "Synthetic AI policy statement",
+    "summary": "Validated synthetic summary.",
+    "entities": [
+      {
+        "label": "Synthetic Research Lab"
+      }
+    ],
+    "topics": [
+      {
+        "name": "AI policy"
+      }
+    ],
+    "signifiers": [
+      {
+        "text": "safety"
+      }
+    ]
+  },
+  "phase0_discourse": {
+    "signifiers": [
+      {
+        "canonical_label": "control"
+      }
+    ],
+    "nodal_point_candidates": [
+      "AI"
+    ]
+  },
+  "phase0_ontology": {
+    "nodes": [
+      {
+        "id": "AI",
+        "type": "candidate"
+      }
+    ],
+    "edges": []
+  },
+  "phase0": {
+    "preprocess": {
+      "status": "ok",
+      "updated_at": "2026-09-18T12:01:00Z"
+    },
+    "summary": {
+      "status": "ok",
+      "updated_at": "2026-09-18T12:02:00Z"
+    },
+    "postprocess": {
+      "status": "ok",
+      "updated_at": "2026-09-18T12:03:00Z"
+    },
+    "discourse": {
+      "status": "ok",
+      "updated_at": "2026-09-18T12:04:00Z"
+    }
+  }
+}
