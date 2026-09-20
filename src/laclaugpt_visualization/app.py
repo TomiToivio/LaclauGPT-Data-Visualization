@@ -24,6 +24,7 @@ from .graph_explorer import (
     projection_envelope,
 )
 from .phase0_browser import render_phase0_browser
+from .pledge_dashboard import render_pledge_dashboard
 from .plugins import default_registry
 from .products import DataProduct, InMemoryProvider, ProductKind
 from .provenance import (
@@ -913,9 +914,13 @@ def _render_mode(frame, mode: str) -> None:
             _reports_page,
             _research_data_page,
         ]
-    if get_settings().project_id.casefold() == "ep24":
+    settings = get_settings()
+    if settings.project_id.casefold() == "ep24":
         labels.insert(0, "EP24 Improved")
         pages.insert(0, _ep24_improved_page)
+    if settings.specialized_pledge_dashboard_enabled:
+        labels.append("Pledge Dashboard")
+        pages.append(lambda current_frame: render_pledge_dashboard(st, current_frame))
     labels.extend(["Live Status", "Plugin Library"])
     pages.extend([_live_status_page, lambda current_frame: _plugin_library_page(current_frame, mode)])
     for tab, page in zip(st.tabs(labels), pages, strict=True):
