@@ -55,7 +55,7 @@ It provides one researcher-facing application with Monitor, Researcher Review, a
 - **Researcher Review**: one-record close reading with transcript, OCR, multimodal/frame evidence, human-readable summary, structured analysis fields, provenance, uncertainty, typed corrections, notes and rerun/reprocess requests.
 - **Explore**: shared filters, timelines, formation/topic/entity distributions, relation tables and graph-projection inputs.
 
-Counts, model confidence, graph degree and layout are descriptive aids. They do not by themselves establish hegemony, nodal status, empty/floating signification, antagonism or theoretical validity.
+Counts, model confidence, graph degree and layout are descriptive aids. They do not by themselves establish hegemony, nodal status, empty/floating signification, antagonism or theoretical validity.\n\nPhase 1 also restores SNA visualization as an isolated downstream capability: it renders only an explicit upstream `NETWORK` product, preserves source/evidence provenance, and stays unavailable when Analysis has not supplied a stable network result. Visualization does not compute social ties, centrality, communities, or missing network structure. See `docs/PHASE1_SNA_VISUALIZATION.md`.
 
 ## Legacy / Specialized dashboards
 
