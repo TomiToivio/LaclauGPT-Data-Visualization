@@ -66,7 +66,7 @@ def test_explore_empty_and_missing_clock_states_are_deterministic() -> None:
     assert empty["formations"].empty
     assert empty["signifiers"].empty
 
-    missing = timeline(pd.DataFrame([{"source_timestamp": "2026-09-01T00:00:00Z"}]), clock="analysis")
+    missing = timeline(\n        pd.DataFrame([{"source_timestamp": "2026-09-01T00:00:00Z"}]),\n        clock="analysis",\n    )
     assert missing.empty
 
 
