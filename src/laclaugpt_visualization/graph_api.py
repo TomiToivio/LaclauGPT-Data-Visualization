@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 GRAPH_LAYERS = frozenset({"source", "provenance", "laclau", "dna", "sna"})
-PHASE2_LAYERS = frozenset({"dna", "sna"})
+PHASE2_LAYERS = frozenset({"dna"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,7 +193,7 @@ class ArangoGraphBackend:
 
 
 def layer_enabled(layer: str, *, phase: int) -> bool:
-    """Phase-safe layer gate. Phase-2 analytical layers stay dormant before phase 2."""
+    """Phase-safe layer gate. DNA stays gated to Phase 2; isolated SNA is available in Phase 1."""
     return layer in GRAPH_LAYERS and not (layer in PHASE2_LAYERS and phase < 2)
 
 
