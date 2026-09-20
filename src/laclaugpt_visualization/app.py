@@ -1111,7 +1111,8 @@ def _plugin_driven_tabs(frame, mode: str):
             fields=set(frame.columns),
             mode=mode,
         )
-    except Exception:  # noqa: BLE001\n        return [], []
+    except Exception:  # noqa: BLE001 - optional plugin discovery boundary.
+        return [], []
 
     labels = []
     pages = []
