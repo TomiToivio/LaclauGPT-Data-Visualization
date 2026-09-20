@@ -66,6 +66,14 @@ def _edge_status(relation: dict[str, Any], review_status: str) -> str:
     return "unrecorded"
 
 
+def _relation_weight(value: Any) -> float:
+    """Normalize an optional descriptive relation weight without failing the graph view."""
+    try:
+        return float(value if value not in (None, "") else 1.0)
+    except (TypeError, ValueError):
+        return 1.0
+
+
 def relations(frame: pd.DataFrame) -> pd.DataFrame:
     """Return source-linked relation rows with provenance/validation semantics."""
     columns = [
@@ -96,7 +104,7 @@ def relations(frame: pd.DataFrame) -> pd.DataFrame:
                     "type": str(relation.get("relation_type") or relation.get("type") or "related_to"),
                     "document_id": str(row.get("document_id", "")),
                     "source_url": str(row.get("source_url", "")),
-                    "weight": float(relation.get("weight") or 1.0),
+                    "weight": _relation_weight(relation.get("weight")),
                     "edge_status": _edge_status(relation, str(row.get("review_status", "PROVISIONAL"))),
                     "evidence_refs": evidence,
                     "summary": str(row.get("human_readable_summary") or row.get("summary") or ""),
@@ -125,11 +133,20 @@ def graph_projection(
     for weight/degree while preserving contributing record URLs. Both node and edge counts are
     bounded so a dashboard cannot accidentally materialize a complete corpus graph.
     """
+    node_limit = max(0, int(max_nodes))
+    edge_limit = max(0, int(max_edges))
     raw = relations(frame)
-    if raw.empty:
-        return {"nodes": [], "edges": [], "bounded": True, "truncated": False}
+    if raw.empty or node_limit == 0 or edge_limit == 0:
+        return {
+            "nodes": [],
+            "edges": [],
+            "bounded": True,
+            "truncated": not raw.empty,
+            "limits": {"nodes": node_limit, "edges": edge_limit},
+        }
 
-    raw = raw.head(max(1, max_edges)).copy()
+    raw_relation_count = len(raw)
+    raw = raw.head(edge_limit).copy()
     grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     for edge in raw.to_dict(orient="records"):
         key = (edge["source"], edge["target"], edge["type"], edge["edge_status"])
@@ -162,13 +179,13 @@ def graph_projection(
         degree[edge["target"]] += edge["record_count"]
 
     allowed_nodes = {
-        label for label, _count in degree.most_common(max(1, max_nodes))
+        label for label, _count in degree.most_common(node_limit)
     }
     edges = [
         edge
         for edge in all_edges
         if edge["source"] in allowed_nodes and edge["target"] in allowed_nodes
-    ][: max(1, max_edges)]
+    ][:edge_limit]
 
     node_types: dict[str, set[str]] = {}
     for _, row in frame.iterrows():
@@ -195,14 +212,18 @@ def graph_projection(
             "degree": int(count),
             "kinds": sorted(node_types.get(label, {"unknown"})),
         }
-        for label, count in degree.most_common(max(1, max_nodes))
+        for label, count in degree.most_common(node_limit)
     ]
     return {
         "nodes": nodes,
         "edges": edges,
         "bounded": True,
-        "truncated": len(degree) > max_nodes or len(all_edges) > max_edges,
-        "limits": {"nodes": max_nodes, "edges": max_edges},
+        "truncated": (
+            raw_relation_count > edge_limit
+            or len(degree) > node_limit
+            or len(all_edges) > edge_limit
+        ),
+        "limits": {"nodes": node_limit, "edges": edge_limit},
     }
 
 

@@ -119,3 +119,54 @@ def test_network_projection_keeps_evidence_validation_and_size_bound() -> None:
     assert edge["evidence_refs"] == ["e1"]
     assert edge["edge_status"] == "human-validated"
     assert {node["id"] for node in projection["nodes"]} == {"Synthetic Actor", "public AI"}
+
+
+def test_network_projection_enforces_strict_node_edge_bounds_and_reports_truncation() -> None:
+    frame = _frame()
+    frame.at[0, "relations"] = [
+        *frame.at[0, "relations"],
+        {
+            "source_ref": "abundance",
+            "target_ref": "infrastructure",
+            "relation_type": "articulated_with",
+            "evidence_refs": ["e3"],
+        },
+    ]
+
+    projection = graph_projection(frame, max_nodes=2, max_edges=2)
+
+    assert len(projection["nodes"]) <= 2
+    assert len(projection["edges"]) <= 2
+    assert projection["truncated"] is True
+    assert projection["limits"] == {"nodes": 2, "edges": 2}
+
+    zero = graph_projection(frame, max_nodes=0, max_edges=0)
+    assert zero["nodes"] == []
+    assert zero["edges"] == []
+    assert zero["truncated"] is True
+    assert zero["limits"] == {"nodes": 0, "edges": 0}
+
+
+def test_network_projection_handles_malformed_relations_without_losing_traceability() -> None:
+    frame = _frame()
+    frame.at[0, "relations"] = [
+        {
+            "source_ref": "Synthetic Actor",
+            "target_ref": "public AI",
+            "relation_type": "uses_signifier",
+            "weight": "not-a-number",
+            "validation_status": "human-validated",
+            "evidence_refs": ["e-bad-weight"],
+        },
+        {"source_ref": "", "target_ref": "ignored", "weight": {}},
+        "not-a-relation-object",
+    ]
+
+    projection = graph_projection(frame)
+
+    assert len(projection["edges"]) == 1
+    edge = projection["edges"][0]
+    assert edge["weight"] == 1.0
+    assert edge["source_urls"] == ["synthetic://record/1"]
+    assert edge["evidence_refs"] == ["e-bad-weight"]
+    assert edge["edge_status"] == "human-validated"
