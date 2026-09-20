@@ -36,8 +36,10 @@ from .research_views import (
     DASHBOARD_MODES,
     infer_dashboard_mode,
     load_reports,
-    map_points,
-    timeline_counts,
+)
+from .spatiotemporal import (
+    spatiotemporal_map_points,
+    spatiotemporal_timeline_counts,
 )
 from .review import Review, SQLiteReviewStore
 from .storage import load_mongodb
@@ -521,7 +523,7 @@ def _research_data_page(frame) -> None:
 
 def _timeline_map_page(frame) -> None:
     st.markdown("#### Timeline")
-    counts = timeline_counts(frame)
+    counts = spatiotemporal_timeline_counts(frame)
     if counts.empty:
         st.caption("No valid source, collection, analysis or event timestamps in this view.")
     else:
@@ -537,13 +539,17 @@ def _timeline_map_page(frame) -> None:
             use_container_width=True,
         )
         st.caption(
-            "The four clocks remain separate; inferred event time is not source publication time."
+            "Source, collection, analysis and evidence-backed event clocks remain separate. "
+            "Missing times are disabled rather than substituted."
         )
 
     st.markdown("#### Map")
-    points = map_points(frame)
+    points = spatiotemporal_map_points(frame)
     if points.empty:
-        st.caption("No valid geospatial observations in this view. Coordinates are never fabricated.")
+        st.caption(
+            "No evidence-backed geospatial observations in this view. Missing, inferred, "
+            "unvalidated geocoded and partial coordinates are disabled rather than repaired."
+        )
     else:
         st.plotly_chart(
             px.scatter_geo(
@@ -552,7 +558,7 @@ def _timeline_map_page(frame) -> None:
                 lon="longitude",
                 hover_name="label",
                 hover_data=["location", "event_type", "source_url"],
-                title="Geocoded source/event evidence",
+                title="Evidence-backed source/event geography",
             ),
             use_container_width=True,
         )
