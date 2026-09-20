@@ -96,3 +96,40 @@ def test_canonical_relation_table_drops_malformed_edges_and_handles_bad_weight()
     assert "missing-target" not in table.index
     assert "no-evidence" not in table.index
     assert table.loc["bad-weight", "weight"] == 1.0
+
+def test_record_review_does_not_override_explicit_relation_origin() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "document_id": "doc-reviewed",
+                "source_url": "https://example.invalid/source/reviewed",
+                "review_status": "ACCEPTED",
+                "relations": [
+                    {
+                        "source_ref": "actor",
+                        "target_ref": "claim",
+                        "origin": "inferred",
+                        "evidence_refs": ["ev-inferred"],
+                    },
+                    {
+                        "source_ref": "actor",
+                        "target_ref": "quote",
+                        "origin": "extracted",
+                        "evidence_refs": ["ev-extracted"],
+                    },
+                    {
+                        "source_ref": "actor",
+                        "target_ref": "unknown",
+                        "evidence_refs": ["ev-record-review-only"],
+                    },
+                ],
+            }
+        ]
+    )
+
+    table = relations(frame, require_evidence=True).set_index("target")
+
+    assert table.loc["claim", "validation_status"] == "inferred"
+    assert table.loc["quote", "validation_status"] == "extracted"
+    assert table.loc["unknown", "validation_status"] == "human-reviewed-record"
+
