@@ -38,7 +38,7 @@ def _artifact_picker(roots: list[Path]) -> dict[str, Any] | None:
             import json
             artifact = json.loads(payload)
             if not isinstance(artifact, dict):
-                raise ValueError("multimethod artifact must be a JSON object")
+                raise TypeError("multimethod artifact must be a JSON object")
             errors = validate_multimethod_artifact(artifact)
             if errors:
                 raise ValueError("; ".join(errors))

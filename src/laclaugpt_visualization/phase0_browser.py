@@ -7,9 +7,10 @@ actually used.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from .config import Settings
 from .phase0_adapter import adapt_phase0, looks_like_phase0
@@ -239,7 +240,7 @@ def phase0_browser_state(
         return Phase0BrowserState("config-error", message=str(exc))
     try:
         records = loader(settings)
-    except Exception as exc:  # UI boundary: turn backend failure into an explicit state.
+    except Exception as exc:  # noqa: BLE001 - UI boundary converts backend failures to state.
         return Phase0BrowserState("error", message=str(exc))
     if not records:
         return Phase0BrowserState(

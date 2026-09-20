@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from .plugins import PluginKind, PluginRegistry, RegisteredPlugin
 from .products import ProductProvider
@@ -53,7 +54,7 @@ def discover_plugin_pages(
                 fields=fields,
                 mode=mode,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001,S112 - optional plugin isolation boundary.
             continue
         if status.available:
             pages.append(PluginPage(plugin=plugin, title=plugin.spec.title or plugin.spec.name))
@@ -75,7 +76,7 @@ def render_plugin_page(
             return PluginRenderResult(False, error="plugin renderer is unavailable")
         value = page.plugin.render(products, dict(context or {}))
         return PluginRenderResult(True, value=value)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - renderer isolation boundary.
         return PluginRenderResult(
             False,
             error=f"{type(exc).__name__}: {exc}",
