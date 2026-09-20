@@ -25,8 +25,8 @@ from .graph_explorer import (
 )
 from .phase0_browser import render_phase0_browser
 from .pledge_dashboard import render_pledge_dashboard
-from .plugins import default_registry
 from .plugin_pages import discover_plugin_pages, render_plugin_page
+from .plugins import default_registry
 from .products import DataProduct, InMemoryProvider, ProductKind
 from .provenance import (
     UNKNOWN,
@@ -41,13 +41,26 @@ from .research_views import (
     DASHBOARD_MODES,
     infer_dashboard_mode,
     load_reports,
+    map_points,
+    timeline_counts,
+)
+from .review import (
+    Review,
+    SQLiteReviewStore,
+    canonical_review_source_url,
+    save_canonical_review,
 )
 from .spatiotemporal import (
     spatiotemporal_map_points,
     spatiotemporal_timeline_counts,
 )
-from .review import (\n    Review,\n    SQLiteReviewStore,\n    canonical_review_source_url,\n    save_canonical_review,\n)
-from .storage import (\n    artifact_references,\n    download_s3_object,\n    load_canonical_mongodb,\n    load_mongodb,\n    resolve_artifact_reference,\n)
+from .storage import (
+    artifact_references,
+    download_s3_object,
+    load_canonical_mongodb,
+    load_mongodb,
+    resolve_artifact_reference,
+)
 from .transforms import explore, graph_projection, monitor, relations
 from .worker_status import RedisOperationalStatus
 
@@ -1098,8 +1111,7 @@ def _plugin_driven_tabs(frame, mode: str):
             fields=set(frame.columns),
             mode=mode,
         )
-    except Exception:
-        return [], []
+    except Exception:  # noqa: BLE001\n        return [], []
 
     labels = []
     pages = []
