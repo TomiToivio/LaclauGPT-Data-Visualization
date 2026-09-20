@@ -2,6 +2,14 @@
 
 This workspace consumes `laclaugpt.multimethod.v1` artifacts produced by `LaclauGPT-Data-Analysis`. Visualization does not fit MCA, detect DNA communities, infer frames, classify ideology, or rewrite the LaclauGPT paper.
 
+## Phase 1 restoration decision
+
+**Decision: adapt.** The existing multimethod renderer remains an isolated, read-only capability because its core assumptions still match the current Analysis/Visualization boundary: Analysis produces `laclaugpt.multimethod.v1` (with optional embedded `laclaugpt.social-space.v1`), and Visualization only filters/transforms those supplied products.
+
+The Phase 1 adapter now validates the boundary before rendering. Every statement must have a unique `statement_id` and a non-empty canonical `source_url`; malformed embedded MCA payloads are rejected rather than guessed into shape. Deterministic chart-input snapshots keep rendering transforms reproducible and preserve source traceability.
+
+This restoration does not alter Phase 0 list, inspect, export, review, or identity behavior. It introduces no storage dependency and remains removable by deleting the isolated multimethod page/view modules and their tests.
+
 ## Entry point
 
 The unified Streamlit application exposes **AI26 Multimethod Explore** through its page navigation. The page searches the configured local Analysis directory and private `data/` tree for `laclaugpt.multimethod.v1` JSON artifacts. A researcher may also upload a JSON artifact for the current session.
