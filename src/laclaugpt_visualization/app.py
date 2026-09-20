@@ -401,9 +401,58 @@ def _graph_explorer_page(frame) -> None:
         "Min edge weight", min_value=0.0, value=0.0, step=0.5
     )
 
-    graph = projection_envelope(
-        frame, max_nodes=int(max_nodes), max_edges=int(max_edges)
+    temporal_enabled = st.checkbox(
+        "Temporal window",
+        value=False,
+        help=(
+            "Slice the graph using one explicit recorded clock. Missing timestamps are excluded; "
+            "Visualization never substitutes another clock."
+        ),
     )
+    clock = None
+    start = None
+    end = None
+    if temporal_enabled:
+        temporal_controls = st.columns([1, 2, 2])
+        clock = temporal_controls[0].selectbox(
+            "Clock",
+            ["source", "collection", "analysis"],
+            help="Source, collection and analysis time are distinct canonical clocks.",
+        )
+        start = temporal_controls[1].text_input(
+            "Window start (ISO-8601, inclusive)",
+            key="graph_temporal_start",
+            placeholder="2026-09-01T00:00:00Z",
+        )
+        end = temporal_controls[2].text_input(
+            "Window end (ISO-8601, inclusive)",
+            key="graph_temporal_end",
+            placeholder="2026-09-30T23:59:59Z",
+        )
+
+    try:
+        graph = projection_envelope(
+            frame,
+            max_nodes=int(max_nodes),
+            max_edges=int(max_edges),
+            clock=clock,
+            start=start,
+            end=end,
+        )
+    except ValueError as exc:
+        st.error(f"Temporal graph window is invalid: {exc}")
+        return
+
+    temporal = graph.metadata.get("temporal")
+    if temporal:
+        st.caption(
+            "Temporal graph uses "
+            f"{temporal['clock']} time only · "
+            f"{temporal['records_in_window']} records in window · "
+            f"{temporal['records_missing_timestamp']} records missing that clock. "
+            "Window boundaries are inclusive."
+        )
+
     node_types = sorted({str(node.get("type")) for node in graph.nodes})
     edge_types = sorted({str(edge.get("type")) for edge in graph.edges})
 
