@@ -492,17 +492,32 @@ def _review_page(frame) -> None:
 
 
 def _explore_page(frame) -> None:
-    views = explore(frame)
+    clock = st.selectbox(
+        "Timeline clock",
+        ["source", "collection", "analysis"],
+        help="Source, collection and analysis timestamps remain distinct; no fallback is applied.",
+        key="explore_timeline_clock",
+    )
+    views = explore(frame, timeline_clock=clock)
     timeline = views["timeline"]
-    if not timeline.empty:
+    if timeline.empty:
+        st.info(f"No recorded {clock} timestamps are available for the current Explore view.")
+    else:
         st.plotly_chart(
             px.line(timeline, x="period", y="documents", markers=True),
             use_container_width=True,
         )
-    columns = st.columns(3)
-    for target, column in zip(("formations", "topics", "entities"), columns, strict=True):
+    columns = st.columns(4)
+    for target, column in zip(
+        ("formations", "topics", "entities", "signifiers"),
+        columns,
+        strict=True,
+    ):
         table = views[target].head(20)
-        if not table.empty:
+        column.markdown(f"##### {target.replace('_', ' ').title()}")
+        if table.empty:
+            column.caption("No values recorded.")
+        else:
             column.dataframe(table, use_container_width=True, hide_index=True)
     relation_table = relations(frame, require_evidence=True)
     if not relation_table.empty:
