@@ -228,16 +228,16 @@ def temporal_graph_projection(
         degree[edge["source"]] += int(edge["record_count"])
         degree[edge["target"]] += int(edge["record_count"])
 
-    allowed_nodes = {
-        label for label, _count in sorted(
-            degree.items(), key=lambda item: (-item[1], item[0])
-        )[:max_nodes]
-    }
-    edges = [
-        edge
-        for edge in all_edges
-        if edge["source"] in allowed_nodes and edge["target"] in allowed_nodes
-    ][:max_edges]
+    edges: list[dict[str, Any]] = []
+    allowed_nodes: set[str] = set()
+    for edge in all_edges:
+        endpoints = {str(edge["source"]), str(edge["target"])}
+        if len(allowed_nodes | endpoints) > max_nodes:
+            continue
+        edges.append(edge)
+        allowed_nodes.update(endpoints)
+        if len(edges) >= max_edges:
+            break
 
     visible_degree: Counter[str] = Counter()
     for edge in edges:
@@ -261,7 +261,7 @@ def temporal_graph_projection(
         "nodes": nodes,
         "edges": edges,
         "bounded": True,
-        "truncated": len(degree) > max_nodes or len(all_edges) > max_edges,
+        "truncated": len(degree) > len(allowed_nodes) or len(all_edges) > len(edges),
         "limits": {"nodes": max_nodes, "edges": max_edges},
         "temporal": {
             **temporal,
