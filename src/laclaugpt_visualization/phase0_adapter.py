@@ -74,6 +74,16 @@ def _overall_status(stages: dict[str, dict[str, Any]]) -> str:
     return "awaiting-analysis"
 
 
+def _latest_stage_update(stages: dict[str, dict[str, Any]]) -> str:
+    """Return the latest already-recorded Phase 0 stage update timestamp."""
+    values = [
+        str(stages[name].get("updated_at") or "").strip()
+        for name in _STAGE_ORDER
+        if str(stages[name].get("updated_at") or "").strip()
+    ]
+    return max(values, default="")
+
+
 def adapt_phase0(record: dict[str, Any]) -> dict[str, Any]:
     """Project one Phase 0 Mongo document into a deterministic read-only view.
 
@@ -139,6 +149,7 @@ def adapt_phase0(record: dict[str, Any]) -> dict[str, Any]:
         "document_id": document_id,
         "source_url": source_url,
         "source_timestamp": source_date,
+        "analysis_timestamp": _latest_stage_update(stages),
         "source_author": str(actor),
         "source_language": str(language),
         "source_arena": str(arena),
