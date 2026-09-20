@@ -109,7 +109,8 @@ def test_discourse_timeline_exposes_actor_entity_signifier_topic_and_formation()
 def test_network_projection_keeps_evidence_validation_and_size_bound() -> None:
     frame = _frame()
     edges = relations(frame)
-    assert edges.iloc[0]["edge_status"] == "human-validated"
+    assert edges.iloc[0]["edge_status"] == "human-reviewed"
+    assert edges.iloc[0]["validation_status"] == "human-reviewed"
     assert edges.iloc[0]["evidence_refs"] == ["e1"]
 
     projection = graph_projection(frame, max_edges=1)
@@ -117,7 +118,7 @@ def test_network_projection_keeps_evidence_validation_and_size_bound() -> None:
     edge = projection["edges"][0]
     assert edge["source_urls"] == ["synthetic://record/1"]
     assert edge["evidence_refs"] == ["e1"]
-    assert edge["edge_status"] == "human-validated"
+    assert edge["edge_status"] == "human-reviewed"
     assert {node["id"] for node in projection["nodes"]} == {"Synthetic Actor", "public AI"}
 
 
