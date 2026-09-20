@@ -13,20 +13,34 @@ from .data import explode_labels
 
 
 def monitor(frame: pd.DataFrame) -> dict[str, object]:
+    """Build compact descriptive corpus metrics from already-present view fields."""
     source_time = pd.to_datetime(frame.get("source_timestamp"), errors="coerce", utc=True)
     analysis_time = pd.to_datetime(frame.get("analysis_timestamp"), errors="coerce", utc=True)
-    status = frame.get("analysis_status", pd.Series("collection-only", index=frame.index))
+    status = (
+        frame.get("analysis_status", pd.Series("collection-only", index=frame.index))
+        .fillna("collection-only")
+        .astype(str)
+        .str.strip()
+        .str.casefold()
+    )
+    analyzed = status.isin({"analyzed", "complete", "completed", "ok", "success"})
+    errors = status.isin({"error", "failed", "failure"})
     reviewed = frame.get("review_status", pd.Series("PROVISIONAL", index=frame.index))
     return {
         "documents": len(frame),
-        "analyzed": int((status != "collection-only").sum()),
-        "awaiting_analysis": int((status == "collection-only").sum()),
+        "analyzed": int(analyzed.sum()),
+        "awaiting_analysis": int((~analyzed & ~errors).sum()),
+        "errors": int(errors.sum()),
         "awaiting_review": int((~reviewed.isin(["ACCEPTED", "CANONICAL", "verified"])).sum()),
         "latest_source": source_time.max().isoformat() if len(source_time) and pd.notna(source_time.max()) else "",
         "latest_analysis": analysis_time.max().isoformat() if len(analysis_time) and pd.notna(analysis_time.max()) else "",
         "formations": explode_labels(frame, "formations"),
         "signifiers": explode_labels(frame, "signifiers"),
         "actors": _scalar_counts(frame, "source_author"),
+        "frequency_note": (
+            "Actor, formation and signifier frequencies are descriptive occurrence counts only; "
+            "they do not establish hegemony, nodal status, ideology identity or theoretical validity."
+        ),
     }
 
 
