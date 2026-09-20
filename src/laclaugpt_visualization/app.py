@@ -450,9 +450,9 @@ def _explore_page(frame) -> None:
         table = views[target].head(20)
         if not table.empty:
             column.dataframe(table, use_container_width=True, hide_index=True)
-    relation_table = relations(frame)
+    relation_table = relations(frame, require_evidence=True)
     if not relation_table.empty:
-        st.markdown("#### Relations")
+        st.markdown("#### Source-linked relations")
         st.dataframe(relation_table, use_container_width=True, hide_index=True)
     projection = graph_projection(frame)
     st.caption(
