@@ -29,6 +29,8 @@ _MAP_COLUMNS = (
     "latitude",
     "longitude",
     "location",
+    "event_type",
+    "event_time",
     "coordinate_status",
     "coordinate_method",
     "evidence_refs",
@@ -279,6 +281,19 @@ def spatiotemporal_map_points(frame: pd.DataFrame) -> pd.DataFrame:
                     "latitude": latitude,
                     "longitude": longitude,
                     "location": location,
+                    "event_type": str(
+                        item.get("event_type") or item.get("kind") or item.get("type") or ""
+                    ),
+                    "event_time": _timestamp(
+                        next(
+                            (
+                                item.get(field)
+                                for field in ("event_time", "event_date", "date", "timestamp")
+                                if item.get(field) not in (None, "")
+                            ),
+                            None,
+                        )
+                    ),
                     "coordinate_status": status,
                     "coordinate_method": method,
                     "evidence_refs": evidence_refs,
