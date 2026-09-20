@@ -11,7 +11,6 @@ from typing import Any
 
 import pandas as pd
 
-
 _TIMELINE_COLUMNS = (
     "source_url",
     "time_kind",
