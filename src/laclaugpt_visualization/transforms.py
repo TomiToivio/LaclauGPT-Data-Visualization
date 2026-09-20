@@ -52,13 +52,38 @@ def _scalar_counts(frame: pd.DataFrame, column: str) -> pd.DataFrame:
     return values.value_counts().rename_axis(column).reset_index(name="count")
 
 
-def timeline(frame: pd.DataFrame, *, freq: str = "D") -> pd.DataFrame:
+_TIMELINE_CLOCKS = {
+    "source": "source_timestamp",
+    "collection": "collection_timestamp",
+    "analysis": "analysis_timestamp",
+}
+
+
+def timeline(
+    frame: pd.DataFrame,
+    *,
+    freq: str = "D",
+    clock: str = "source",
+) -> pd.DataFrame:
+    """Return deterministic document counts for one explicit canonical clock."""
+    if clock not in _TIMELINE_CLOCKS:
+        allowed = ", ".join(sorted(_TIMELINE_CLOCKS))
+        raise ValueError(f"clock must be one of: {allowed}")
     if frame.empty:
         return pd.DataFrame(columns=["period", "documents"])
-    values = pd.to_datetime(frame["source_timestamp"], errors="coerce", utc=True).dropna()
+    column = _TIMELINE_CLOCKS[clock]
+    if column not in frame:
+        return pd.DataFrame(columns=["period", "documents"])
+    values = pd.to_datetime(frame[column], errors="coerce", utc=True).dropna()
     if values.empty:
         return pd.DataFrame(columns=["period", "documents"])
-    return values.dt.floor(freq).value_counts().sort_index().rename_axis("period").reset_index(name="documents")
+    return (
+        values.dt.floor(freq)
+        .value_counts()
+        .sort_index()
+        .rename_axis("period")
+        .reset_index(name="documents")
+    )
 
 
 def _edge_status(relation: dict[str, Any], review_status: str) -> str:
@@ -373,9 +398,13 @@ def temporal_graph_projection(
     return projection
 
 
-def explore(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def explore(
+    frame: pd.DataFrame,
+    *,
+    timeline_clock: str = "source",
+) -> dict[str, pd.DataFrame]:
     return {
-        "timeline": timeline(frame),
+        "timeline": timeline(frame, clock=timeline_clock),
         "formations": explode_labels(frame, "formations"),
         "topics": explode_labels(frame, "topics"),
         "entities": explode_labels(frame, "entities"),
