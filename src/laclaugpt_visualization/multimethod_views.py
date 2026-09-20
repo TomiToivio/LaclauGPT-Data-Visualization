@@ -25,11 +25,97 @@ METHOD_GUARDRAILS = (
 )
 
 
+def validate_multimethod_artifact(artifact: Mapping[str, Any]) -> list[str]:
+    """Return contract violations without mutating or re-interpreting Analysis output."""
+    errors: list[str] = []
+    if artifact.get("schema") != MULTIMETHOD_SCHEMA:
+        errors.append(f"expected schema {MULTIMETHOD_SCHEMA}")
+
+    statements = artifact.get("statements")
+    if statements is None:
+        statements = []
+    if not isinstance(statements, list):
+        errors.append("statements must be a list")
+        return errors
+
+    seen_ids: set[str] = set()
+    for index, row in enumerate(statements):
+        if not isinstance(row, Mapping):
+            errors.append(f"statements[{index}] must be an object")
+            continue
+        statement_id = str(row.get("statement_id") or "").strip()
+        source_url = str(row.get("source_url") or "").strip()
+        if not statement_id:
+            errors.append(f"statements[{index}] is missing statement_id")
+        elif statement_id in seen_ids:
+            errors.append(f"duplicate statement_id: {statement_id}")
+        else:
+            seen_ids.add(statement_id)
+        if not source_url:
+            errors.append(f"statements[{index}] is missing source_url")
+
+    mca = artifact.get("mca")
+    if mca:
+        if not isinstance(mca, Mapping) or mca.get("schema") != SOCIAL_SPACE_SCHEMA:
+            errors.append(f"mca must use schema {SOCIAL_SPACE_SCHEMA}")
+    return errors
+
+
 def load_multimethod_artifact(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or payload.get("schema") != MULTIMETHOD_SCHEMA:
+    if not isinstance(payload, dict):
         raise ValueError(f"expected {MULTIMETHOD_SCHEMA}")
+    errors = validate_multimethod_artifact(payload)
+    if errors:
+        raise ValueError("; ".join(errors))
     return payload
+
+
+def deterministic_multimethod_snapshot(artifact: Mapping[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Build stable chart-input records for regression tests and reproducible rendering."""
+    errors = validate_multimethod_artifact(artifact)
+    if errors:
+        raise ValueError("; ".join(errors))
+
+    statements = actor_concept_edges(statements_frame(artifact))
+    statement_columns = [
+        "statement_id",
+        "source_url",
+        "actor_id",
+        "concept_id",
+        "stance",
+        "validation_status",
+    ]
+    statement_records = (
+        statements[statement_columns]
+        .fillna("")
+        .sort_values(["actor_id", "concept_id", "statement_id"], kind="stable")
+        .to_dict(orient="records")
+        if not statements.empty
+        else []
+    )
+
+    flow = frame_flow(artifact)
+    flow_records = (
+        flow.sort_values(["source", "target"], kind="stable").to_dict(orient="records")
+        if not flow.empty
+        else []
+    )
+
+    conflict = dna_edges(artifact, "actor_conflict")
+    conflict_records = (
+        conflict.sort_values(
+            [column for column in ("source", "target") if column in conflict],
+            kind="stable",
+        ).to_dict(orient="records")
+        if not conflict.empty
+        else []
+    )
+    return {
+        "actor_concept": statement_records,
+        "frame_flow": flow_records,
+        "actor_conflict": conflict_records,
+    }
 
 
 def discover_multimethod_artifacts(*roots: str | Path | None) -> list[Path]:
