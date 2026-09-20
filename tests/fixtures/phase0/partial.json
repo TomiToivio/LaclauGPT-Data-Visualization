@@ -1,0 +1,12 @@
+{
+  "source_url": "urn:laclaugpt:synthetic:phase0:partial",
+  "metadata": {
+    "language": "fi",
+    "arena": "grassroots"
+  },
+  "phase0": {
+    "preprocess": {
+      "status": "ok"
+    }
+  }
+}
