@@ -80,7 +80,7 @@ def temporal_window(
         "timestamp_field": _CLOCK_COLUMNS[clock],
         "start": start_ts.isoformat() if start_ts is not None else None,
         "end": end_ts.isoformat() if end_ts is not None else None,
-        "records_total": int(len(frame)),
+        "records_total": len(frame),
         "records_with_explicit_timestamp": int(explicit.sum()),
         "records_missing_timestamp": int((~explicit).sum()),
         "records_in_window": int(mask.sum()),
@@ -265,7 +265,7 @@ def temporal_graph_projection(
         "limits": {"nodes": max_nodes, "edges": max_edges},
         "temporal": {
             **temporal,
-            "relations_in_window": int(len(raw)),
-            "aggregated_edges": int(len(all_edges)),
+            "relations_in_window": len(raw),
+            "aggregated_edges": len(all_edges),
         },
     }
