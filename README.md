@@ -1,7 +1,7 @@
 # LaclauGPT Data Visualization
 
 > [!IMPORTANT]
-> **Current development phase: Phase 1.** `main` is based on and synchronized with `phase-1`. The `phase-0` branch remains the preserved Phase 0 baseline; Phase 0 documentation and code remain Phase 0 and are not reclassified as Phase 1.
+> **Current development phase: Phase 1.** `phase-1` is the canonical active development/stable branch, and `main` MUST match its current validated state. The `phase-0` branch remains the preserved Phase 0 baseline only; Phase 2–4 stay isolated until explicitly promoted.
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml)
 
