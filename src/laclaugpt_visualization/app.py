@@ -28,6 +28,8 @@ from .products import DataProduct, InMemoryProvider, ProductKind
 from .provenance import (
     UNKNOWN,
     comparison_warning,
+    compatibility_provenance,
+    has_canonical_provenance,
     provenance_frame,
     safe_provenance_events,
     summarize_provenance,
@@ -187,6 +189,19 @@ def _nonempty_legacy(row: Any) -> dict[str, Any]:
 def _render_provenance(row) -> None:
     summary = summarize_provenance(row)
     st.markdown("#### Analysis provenance")
+    if not has_canonical_provenance(row):
+        compat = compatibility_provenance(row)
+        st.info(
+            "Canonical Phase 1 provenance is unavailable for this record. "
+            "No run, model, codebook, configuration, RAG, or memory metadata is inferred."
+        )
+        if compat:
+            st.markdown("##### Phase 0 compatibility / source-stage metadata")
+            st.json(compat)
+        else:
+            st.caption("No compatibility/source-stage provenance metadata is recorded.")
+        return
+
     primary = {
         "run_id": summary["run_id"],
         "study_id": summary["study_id"],
