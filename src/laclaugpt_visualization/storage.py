@@ -101,6 +101,10 @@ def redis_control_key(
     raise ValueError(f"unsupported control document type: {document_type}")
 
 
+class ArtifactUnavailable(RuntimeError):
+    """Object storage could not return a configured artifact safely."""
+
+
 @dataclass(frozen=True)
 class ArtifactReference:
     """Safe, read-only description of a canonical artifact reference."""
@@ -213,6 +217,9 @@ def artifact_references(row: Mapping[str, Any]) -> list[Any]:
 def download_s3_object(settings: Settings, key: str, destination: str | Path) -> Path:
     """Download one current-project S3/Allas object; never uploads or rewrites source identity."""
     settings.validate_remote_requirements()
+    resolved_key, reason = _project_s3_key(settings, key)
+    if resolved_key is None:
+        raise ValueError(f"unsafe S3/Allas artifact reference: {reason}")
     try:
         import boto3
     except ImportError as exc:  # pragma: no cover - optional dependency
@@ -225,11 +232,12 @@ def download_s3_object(settings: Settings, key: str, destination: str | Path) ->
         client_kwargs["aws_access_key_id"] = settings.s3_access_key_id
     if settings.s3_secret_access_key:
         client_kwargs["aws_secret_access_key"] = settings.s3_secret_access_key
-    client = boto3.client("s3", **client_kwargs)
-    resolved_key, reason = _project_s3_key(settings, key)
-    if resolved_key is None:
-        raise ValueError(f"unsafe S3/Allas artifact reference: {reason}")
     target = Path(destination)
     target.parent.mkdir(parents=True, exist_ok=True)
-    client.download_file(settings.s3_bucket, resolved_key, str(target))
+    try:
+        client = boto3.client("s3", **client_kwargs)
+        client.download_file(settings.s3_bucket, resolved_key, str(target))
+    except Exception as exc:
+        target.unlink(missing_ok=True)
+        raise ArtifactUnavailable("configured S3/Allas artifact is unavailable") from exc
     return target
