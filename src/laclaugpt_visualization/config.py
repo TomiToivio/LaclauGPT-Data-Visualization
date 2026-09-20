@@ -80,6 +80,33 @@ class Settings(BaseSettings):
     graph_max_edges: int = 1000
     vector_max_results: int = 50
 
+    # Phase 0 browser is an opt-in compatibility surface. It follows the shared
+    # Phase 0 environment contract and never changes the canonical Phase 1 loader.
+    phase0_browser_enabled: bool = False
+    phase0_browser_limit: int = 100
+    phase0_mongodb_uri: str | None = Field(
+        default=None,
+        repr=False,
+        validation_alias=AliasChoices(
+            "LACLAUGPT_MONGODB_URI",
+            "LACLAUGPT_VIS_PHASE0_MONGODB_URI",
+        ),
+    )
+    phase0_mongodb_database: str = Field(
+        default="laclaugpt",
+        validation_alias=AliasChoices(
+            "LACLAUGPT_MONGODB_DATABASE",
+            "LACLAUGPT_VIS_PHASE0_MONGODB_DATABASE",
+        ),
+    )
+    phase0_project_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "LACLAUGPT_PROJECT_ID",
+            "LACLAUGPT_VIS_PHASE0_PROJECT_ID",
+        ),
+    )
+
     # The umbrella messaging contract uses LACLAUGPT_REDIS_URL. Keep the historical
     # visualization-specific alias for compatibility, but never place the value in Git.
     redis_url: str | None = Field(
@@ -108,6 +135,10 @@ class Settings(BaseSettings):
         elif self.storage_backend == "auto" and self.mongodb_uri:
             self.data_backend = "mongodb"
         return self
+
+    @property
+    def resolved_phase0_project_id(self) -> str:
+        return self.phase0_project_id or self.project_id
 
     @property
     def distributed_namespace(self) -> ProjectNamespace:
@@ -180,6 +211,10 @@ class Settings(BaseSettings):
             "graph_max_nodes": self.graph_max_nodes,
             "graph_max_edges": self.graph_max_edges,
             "vector_max_results": self.vector_max_results,
+            "phase0_browser_enabled": self.phase0_browser_enabled,
+            "phase0_browser_limit": self.phase0_browser_limit,
+            "phase0_mongodb_database": self.phase0_mongodb_database,
+            "phase0_project_id": self.resolved_phase0_project_id,
             "redis_heartbeat_ttl_seconds": self.redis_heartbeat_ttl_seconds,
             "redis_event_limit": self.redis_event_limit,
             "s3_bucket": self.s3_bucket or "",

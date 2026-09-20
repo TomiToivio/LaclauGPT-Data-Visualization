@@ -23,6 +23,7 @@ from .graph_explorer import (
     plotly_network_figure,
     projection_envelope,
 )
+from .phase0_browser import render_phase0_browser
 from .plugins import default_registry
 from .products import DataProduct, InMemoryProvider, ProductKind
 from .provenance import (
@@ -929,6 +930,11 @@ def run() -> None:
     st.warning(CAVEAT)
     settings = get_settings()
     settings.ensure_local_directories()
+    if settings.phase0_browser_enabled:
+        entry = st.sidebar.radio("Application", ("Workbench", "Phase 0 browser"))
+        if entry == "Phase 0 browser":
+            render_phase0_browser(st, settings)
+            return
     frame = _load_default_frame()
     uploaded = st.sidebar.file_uploader(
         "Open CSV, JSON or JSONL",
