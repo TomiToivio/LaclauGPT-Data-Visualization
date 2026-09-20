@@ -69,10 +69,18 @@ def _edge_status(relation: dict[str, Any], review_status: str) -> str:
         or relation.get("origin")
         or ""
     ).strip().casefold()
-    if explicit in {"human", "validated", "human-validated", "verified", "accepted", "canonical"}:
-        return "human-validated"
+    if explicit in {
+        "human",
+        "validated",
+        "human-validated",
+        "human-reviewed",
+        "verified",
+        "accepted",
+        "canonical",
+    }:
+        return "human-reviewed"
     if review_status.upper() in {"ACCEPTED", "CANONICAL", "REVISED"}:
-        return "human-reviewed-record"
+        return "human-reviewed"
     if explicit in {"inferred", "generated", "llm", "model"}:
         return "inferred"
     if explicit in {"observed", "extracted", "source"}:
@@ -88,11 +96,35 @@ def _relation_weight(value: Any) -> float:
         return 1.0
 
 
-def relations(frame: pd.DataFrame) -> pd.DataFrame:
-    """Return source-linked relation rows with provenance/validation semantics."""
+def _evidence_refs(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, list):
+        values = value
+    else:
+        return []
+    refs: list[str] = []
+    for item in values:
+        text = str(item).strip()
+        if text and text not in refs:
+            refs.append(text)
+    return refs
+
+
+def relations(
+    frame: pd.DataFrame,
+    *,
+    require_evidence: bool = False,
+) -> pd.DataFrame:
+    """Return source-linked relation rows with provenance/validation semantics.
+
+    When require_evidence=True, only rows with both source_url identity and
+    relation-level evidence references are exposed. The default remains
+    permissive for graph projection and backwards-compatible callers.
+    """
     columns = [
         "source", "target", "type", "document_id", "source_url", "weight",
-        "edge_status", "evidence_refs", "summary", "timestamp",
+        "validation_status", "edge_status", "evidence_refs", "summary", "timestamp",
         "source_timestamp", "collection_timestamp", "analysis_timestamp",
     ]
     rows: list[dict[str, Any]] = []
@@ -100,6 +132,7 @@ def relations(frame: pd.DataFrame) -> pd.DataFrame:
         values = row.get("relations", [])
         if not isinstance(values, list):
             continue
+        source_url = str(row.get("source_url") or "").strip()
         for relation in values:
             if not isinstance(relation, dict):
                 continue
@@ -107,20 +140,22 @@ def relations(frame: pd.DataFrame) -> pd.DataFrame:
             target = str(relation.get("target_ref") or relation.get("target") or "").strip()
             if not source or not target:
                 continue
-            evidence = relation.get("evidence_refs") or relation.get("evidence") or []
-            if isinstance(evidence, str):
-                evidence = [evidence]
-            if not isinstance(evidence, list):
-                evidence = []
+            evidence = _evidence_refs(
+                relation.get("evidence_refs") or relation.get("evidence") or []
+            )
+            if require_evidence and (not source_url or not evidence):
+                continue
+            status = _edge_status(relation, str(row.get("review_status", "PROVISIONAL")))
             rows.append(
                 {
                     "source": source,
                     "target": target,
                     "type": str(relation.get("relation_type") or relation.get("type") or "related_to"),
                     "document_id": str(row.get("document_id", "")),
-                    "source_url": str(row.get("source_url", "")),
+                    "source_url": source_url,
                     "weight": _relation_weight(relation.get("weight")),
-                    "edge_status": _edge_status(relation, str(row.get("review_status", "PROVISIONAL"))),
+                    "validation_status": status,
+                    "edge_status": status,
                     "evidence_refs": evidence,
                     "summary": str(row.get("human_readable_summary") or row.get("summary") or ""),
                     "timestamp": row.get("source_timestamp") or row.get("analysis_timestamp") or "",
