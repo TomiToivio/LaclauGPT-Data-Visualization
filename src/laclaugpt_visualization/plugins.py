@@ -306,7 +306,7 @@ def first_party_plugins() -> tuple[RegisteredPlugin, ...]:
         # Legacy/special datasets stay isolated from the canonical pipeline.
         _plugin("legacy_ep24", "EP24 legacy research views", v, PluginCategory.LEGACY, requires=(ProductKind.TABLE,), modes=("legacy_ep24", "hybrid_research"), source="legacy_ep24.py + ep2024_postprocess/dashboard/dashboard.py"),
         _plugin("legacy_art", "EP24 orbital data-art view", v, PluginCategory.LEGACY, requires=(ProductKind.TABLE,), modes=("legacy_ep24", "hybrid_research"), placeholder=True, source="KEEP_PRIVATE/experimental/legacy_art_visualization"),
-        _plugin("pledge_dashboard", "Legacy pledge dashboard", v, PluginCategory.LEGACY, requires=(ProductKind.TABLE,), placeholder=True),
+        _plugin("pledge_dashboard", "Legacy pledge dashboard", v, PluginCategory.LEGACY, requires=(ProductKind.TABLE,), fields=("source_url",), interactions=("filter", "inspect_evidence"), source="pledge_dashboard.py"),
         # Research/UI plugins. Mutations always declare permissions and audit requirements.
         _plugin("global_search", "Global search", ui, PluginCategory.RESEARCH_WORKFLOW, requires=(ProductKind.RECORDS,), interactions=("full_text", "filter", "open_record")),
         _plugin("researcher_review", "Researcher review and annotation", ui, PluginCategory.RESEARCH_WORKFLOW, requires=(ProductKind.RECORDS,), permissions=(Permission.VIEW, Permission.ANNOTATE), interactions=("review", "correct", "request_rerun"), mutates=True, audit=True, source="current review.py / Researcher Review"),
