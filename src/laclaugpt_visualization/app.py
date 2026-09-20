@@ -16,6 +16,13 @@ from .ep24 import legacy_change_summary as ep24_legacy_change_summary
 from .ep24 import load_ep24_bundle
 from .ep24 import overview as ep24_overview
 from .ep24 import qa_summary as ep24_qa_summary
+from .graph_explorer import (
+    evidence_for_edge,
+    filter_explorer_graph,
+    jsonld_bytes,
+    plotly_network_figure,
+    projection_envelope,
+)
 from .plugins import default_registry
 from .products import DataProduct, InMemoryProvider, ProductKind
 from .provenance import (
@@ -871,6 +878,7 @@ def _render_mode(frame, mode: str) -> None:
         labels = [
             "Monitor",
             "Explore",
+            "Graph Explorer",
             "Researcher Review",
             "Timeline & Map",
             "Reports",
@@ -879,6 +887,7 @@ def _render_mode(frame, mode: str) -> None:
         pages = [
             _monitor_page,
             _explore_page,
+            _graph_explorer_page,
             _review_page,
             _timeline_map_page,
             _reports_page,
@@ -889,6 +898,7 @@ def _render_mode(frame, mode: str) -> None:
             "Monitor",
             "Researcher Review",
             "Explore",
+            "Graph Explorer",
             "Timeline & Map",
             "Reports",
             "Research Data",
@@ -897,6 +907,7 @@ def _render_mode(frame, mode: str) -> None:
             _monitor_page,
             _review_page,
             _explore_page,
+            _graph_explorer_page,
             _timeline_map_page,
             _reports_page,
             _research_data_page,
