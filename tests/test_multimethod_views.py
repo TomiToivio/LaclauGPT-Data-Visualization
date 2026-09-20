@@ -1,6 +1,5 @@
 import json
 
-import pandas as pd
 import pytest
 
 from laclaugpt_visualization.multimethod_views import (
