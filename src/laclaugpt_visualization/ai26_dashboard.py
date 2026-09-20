@@ -454,7 +454,7 @@ def _networks(frame: pd.DataFrame) -> None:
         st.dataframe(pd.DataFrame(projection["nodes"]).head(500), use_container_width=True)
     if projection["edges"]:
         st.dataframe(pd.DataFrame(projection["edges"]).head(1000), use_container_width=True)
-    relation_table = relations(frame)
+    relation_table = relations(frame, require_evidence=True)
     if not relation_table.empty:
         st.markdown("#### Evidence-bearing relations")
         st.dataframe(relation_table.head(1000), use_container_width=True, hide_index=True)
