@@ -8,6 +8,7 @@ boundary.
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from typing import Any
 
 _PHASE0_KEYS = (
@@ -40,7 +41,7 @@ def _text_value(*values: Any) -> str:
     for value in values:
         if value is None:
             continue
-        if isinstance(value, float) and value != value:
+        if isinstance(value, float) and math.isnan(value):
             continue
         text = str(value).strip()
         if text:
