@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any, Mapping
+from urllib.parse import unquote, urlparse
 
 _CANDIDATE_TYPES = {
     "lg:NodalPoint": "nodal-point-candidate",
@@ -22,7 +23,6 @@ _TYPE_LABELS = {
     "lg:Actor": "actor",
     "lg:Affect": "affect",
     "lg:Frontier": "frontier-candidate",
-    "lg:AnalysisAssertion": "analysis-assertion",
     **_CANDIDATE_TYPES,
 }
 
@@ -39,6 +39,12 @@ def _id_ref(value: Any) -> str:
     if isinstance(value, Mapping):
         return _string(value.get("@id"))
     return _string(value)
+
+
+def _label_from_uri(value: str) -> str:
+    path = unquote(urlparse(value).path.rstrip("/"))
+    tail = path.rsplit("/", 1)[-1] if path else value
+    return tail.replace("_", " ").strip() or value
 
 
 def _ontology_from_record(record: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -74,6 +80,7 @@ def phase0_graph_projection(
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
     node_ids: set[str] = set()
+    assertion_endpoints: list[str] = []
     raw_node_count = 0
     raw_edge_count = 0
 
@@ -83,25 +90,27 @@ def phase0_graph_projection(
         rdf_type = _string(item.get("@type"))
         if rdf_type == "lg:AnalysisAssertion":
             raw_edge_count += 1
-            if len(edges) >= edge_limit:
-                continue
             source = _id_ref(item.get("lg:subject"))
             target = _id_ref(item.get("lg:object"))
             relation = _id_ref(item.get("lg:relation"))
             if not source or not target:
                 continue
-            edge = {
-                "source": source,
-                "target": target,
-                "type": relation or "phase0:related",
-                "source_url": source_url,
-                "evidence_refs": [],
-                "evidence_text": _string(item.get("lg:surfaceForm")),
-                "phase0_semantics": "candidate/provisional",
-                "validated_flag_from_phase0": bool(item.get("lg:validated", False)),
-                "origin": "phase0_ontology",
-            }
-            edges.append(edge)
+            assertion_endpoints.extend((source, target))
+            if len(edges) >= edge_limit:
+                continue
+            edges.append(
+                {
+                    "source": source,
+                    "target": target,
+                    "type": relation or "phase0:related",
+                    "source_url": source_url,
+                    "evidence_refs": [],
+                    "evidence_text": _string(item.get("lg:surfaceForm")),
+                    "phase0_semantics": "candidate/provisional",
+                    "validated_flag_from_phase0": bool(item.get("lg:validated", False)),
+                    "origin": "phase0_ontology",
+                }
+            )
             continue
 
         resource_id = _string(item.get("@id"))
@@ -112,23 +121,43 @@ def phase0_graph_projection(
             continue
         node_ids.add(resource_id)
         kind = _TYPE_LABELS.get(rdf_type, rdf_type or "resource")
-        node = {
-            "id": resource_id,
-            "label": _string(item.get("skos:prefLabel")) or resource_id,
-            "kinds": [kind],
-            "source_url": source_url,
-            "evidence_text": _string(item.get("lg:surfaceForm")),
-            "phase0_semantics": (
-                "candidate/provisional"
-                if rdf_type in _CANDIDATE_TYPES
-                else "phase0-export"
-            ),
-            "origin": "phase0_ontology",
-        }
-        nodes.append(node)
+        nodes.append(
+            {
+                "id": resource_id,
+                "label": _string(item.get("skos:prefLabel")) or resource_id,
+                "kinds": [kind],
+                "source_url": source_url,
+                "evidence_text": _string(item.get("lg:surfaceForm")),
+                "phase0_semantics": (
+                    "candidate/provisional"
+                    if rdf_type in _CANDIDATE_TYPES
+                    else "phase0-export"
+                ),
+                "origin": "phase0_ontology",
+            }
+        )
+
+    for resource_id in assertion_endpoints:
+        if resource_id in node_ids:
+            continue
+        raw_node_count += 1
+        if len(nodes) >= node_limit:
+            continue
+        node_ids.add(resource_id)
+        nodes.append(
+            {
+                "id": resource_id,
+                "label": _label_from_uri(resource_id),
+                "kinds": ["assertion-endpoint"],
+                "source_url": source_url,
+                "evidence_text": "",
+                "phase0_semantics": "candidate/provisional",
+                "origin": "phase0_ontology",
+            }
+        )
 
     visible_ids = {node["id"] for node in nodes}
-    filtered_edges = [
+    visible_edges = [
         edge
         for edge in edges
         if edge["source"] in visible_ids and edge["target"] in visible_ids
@@ -136,9 +165,13 @@ def phase0_graph_projection(
 
     return {
         "nodes": deepcopy(nodes),
-        "edges": deepcopy(filtered_edges[:edge_limit]),
+        "edges": deepcopy(visible_edges[:edge_limit]),
         "bounded": True,
-        "truncated": raw_node_count > node_limit or raw_edge_count > edge_limit,
+        "truncated": (
+            raw_node_count > node_limit
+            or raw_edge_count > edge_limit
+            or len(visible_edges) < min(raw_edge_count, edge_limit)
+        ),
         "limits": {"nodes": node_limit, "edges": edge_limit},
         "source_url": source_url,
         "graph_semantics": "phase0-candidate/provisional",
