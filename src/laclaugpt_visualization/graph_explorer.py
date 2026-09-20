@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 
 from .graph_api import GraphEnvelope, jsonld_subgraph
 from .rdf import compact_uri
-from .transforms import graph_projection
+from .transforms import graph_projection, temporal_graph_projection
 
 _SOURCE_EDGE_TYPES = {
     "reply", "replies_to", "mention", "mentions", "repost", "reposts",
@@ -30,9 +30,30 @@ def _edge_layer(edge: Mapping[str, Any]) -> str:
     return "source" if edge_type in _SOURCE_EDGE_TYPES else "laclau"
 
 
-def projection_envelope(frame, *, max_nodes: int = 250, max_edges: int = 500) -> GraphEnvelope:
-    """Convert the existing bounded canonical projection into the shared graph contract."""
-    projected = graph_projection(frame, max_nodes=max_nodes, max_edges=max_edges)
+def projection_envelope(
+    frame,
+    *,
+    max_nodes: int = 250,
+    max_edges: int = 500,
+    clock: str | None = None,
+    start: object = None,
+    end: object = None,
+) -> GraphEnvelope:
+    """Convert the bounded canonical projection into the shared graph contract.
+
+    Supplying a clock enables Phase-1 temporal slicing over exactly one canonical clock.
+    """
+    if clock is None:
+        projected = graph_projection(frame, max_nodes=max_nodes, max_edges=max_edges)
+    else:
+        projected = temporal_graph_projection(
+            frame,
+            clock=clock,
+            start=start,
+            end=end,
+            max_nodes=max_nodes,
+            max_edges=max_edges,
+        )
     nodes = []
     for raw in projected["nodes"]:
         node = dict(raw)
@@ -82,6 +103,7 @@ def projection_envelope(frame, *, max_nodes: int = 250, max_edges: int = 500) ->
             "backend": "canonical-frame",
             "phase": 1,
             "layers": ["source", "provenance", "laclau"],
+            **({"temporal": projected["temporal"]} if "temporal" in projected else {}),
         },
     )
 
