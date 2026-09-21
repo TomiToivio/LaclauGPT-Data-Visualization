@@ -36,8 +36,8 @@ jobs:
           cache: pip
       - name: Install lint tooling
         run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
-      - name: Syntax check test suite
-        run: python -m compileall -q tests
+      - name: Syntax check tracked Python tree
+        run: python -m compileall -q src tests
       - name: Lint changed Python files
         shell: bash
         env:
