@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from laclaugpt_visualization.data import explode_labels, filter_frame, frame_from_records, normalize_frame
+from laclaugpt_visualization.data import (
+    explode_labels,
+    filter_frame,
+    frame_from_records,
+    normalize_frame,
+)
 
 
 def test_normalize_frame_parses_list_columns() -> None:
@@ -47,7 +52,6 @@ def test_filter_frame_uses_search_and_platform() -> None:
     )
     result = filter_frame(frame, query="critical", platforms=["bluesky"])
     assert result["document_id"].tolist() == ["2"]
-
 
 
 def _canonical_analysis_record() -> dict:
