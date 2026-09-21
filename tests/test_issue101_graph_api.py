@@ -70,13 +70,16 @@ def test_local_mongo_arango_return_same_graph_contract():
     assert canonical(graphs[0]) == canonical(graphs[1]) == canonical(graphs[2])
 
 
-def test_phase_layers_keep_dna_gated_but_allow_isolated_sna_in_phase1():
-    assert layer_enabled("laclau", phase=1)
-    assert not layer_enabled("dna", phase=1)
+def test_phase_layers_use_explicit_minimum_phase_gates():
+    assert layer_enabled("source", phase=0)
+    assert layer_enabled("provenance", phase=0)
+    assert layer_enabled("laclau", phase=0)
     assert not layer_enabled("sna", phase=0)
     assert layer_enabled("sna", phase=1)
+    assert not layer_enabled("dna", phase=1)
     assert layer_enabled("dna", phase=2)
     assert layer_enabled("sna", phase=2)
+    assert not layer_enabled("unknown", phase=99)
 
 
 def test_graph_is_bounded_and_progressive():
