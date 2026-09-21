@@ -102,24 +102,26 @@ def test_clocks_are_not_conflated() -> None:
     assert collection_window["source_url"].tolist() == ["synthetic://temporal/missing-source"]
 
 
-def test_temporal_graph_is_bounded_traceable_and_deterministic() -> None:
+@pytest.mark.parametrize("clock", ["source", "collection", "analysis"])
+def test_temporal_graph_is_bounded_traceable_and_deterministic(clock: str) -> None:
     frame = _frame()
-    forward = temporal_graph_projection(frame, clock="source", max_nodes=2, max_edges=1)
+    forward = temporal_graph_projection(frame, clock=clock, max_nodes=2, max_edges=1)
     reverse = temporal_graph_projection(
         frame.iloc[::-1].reset_index(drop=True),
-        clock="source",
+        clock=clock,
         max_nodes=2,
         max_edges=1,
     )
 
     assert forward == reverse
-    assert len(forward["nodes"]) <= 2
-    assert len(forward["edges"]) <= 1
+    assert 1 <= len(forward["nodes"]) <= 2
+    assert len(forward["edges"]) == 1
+    assert forward["truncated"] is True
     edge = forward["edges"][0]
     assert edge["source_urls"]
     assert edge["evidence_refs"]
-    assert edge["clock"] == "source"
-    assert edge["timestamp_field"] == "source_timestamp"
+    assert edge["clock"] == clock
+    assert edge["timestamp_field"] == f"{clock}_timestamp"
     assert edge["timestamps"] == sorted(edge["timestamps"])
 
 
