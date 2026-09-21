@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import pandas as pd
 
-from laclaugpt_visualization.research_views import discourse_timeline, map_points, timeline_events
-from laclaugpt_visualization.transforms import graph_projection, relations
+from laclaugpt_visualization.research_views import (
+    _coordinate_status,
+    discourse_timeline,
+    map_points,
+    timeline_events,
+)
+from laclaugpt_visualization.spatiotemporal import _location_status
+from laclaugpt_visualization.statuses import CANONICAL_STATUSES
+from laclaugpt_visualization.transforms import _edge_status, graph_projection, relations
 
 
 def _frame() -> pd.DataFrame:
@@ -109,8 +116,8 @@ def test_discourse_timeline_exposes_actor_entity_signifier_topic_and_formation()
 def test_network_projection_keeps_evidence_validation_and_size_bound() -> None:
     frame = _frame()
     edges = relations(frame)
-    assert edges.iloc[0]["edge_status"] == "human-reviewed"
-    assert edges.iloc[0]["validation_status"] == "human-reviewed"
+    assert edges.iloc[0]["edge_status"] == "human-validated"
+    assert edges.iloc[0]["validation_status"] == "human-validated"
     assert edges.iloc[0]["evidence_refs"] == ["e1"]
 
     projection = graph_projection(frame, max_edges=1)
@@ -118,7 +125,7 @@ def test_network_projection_keeps_evidence_validation_and_size_bound() -> None:
     edge = projection["edges"][0]
     assert edge["source_urls"] == ["synthetic://record/1"]
     assert edge["evidence_refs"] == ["e1"]
-    assert edge["edge_status"] == "human-reviewed"
+    assert edge["edge_status"] == "human-validated"
     assert {node["id"] for node in projection["nodes"]} == {"Synthetic Actor", "public AI"}
 
 
@@ -171,3 +178,37 @@ def test_network_projection_handles_malformed_relations_without_losing_traceabil
     assert edge["source_urls"] == ["synthetic://record/1"]
     assert edge["evidence_refs"] == ["e-bad-weight"]
     assert edge["edge_status"] == "human-validated"
+
+
+
+def test_status_vocabulary_is_shared_across_modules() -> None:
+    cases = [
+        ("human-validated", "PROVISIONAL", "human-validated"),
+        ("human-reviewed", "PROVISIONAL", "human-reviewed"),
+        ("inferred", "PROVISIONAL", "inferred"),
+        ("extracted", "PROVISIONAL", "extracted"),
+        ("", "ACCEPTED", "human-reviewed"),
+        ("", "PROVISIONAL", "unrecorded"),
+    ]
+
+    for explicit, review_status, expected in cases:
+        item = {"validation_status": explicit}
+        edge = _edge_status(dict(item), review_status)
+        location, _method = _location_status(item)
+        research = _coordinate_status(item, {"review_status": review_status})
+
+        # _location_status has no record-level fallback, so apply the common
+        # record review status explicitly for the fallback-only cases.
+        if not explicit:
+            location = _coordinate_status(item, {"review_status": review_status})
+
+        assert edge == expected
+        assert location == expected
+        assert research == expected
+        assert expected in CANONICAL_STATUSES
+
+
+def test_human_review_does_not_promote_explicit_inference_to_validation() -> None:
+    relation = {"validation_status": "inferred"}
+    assert _edge_status(relation, "ACCEPTED") == "inferred"
+    assert _coordinate_status(relation, {"review_status": "ACCEPTED"}) == "inferred"
