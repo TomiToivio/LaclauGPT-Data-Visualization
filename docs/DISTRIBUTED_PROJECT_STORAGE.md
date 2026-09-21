@@ -21,16 +21,18 @@ Redis documents are small, versioned and hash-verifiable. Large datasets and fil
 
 ## MongoDB
 
-When `data_backend=mongodb`, the default collection is derived from the project ID:
+When `data_backend=mongodb`, Visualization reads the canonical Analysis -> Visualization handoff collection derived from the project ID:
 
 ```text
-ai26__annotations
-ep24__annotations
-brazil26__annotations
-hungary26__annotations
+ai26__analysis_results
+ep24__analysis_results
+brazil26__analysis_results
+hungary26__analysis_results
 ```
 
-A caller may explicitly override the collection for migration/debugging, but normal distributed deployment should use the derived collection. Queries also include `project_id` as a second isolation guard.
+This is the same collection populated by Analysis for the `laclaugpt-analysis-visualization-v1` handoff. Queries also include `project_id` as a second isolation guard. An explicit `mongodb_collection` override is retained as a configuration field for compatibility, but readiness fails when it diverges from the canonical `<project>__analysis_results` source so a deployment cannot start healthy while reading an unrelated or empty collection.
+
+Embedded relations in canonical analysis results are the portable graph baseline. The optional `<project>__relations` collection remains available only for bounded graph traversal deployments that publish a separate relation index; normal Monitor/Review/Explore views do not require it.
 
 Review stores may use the parallel `<project>__reviews` collection when a shared MongoDB review backend is enabled.
 

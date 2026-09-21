@@ -34,6 +34,13 @@ All timestamps used by the DataFrame view are normalized to timezone-aware UTC b
 
 Missing optional lists become empty lists in the view. Missing multimodal material is not fabricated. A text-only source is a first-class record.
 
+
+## Analysis -> Visualization persistence handoff
+
+For canonical MongoDB deployments, Analysis persists analyzed canonical records to `<project>__analysis_results`. Visualization uses that same collection as its unoverridden canonical read source. This closes the `laclaugpt-analysis-visualization-v1` handoff without a project-specific conversion or a second shadow collection.
+
+The normal graph views derive relations from the canonical record's embedded `analysis.relations`. A separate `<project>__relations` collection is optional infrastructure for bounded traversal only and is not required for Monitor, Review or Explore.
+
 ## Source metadata
 
 The view exposes the canonical source concepts inherited from the project-wide contract and CyborgAnthropology lineage:

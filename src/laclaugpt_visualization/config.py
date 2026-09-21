@@ -159,7 +159,12 @@ class Settings(BaseSettings):
 
     @property
     def resolved_mongodb_collection(self) -> str:
-        return self.mongodb_collection or self.distributed_namespace.mongo_collection("annotations")
+        return self.mongodb_collection or self.distributed_namespace.mongo_collection("analysis_results")
+
+    @property
+    def expected_mongodb_collection(self) -> str:
+        """Canonical Analysis -> Visualization handoff collection."""
+        return self.distributed_namespace.mongo_collection("analysis_results")
 
     @property
     def resolved_mongodb_graph_collection(self) -> str:
@@ -254,6 +259,11 @@ class Settings(BaseSettings):
             raise ValueError("mongodb storage backend requires LACLAUGPT_VIS_MONGODB_URI")
         if self.data_backend == "mongodb" and not self.mongodb_uri:
             raise ValueError("mongodb backend requires LACLAUGPT_VIS_MONGODB_URI")
+        if self.data_backend == "mongodb" and self.resolved_mongodb_collection != self.expected_mongodb_collection:
+            raise ValueError(
+                "canonical MongoDB source must match Analysis output "
+                f"{self.expected_mongodb_collection!r}; got {self.resolved_mongodb_collection!r}"
+            )
         if self.cache_backend == "redis" and not self.redis_url:
             raise ValueError("redis cache backend requires LACLAUGPT_REDIS_URL")
         if self.messaging_backend == "redis" and not self.redis_url:
