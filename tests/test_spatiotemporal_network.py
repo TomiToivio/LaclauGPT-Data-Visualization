@@ -194,13 +194,8 @@ def test_status_vocabulary_is_shared_across_modules() -> None:
     for explicit, review_status, expected in cases:
         item = {"validation_status": explicit}
         edge = _edge_status(dict(item), review_status)
-        location, _method = _location_status(item)
+        location, _method = _location_status(item, review_status)
         research = _coordinate_status(item, {"review_status": review_status})
-
-        # _location_status has no record-level fallback, so apply the common
-        # record review status explicitly for the fallback-only cases.
-        if not explicit:
-            location = _coordinate_status(item, {"review_status": review_status})
 
         assert edge == expected
         assert location == expected
