@@ -86,8 +86,8 @@ def test_canonical_relation_table_normalizes_validation_statuses() -> None:
 
     assert table.loc["actor", "validation_status"] == "inferred"
     assert table.loc["signifier", "validation_status"] == "extracted"
-    assert table.loc["researcher", "validation_status"] == "human-reviewed"
-    assert table.loc["researcher", "edge_status"] == "human-reviewed"
+    assert table.loc["researcher", "validation_status"] == "human-validated"
+    assert table.loc["researcher", "edge_status"] == "human-validated"
 
 
 def test_canonical_relation_table_drops_malformed_edges_and_handles_bad_weight() -> None:
@@ -131,5 +131,5 @@ def test_record_review_does_not_override_explicit_relation_origin() -> None:
 
     assert table.loc["claim", "validation_status"] == "inferred"
     assert table.loc["quote", "validation_status"] == "extracted"
-    assert table.loc["unknown", "validation_status"] == "human-reviewed-record"
+    assert table.loc["unknown", "validation_status"] == "human-reviewed"
 
