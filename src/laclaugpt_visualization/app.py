@@ -1,6 +1,7 @@
 """Streamlit research workbench for legacy, canonical-live and hybrid data."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -332,7 +333,7 @@ def _render_artifacts(row: Any) -> None:
             destination = settings.data_path("tmp", "artifacts", artifact.filename)
             try:
                 path = download_s3_object(settings, artifact.key, destination)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - optional artifact, any backend error is non-fatal
                 st.warning(f"Artifact unavailable ({type(exc).__name__}).")
                 continue
             suffix = path.suffix.lower()
@@ -478,8 +479,8 @@ def _review_page(frame) -> None:
         try:
             corrections = json.loads(corrections_text or "{}")
             if not isinstance(corrections, dict):
-                raise ValueError("Corrections must be a JSON object.")
-        except (json.JSONDecodeError, ValueError) as exc:
+                raise TypeError("Corrections must be a JSON object.")
+        except (json.JSONDecodeError, TypeError) as exc:
             st.error(f"Review not saved: {exc}")
             return
 
@@ -508,13 +509,18 @@ def _explore_page(frame) -> None:
     clock = st.selectbox(
         "Timeline clock",
         ["source", "collection", "analysis"],
-        help=(\n            "Source, collection and analysis timestamps remain distinct; "\n            "no fallback is applied."\n        ),
+        help=(
+            "Source, collection and analysis timestamps remain distinct; "
+            "no fallback is applied."
+        ),
         key="explore_timeline_clock",
     )
     views = explore(frame, timeline_clock=clock)
     timeline = views["timeline"]
     if timeline.empty:
-        st.info(\n            f"No recorded {clock} timestamps are available for the current Explore view."\n        )
+        st.info(
+            f"No recorded {clock} timestamps are available for the current Explore view."
+        )
     else:
         st.plotly_chart(
             px.line(timeline, x="period", y="documents", markers=True),
