@@ -64,9 +64,56 @@ def _decode_json(value: Any, expected: type) -> Any:
     return expected()
 
 
+_CANONICAL_MARKERS = (
+    "analysis",
+    "schema_version",
+    "content",
+    "source",
+    "evidence",
+    "review",
+    "intermediate",
+)
+
+
+def unwrap_envelope(record: dict[str, Any]) -> dict[str, Any]:
+    """Unwrap a stored analysis-result envelope into the canonical record it carries.
+
+    Analysis persists results as a transport envelope: identity/diagnostics at the top
+    level plus the canonical record nested under ``result`` (see
+    ``MongoTaskStore.write_result`` in Data Analysis). Visualization's adapters read
+    canonical fields from the top level, so an unwrapped envelope flattens to an empty
+    analysis rendered as ``collection-only`` even though the record was analysed.
+
+    Only unwrap when the nested mapping actually looks like a canonical record; a
+    document that already carries its canonical fields at the top level is returned
+    unchanged. The nested record wins for canonical fields (its ``provenance`` is the
+    canonical list, not the envelope's provenance mapping), while the envelope supplies
+    identity fields the record itself does not carry (``source_url``, ``run_id``,
+    ``created_at``). The transport-level provenance is retained as
+    ``transport_provenance`` so diagnostics are not lost.
+    """
+    nested = record.get("result")
+    if not isinstance(nested, dict):
+        return record
+    if not any(nested.get(marker) is not None for marker in _CANONICAL_MARKERS):
+        return record
+
+    merged = dict(nested)
+    for key, value in record.items():
+        if key == "result":
+            continue
+        if key == "provenance" and isinstance(value, dict):
+            # The canonical provenance is a list of provenance records; keep the
+            # envelope's worker provenance separately instead of clobbering it.
+            merged.setdefault("transport_provenance", value)
+            continue
+        merged.setdefault(key, value)
+    return merged
+
+
 def reconstruct_canonical(record: dict[str, Any]) -> dict[str, Any]:
     """Reconstruct nested sections and tolerate 1.0 records during migration."""
-    result = dict(record)
+    result = dict(unwrap_envelope(record))
     if not result.get("source_url") and result.get("source_uri"):
         result["source_url"] = result["source_uri"]
     for field in _OBJECT_FIELDS:
