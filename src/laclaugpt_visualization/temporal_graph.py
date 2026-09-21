@@ -228,16 +228,46 @@ def temporal_graph_projection(
         degree[edge["source"]] += int(edge["record_count"])
         degree[edge["target"]] += int(edge["record_count"])
 
-    allowed_nodes = {
-        label for label, _count in sorted(
+    ranked_nodes = [
+        label
+        for label, _count in sorted(
             degree.items(), key=lambda item: (-item[1], item[0])
-        )[:max_nodes]
-    }
+        )
+    ]
+    allowed_nodes = set(ranked_nodes[:max_nodes])
     edges = [
         edge
         for edge in all_edges
         if edge["source"] in allowed_nodes and edge["target"] in allowed_nodes
     ][:max_edges]
+
+    # A degree-only node cut can split every relation when several nodes tie.
+    # If the budget can represent an edge, deterministically seed the selected
+    # node set from the strongest edge and then fill remaining slots by degree.
+    if not edges and all_edges and max_nodes >= 2:
+        seed_edge = sorted(
+            all_edges,
+            key=lambda edge: (
+                -int(edge["record_count"]),
+                -float(edge["weight"]),
+                str(edge["source"]),
+                str(edge["target"]),
+                str(edge["type"]),
+                str(edge["edge_status"]),
+            ),
+        )[0]
+        seed_nodes = {str(seed_edge["source"]), str(seed_edge["target"])}
+        if len(seed_nodes) <= max_nodes:
+            allowed_nodes = set(seed_nodes)
+            for label in ranked_nodes:
+                if len(allowed_nodes) >= max_nodes:
+                    break
+                allowed_nodes.add(label)
+            edges = [
+                edge
+                for edge in all_edges
+                if edge["source"] in allowed_nodes and edge["target"] in allowed_nodes
+            ][:max_edges]
 
     visible_degree: Counter[str] = Counter()
     for edge in edges:
