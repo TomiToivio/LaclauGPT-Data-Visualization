@@ -16,6 +16,7 @@ _MONGO_KINDS = {
     "raw",
     "processing",
     "analyzed",
+    "analysis_results",
 }
 _S3_KINDS = {
     "raw",
