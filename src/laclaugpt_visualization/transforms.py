@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 
 from .data import explode_labels
+from .statuses import canonical_edge_status
 
 
 def monitor(frame: pd.DataFrame) -> dict[str, object]:
@@ -87,30 +88,7 @@ def timeline(
 
 
 def _edge_status(relation: dict[str, Any], review_status: str) -> str:
-    explicit = str(
-        relation.get("validation_status")
-        or relation.get("status")
-        or relation.get("provenance_type")
-        or relation.get("origin")
-        or ""
-    ).strip().casefold()
-    if explicit in {
-        "human",
-        "validated",
-        "human-validated",
-        "human-reviewed",
-        "verified",
-        "accepted",
-        "canonical",
-    }:
-        return "human-reviewed"
-    if explicit in {"inferred", "generated", "llm", "model"}:
-        return "inferred"
-    if explicit in {"observed", "extracted", "source"}:
-        return "extracted"
-    if review_status.upper() in {"ACCEPTED", "CANONICAL", "REVISED"}:
-        return "human-reviewed-record"
-    return "unrecorded"
+    return canonical_edge_status(relation, review_status)
 
 
 def _relation_weight(value: Any) -> float:
