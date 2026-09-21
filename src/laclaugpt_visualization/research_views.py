@@ -14,6 +14,8 @@ from typing import Any
 
 import pandas as pd
 
+from .statuses import canonical_coordinate_status
+
 DASHBOARD_MODES = ("legacy_ep24", "canonical_live", "hybrid_research")
 
 
@@ -88,19 +90,7 @@ def _to_number(value: Any) -> float | None:
 
 
 def _coordinate_status(item: Mapping[str, Any], row: Mapping[str, Any]) -> str:
-    status = str(item.get("coordinate_status") or item.get("validation_status") or item.get("status") or "").casefold()
-    method = str(item.get("coordinate_method") or item.get("method") or item.get("origin") or "").casefold()
-    if status in {"validated", "human-validated", "verified", "accepted", "canonical"} or bool(item.get("human_validated")):
-        return "human-validated"
-    if method in {"source", "source-provided", "native", "metadata"}:
-        return "source-provided"
-    if "geocod" in method:
-        return "geocoded"
-    if method in {"inferred", "llm", "model", "generated"}:
-        return "inferred"
-    if str(row.get("review_status", "")).upper() in {"ACCEPTED", "CANONICAL"}:
-        return "human-reviewed-record"
-    return "unrecorded"
+    return canonical_coordinate_status(item, row.get("review_status", ""))
 
 
 def _location_candidates(row: Mapping[str, Any]) -> list[Mapping[str, Any]]:
