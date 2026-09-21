@@ -4,8 +4,8 @@ This is the public, secret-free Phase 1 deployment runbook for the AI26 visualiz
 
 ## Phase 1 contract
 
-- `phase-1` is the canonical active/stable development branch.
-- `main` must match the validated Phase 1 state after integration.
+- `main` is the canonical active/stable Phase 1 development branch.
+- `phase-1` is a passive mirror and must match the validated `main` tree.
 - Select AI26 explicitly with `LACLAUGPT_VIS_PROJECT_ID=ai26`.
 - Select the canonical Phase 1 browser contract with `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`.
 - The dashboard is a human-in-the-loop research interface. It presents upstream evidence and analysis for review; it does not perform discourse inference.
