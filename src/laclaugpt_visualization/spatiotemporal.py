@@ -11,6 +11,8 @@ from typing import Any
 
 import pandas as pd
 
+from .statuses import HUMAN_VALIDATED, SOURCE_PROVIDED, canonical_coordinate_status
+
 _TIMELINE_COLUMNS = (
     "source_url",
     "time_kind",
@@ -165,27 +167,10 @@ def spatiotemporal_timeline_counts(
 
 
 def _location_status(item: Mapping[str, Any]) -> tuple[str, str]:
-    status = str(
-        item.get("coordinate_status")
-        or item.get("validation_status")
-        or item.get("status")
-        or ""
-    ).strip().casefold()
     method = str(
         item.get("coordinate_method") or item.get("method") or item.get("origin") or ""
     ).strip().casefold()
-
-    if status in {
-        "validated",
-        "human-validated",
-        "verified",
-        "accepted",
-        "canonical",
-    } or bool(item.get("human_validated")):
-        return "human-validated", method
-    if method in {"source", "source-provided", "native", "metadata"}:
-        return "source-provided", method
-    return "", method
+    return canonical_coordinate_status(item), method
 
 
 def _number(value: Any) -> float | None:
@@ -249,7 +234,7 @@ def spatiotemporal_map_points(frame: pd.DataFrame) -> pd.DataFrame:
             evidence_refs = _as_evidence_refs(
                 item.get("evidence_refs") or item.get("evidence")
             )
-            if not status or not evidence_refs:
+            if status not in {HUMAN_VALIDATED, SOURCE_PROVIDED} or not evidence_refs:
                 continue
 
             location = str(
