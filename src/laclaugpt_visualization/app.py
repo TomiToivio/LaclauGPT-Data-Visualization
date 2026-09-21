@@ -1246,6 +1246,33 @@ def run() -> None:
     st.set_page_config(page_title="LaclauGPT Data Visualization", layout="wide")
     st.title("LaclauGPT Data Visualization")
     st.caption("Canonical live + improved/legacy EP24 + hybrid researcher workbench.")
+    with st.expander("Project background and funding", expanded=False):
+        st.markdown(
+            """
+LaclauGPT grew out of research-software work at the
+[Helsinki Hub on Emotions, Populism and Polarisation (HEPPsinki)](https://www.helsinki.fi/en/researchgroups/emotions-populism-and-polarisation),
+University of Helsinki, and has been developed in connection with **CO3**, **ENDURE** and **PLEDGE**.
+
+<div style="display:flex;gap:2rem;align-items:center;flex-wrap:wrap;margin:1rem 0">
+  <a href="https://www.co3socialcontract.eu/" target="_blank" rel="noopener noreferrer">
+    <img src="https://www.google.com/s2/favicons?domain_url=https://www.co3socialcontract.eu/&sz=128" width="72" height="72" alt="CO3 project logo">
+  </a>
+  <a href="https://www.endure-project.org/" target="_blank" rel="noopener noreferrer">
+    <img src="https://www.google.com/s2/favicons?domain_url=https://www.endure-project.org/&sz=128" width="72" height="72" alt="ENDURE project logo">
+  </a>
+  <a href="https://www.pledgeproject.eu/" target="_blank" rel="noopener noreferrer">
+    <img src="https://www.google.com/s2/favicons?domain_url=https://www.pledgeproject.eu/&sz=128" width="72" height="72" alt="PLEDGE project logo">
+  </a>
+</div>
+
+- **[CO3](https://www.co3socialcontract.eu/)** studies resilient and democratic social contracts and is funded by the European Union's Horizon Europe programme (grant agreement No. 101132631).
+- **[ENDURE](https://www.endure-project.org/)** studies inequalities, community resilience and governance after COVID-19. It was funded through the Trans-Atlantic Platform Recovery, Renewal and Resilience call; Finnish participation was supported by the Academy of Finland / Research Council of Finland.
+- **[PLEDGE](https://www.pledgeproject.eu/)** studies the emotional dynamics of political grievances and democratic governance and is funded by the European Union's Horizon Europe programme.
+
+The original LaclauGPT pipeline supported research on the **2024 European Parliament elections**, including multimodal TikTok and Instagram material. The present framework generalises that work into reusable Collection, Analysis and Visualization modules.
+            """,
+            unsafe_allow_html=True,
+        )
     st.warning(CAVEAT)
     settings = get_settings()
     settings.ensure_local_directories()
