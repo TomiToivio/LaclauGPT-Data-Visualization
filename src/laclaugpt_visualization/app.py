@@ -508,13 +508,18 @@ def _explore_page(frame) -> None:
     clock = st.selectbox(
         "Timeline clock",
         ["source", "collection", "analysis"],
-        help=(\n            "Source, collection and analysis timestamps remain distinct; "\n            "no fallback is applied."\n        ),
+        help=(
+            "Source, collection and analysis timestamps remain distinct; "
+            "no fallback is applied."
+        ),
         key="explore_timeline_clock",
     )
     views = explore(frame, timeline_clock=clock)
     timeline = views["timeline"]
     if timeline.empty:
-        st.info(\n            f"No recorded {clock} timestamps are available for the current Explore view."\n        )
+        st.info(
+            f"No recorded {clock} timestamps are available for the current Explore view."
+        )
     else:
         st.plotly_chart(
             px.line(timeline, x="period", y="documents", markers=True),
