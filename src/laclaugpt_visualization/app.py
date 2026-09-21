@@ -333,7 +333,7 @@ def _render_artifacts(row: Any) -> None:
             destination = settings.data_path("tmp", "artifacts", artifact.filename)
             try:
                 path = download_s3_object(settings, artifact.key, destination)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - optional artifact, any backend error is non-fatal
                 st.warning(f"Artifact unavailable ({type(exc).__name__}).")
                 continue
             suffix = path.suffix.lower()
@@ -479,8 +479,8 @@ def _review_page(frame) -> None:
         try:
             corrections = json.loads(corrections_text or "{}")
             if not isinstance(corrections, dict):
-                raise ValueError("Corrections must be a JSON object.")
-        except (json.JSONDecodeError, ValueError) as exc:
+                raise TypeError("Corrections must be a JSON object.")
+        except (json.JSONDecodeError, TypeError) as exc:
             st.error(f"Review not saved: {exc}")
             return
 
