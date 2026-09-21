@@ -11,7 +11,13 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 GRAPH_LAYERS = frozenset({"source", "provenance", "laclau", "dna", "sna"})
-PHASE2_LAYERS = frozenset({"dna"})
+LAYER_MIN_PHASE = {
+    "source": 0,
+    "provenance": 0,
+    "laclau": 0,
+    "sna": 1,
+    "dna": 2,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,8 +199,9 @@ class ArangoGraphBackend:
 
 
 def layer_enabled(layer: str, *, phase: int) -> bool:
-    """Phase-safe layer gate. DNA stays gated to Phase 2; isolated SNA is available in Phase 1."""
-    return layer in GRAPH_LAYERS and not (layer in PHASE2_LAYERS and phase < 2)
+    """Return whether a graph layer is available in the requested project phase."""
+    minimum_phase = LAYER_MIN_PHASE.get(layer)
+    return minimum_phase is not None and phase >= minimum_phase
 
 
 def evidence_refs(item: Mapping[str, Any]) -> tuple[str, ...]:
