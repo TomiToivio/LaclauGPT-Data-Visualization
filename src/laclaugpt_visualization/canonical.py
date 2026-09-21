@@ -64,9 +64,35 @@ def _decode_json(value: Any, expected: type) -> Any:
     return expected()
 
 
+def _canonical_payload(record: dict[str, Any]) -> dict[str, Any]:
+    """Return the canonical record from either a flat record or result envelope."""
+    nested = record.get("result")
+    if not isinstance(nested, dict):
+        return dict(record)
+
+    canonical_markers = (
+        nested.get("schema_version"),
+        nested.get("source_url"),
+        nested.get("source"),
+        nested.get("content"),
+        nested.get("analysis"),
+        nested.get("review"),
+    )
+    if not any(canonical_markers):
+        return dict(record)
+
+    result = dict(nested)
+    for field in ("source_url", "source_uri", "provenance", "created_at"):
+        if result.get(field) in (None, "", [], {}):
+            fallback = record.get(field)
+            if fallback not in (None, "", [], {}):
+                result[field] = fallback
+    return result
+
+
 def reconstruct_canonical(record: dict[str, Any]) -> dict[str, Any]:
-    """Reconstruct nested sections and tolerate 1.0 records during migration."""
-    result = dict(record)
+    """Reconstruct nested sections from flat records or Analysis result envelopes."""
+    result = _canonical_payload(record)
     if not result.get("source_url") and result.get("source_uri"):
         result["source_url"] = result["source_uri"]
     for field in _OBJECT_FIELDS:
