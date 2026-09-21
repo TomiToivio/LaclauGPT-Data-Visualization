@@ -166,11 +166,14 @@ def spatiotemporal_timeline_counts(
     )
 
 
-def _location_status(item: Mapping[str, Any]) -> tuple[str, str]:
+def _location_status(
+    item: Mapping[str, Any],
+    review_status: Any = "",
+) -> tuple[str, str]:
     method = str(
         item.get("coordinate_method") or item.get("method") or item.get("origin") or ""
     ).strip().casefold()
-    return canonical_coordinate_status(item), method
+    return canonical_coordinate_status(item, review_status), method
 
 
 def _number(value: Any) -> float | None:
@@ -230,7 +233,7 @@ def spatiotemporal_map_points(frame: pd.DataFrame) -> pd.DataFrame:
             if item.get("resolved") is False:
                 continue
 
-            status, method = _location_status(item)
+            status, method = _location_status(item, record.get("review_status", ""))
             evidence_refs = _as_evidence_refs(
                 item.get("evidence_refs") or item.get("evidence")
             )
