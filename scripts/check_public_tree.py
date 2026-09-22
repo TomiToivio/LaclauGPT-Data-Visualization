@@ -62,6 +62,9 @@ def main() -> int:
                 violations.append(f"credential-like content in {path}")
                 break
         else:
+            # Avoid the guard matching the literal patterns used to define itself.
+            if path == Path(__file__).relative_to(Path.cwd()):
+                continue
             for pattern in PRIVATE_MATERIAL_PATTERNS:
                 if pattern.search(text):
                     violations.append(f"private identifier/path-like content in {path}")
