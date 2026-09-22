@@ -22,7 +22,7 @@ export LACLAUGPT_VIS_ENV_FILE=/path/to/private/ai26-visualization.env
 export LACLAUGPT_VIS_VENV="$LACLAUGPT_VIS_REPO_ROOT/.venv"   # optional override
 ```
 
-The private environment file should point runtime writes at a private data root and may configure optional remote adapters. A production-style AI26 profile is:
+The private environment file should point runtime writes at a private data root and may configure optional remote adapters. A sanitized tracked template is maintained at `TomiToivio/LaclauGPT-Private/visualization/ai26/laskin.env.example`; copy it to the protected runtime location and replace placeholders there. The systemd example also pins the canonical browser contract explicitly so `ExecStartPre` and `ExecStart` cannot disagree. A production-style AI26 profile is:
 
 ```dotenv
 LACLAUGPT_VIS_PROFILE=server
@@ -90,7 +90,7 @@ It verifies AI26 selection, the canonical Phase 1 contract, Linux web-service ex
 .venv/bin/laclaugpt-visualize health
 ```
 
-`health` reports configuration/readiness without printing credentials. Optional capability failures must be shown as unavailable/degraded rather than causing unrelated views to crash.
+`profile` and `health` both expose the effective non-secret `browser_data_contract`, so an operator can verify that the running service selected `canonical` without printing credentials. Optional capability failures must be shown as unavailable/degraded rather than causing unrelated views to crash.
 
 ## Start manually
 
@@ -112,15 +112,7 @@ Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as a template. 
 - `<private-env-file>`
 - `<private-runtime-root>`
 
-The checked-in template deliberately contains no credential, private hostname or Laskin-specific filesystem path.
-
-The template sets `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical` because the preflight requires the canonical Phase 1 contract while the application default is deliberately `phase0` (compatibility). Keep the same key in the private environment file so a non-systemd launch (see *Start manually*) selects the same contract; the two must agree or the preflight and the running service will disagree about which data-source contract is in use.
-
-Confirm the contract a running service actually selected:
-
-```bash
-laclaugpt-visualize profile | grep browser_data_contract   # expect "canonical" for AI26
-```
+The checked-in template deliberately contains no credential, private hostname or Laskin-specific filesystem path. It does contain `Environment=LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`; the protected environment file should carry the same value. The preflight intentionally fails if that effective value is anything else.
 
 After installing the customized unit:
 
