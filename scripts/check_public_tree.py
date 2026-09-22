@@ -19,6 +19,18 @@ SECRET_PATTERNS = [
     re.compile(r"redis://[^\s/:]+:[^\s/@]+@", re.IGNORECASE),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 ]
+PRIVATE_MATERIAL_PATTERNS = [
+    re.compile(r"/mnt/workspace/", re.IGNORECASE),
+    re.compile(r"/home/[^/\\s]+/", re.IGNORECASE),
+    re.compile(r"/Users/[^/\\s]+/", re.IGNORECASE),
+    re.compile(r"[A-Za-z]:\\\\Users\\\\[^\\\\\\s]+\\\\", re.IGNORECASE),
+    re.compile(
+        r"(?<![\\w.+-])[A-Z0-9._%+-]+@"
+        r"(?!example\\.(?:com|org|net|invalid)\\b)[A-Z0-9.-]+\\.[A-Z]{2,}",
+        re.IGNORECASE,
+    ),
+]
+
 TEXT_SUFFIXES = {
     ".py", ".md", ".toml", ".yml", ".yaml", ".json", ".txt", ".js", ".html", ".css", ".example"
 }
@@ -49,6 +61,11 @@ def main() -> int:
             if pattern.search(text):
                 violations.append(f"credential-like content in {path}")
                 break
+        else:
+            for pattern in PRIVATE_MATERIAL_PATTERNS:
+                if pattern.search(text):
+                    violations.append(f"private identifier/path-like content in {path}")
+                    break
     if violations:
         print("Public-tree policy violations:")
         for violation in violations:
