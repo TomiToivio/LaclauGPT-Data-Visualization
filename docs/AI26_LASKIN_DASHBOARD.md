@@ -114,6 +114,14 @@ Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as a template. 
 
 The checked-in template deliberately contains no credential, private hostname or Laskin-specific filesystem path.
 
+The template sets `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical` because the preflight requires the canonical Phase 1 contract while the application default is deliberately `phase0` (compatibility). Keep the same key in the private environment file so a non-systemd launch (see *Start manually*) selects the same contract; the two must agree or the preflight and the running service will disagree about which data-source contract is in use.
+
+Confirm the contract a running service actually selected:
+
+```bash
+laclaugpt-visualize profile | grep browser_data_contract   # expect "canonical" for AI26
+```
+
 After installing the customized unit:
 
 ```bash
