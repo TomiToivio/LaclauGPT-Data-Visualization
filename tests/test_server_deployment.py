@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,6 @@ def test_public_deployment_doc_contains_no_concrete_private_infrastructure() -> 
     text = (ROOT / "docs" / "STUDY_DEPLOYMENTS.md").read_text(encoding="utf-8")
     assert "CSC Pouta" in text
     assert "AI26" in text
-    assert "project_2009497" not in text
-    assert "100.115." not in text
+    assert re.search(r"project_\\d{5,}", text, flags=re.IGNORECASE) is None
+    assert re.search(r"\\b(?:10|192\\.168|172\\.(?:1[6-9]|2\\d|3[01])|100\\.(?:6[4-9]|[7-9]\\d|1[01]\\d|12[0-7]))\\.", text) is None
     assert "/scratch/" not in text
