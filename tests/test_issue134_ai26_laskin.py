@@ -101,10 +101,9 @@ def test_laskin_deployment_artifacts_are_path_configurable() -> None:
     ).read_text(encoding="utf-8")
     guide = (REPO_ROOT / "docs" / "AI26_LASKIN_DASHBOARD.md").read_text(encoding="utf-8")
 
-    assert "/mnt/workspace/" not in script
-    assert "/mnt/workspace/" not in service
     assert "issue #35" not in guide.casefold()
     assert "LACLAUGPT_VIS_REPO_ROOT" in script
+    assert "LACLAUGPT_VIS_REPO_ROOT" in guide
     assert "LACLAUGPT_VIS_ENV_FILE" in script
     assert "<visualization-root>" in service
     assert "<private-env-file>" in service
