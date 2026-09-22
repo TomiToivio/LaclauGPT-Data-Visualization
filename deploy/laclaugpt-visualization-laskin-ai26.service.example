@@ -10,6 +10,7 @@ Group=<service-group>
 WorkingDirectory=<visualization-root>
 Environment=LACLAUGPT_VIS_REPO_ROOT=<visualization-root>
 Environment=LACLAUGPT_VIS_ENV_FILE=<private-env-file>
+Environment=LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical
 EnvironmentFile=<private-env-file>
 ExecStartPre=<visualization-root>/deploy/preflight-laskin-ai26.sh
 ExecStart=<visualization-root>/.venv/bin/laclaugpt-visualize serve
