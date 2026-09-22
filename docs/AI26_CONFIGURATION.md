@@ -55,7 +55,7 @@ The supported order is:
 ```text
 public Visualization AI26 profile
   + authorized private AI26 visualization overlay
-  + optional Laskin machine overlay
+  + optional machine-specific private overlay
   + protected environment/secrets handled by runtime Settings
   = effective dashboard configuration
 ```
@@ -66,16 +66,11 @@ A production caller may pass `require_private=True`. In that mode missing privat
 
 The existing `Settings` class remains authoritative for secret-bearing runtime values such as MongoDB/Redis/S3 credentials. These are not stored in this profile.
 
-## Laskin paths
+## Private deployment paths
 
-On Laskin the intended checkouts are:
+On an authorized research host, checkout locations are deployment-specific and must come from private runtime configuration. Public documentation must use placeholders or environment variables rather than real host paths.
 
-```text
-/mnt/workspace/LaclauGPT-Data-Visualization
-/mnt/workspace/LaclauGPT-Private
-```
-
-Private Visualization configuration should live under the private repository's `visualization/ai26/` area. Runtime logs, caches, exports and notes stay outside the public repository and should be kept under the private/runtime tree or another protected path defined by private configuration.
+Private Visualization configuration should live under the protected private configuration tree's `visualization/ai26/` area. Runtime logs, caches, exports and notes stay outside the public repository and should be kept under the private/runtime tree or another protected path defined by private configuration.
 
 Do not copy private source lists, researcher notes, credentials or operational endpoint values into the public Visualization repository.
 
@@ -163,6 +158,6 @@ pytest
 
 Public tests use synthetic/public-safe data only.
 
-## Relationship to Laskin deployment
+## Relationship to the research-server deployment
 
-Issue #35 consumes this configuration during Laskin installation. Deployment should compose the public profile with the authorized private overlay and then load distributed runtime secrets from the protected environment. Visualization must use the same canonical `ai26` MongoDB/Redis/Allas namespace as Collection and Analysis.
+Issue #35 consumes this configuration during research-server installation. Deployment should compose the public profile with the authorized private overlay and then load distributed runtime secrets from the protected environment. Visualization must use the same canonical `ai26` MongoDB/Redis/Allas namespace as Collection and Analysis.
