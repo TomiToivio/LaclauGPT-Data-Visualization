@@ -18,11 +18,11 @@ Visualization must not perform discourse inference or synthesize missing theoret
 ## Hermes mission on Laskin
 
 1. Read `AGENTS.md`, `HERMES.md`, `docs/AI26_LASKIN_DASHBOARD.md`, issue #136 and the AI26 project config before changes.
-2. Verify the exact public checkout and authorized private environment. Do not copy private endpoints, credentials, notes, codebooks or row-level data into Git or public issue comments.
+2. Verify the configured public checkout and authorized private environment without publishing their host-specific paths. Do not copy private endpoints, credentials, notes, codebooks or row-level data into Git or public issue comments.
 3. Update/install:
 
 ```bash
-cd /mnt/workspace/LaclauGPT-Data-Visualization
+cd "${LACLAUGPT_VIS_REPO_ROOT:?set LACLAUGPT_VIS_REPO_ROOT to the private checkout path}"
 git status --short
 git pull --ff-only
 python3 -m venv .venv
