@@ -10,6 +10,7 @@ from laclaugpt_visualization.ai26_dashboard import (
     LiveSnapshot,
     RedisAI26ControlPlane,
     _merge_record,
+    load_ai26_snapshot,
     ai26_collection_names,
     ai26_redis_contract,
     apply_ai26_filters,
@@ -66,7 +67,7 @@ def test_ai26_uses_current_pipeline_collections_and_project_namespace():
     names = ai26_collection_names(cfg)
     assert names["records"] == "ai26__records"
     assert names["processing"] == "ai26__processing"
-    assert names["analyzed"] == "ai26__analyzed"
+    assert names["analyzed"] == "ai26__analysis_results"
     assert names["relations"] == "ai26__relations"
 
     redis = ai26_redis_contract(cfg)
@@ -182,3 +183,93 @@ def test_live_snapshot_freshness_fields_are_explicit():
     )
     assert snapshot.newest_analyzed_at
     assert snapshot.analyzed_age_hours == 2.0
+
+
+def test_issue165_freshness_and_count_use_canonical_durable_results(monkeypatch):
+    """Frozen legacy analyzed rows must not drive the operator health indicator."""
+    from laclaugpt_visualization import ai26_dashboard
+
+    now = datetime.now(UTC)
+    accessed = []
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def sort(self, *args, **kwargs):
+            return self
+
+        def limit(self, limit):
+            return self.rows[:limit]
+
+    class Collection:
+        def __init__(self, name):
+            self.name = name
+
+        def find(self, query):
+            assert query == {"project_id": "ai26"}
+            accessed.append((self.name, "find"))
+            if self.name == "ai26__analysis_results":
+                return Cursor([{"source_url": "https://example.test/1", "created_at": now}])
+            return Cursor([])
+
+        def count_documents(self, query):
+            assert query == {"project_id": "ai26"}
+            accessed.append((self.name, "count"))
+            return {"ai26__records": 1, "ai26__analysis_results": 127,
+                    "ai26__processing": 8}[self.name]
+
+        def find_one(self, query, *, sort, projection):
+            accessed.append((self.name, "freshness"))
+            assert query["project_id"] == "ai26"
+            assert query["created_at"] == {"$exists": True, "$ne": None}
+            assert sort == [("created_at", -1)]
+            return {"created_at": now}
+
+    class Database:
+        def __getitem__(self, name):
+            assert name != "ai26__analyzed", "legacy collection must not be consulted"
+            return Collection(name)
+
+    class Client:
+        def __getitem__(self, name):
+            return Database()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(ai26_dashboard, "_mongo_client", lambda settings: Client())
+    snapshot = load_ai26_snapshot(settings())
+    assert snapshot.counts["analyzed"] == 127
+    assert snapshot.newest_analyzed_at is not None
+    assert snapshot.analyzed_age_hours is not None
+    assert snapshot.analyzed_age_hours < 1
+    assert ("ai26__analysis_results", "find") in accessed
+    assert ("ai26__analysis_results", "count") in accessed
+    assert ("ai26__analysis_results", "freshness") in accessed
+
+
+def test_issue165_monitor_renders_only_one_freshness_indicator(monkeypatch):
+    from laclaugpt_visualization import ai26_dashboard
+
+    messages = []
+    monkeypatch.setattr(ai26_dashboard.st, "caption", lambda text: messages.append(text))
+    monkeypatch.setattr(ai26_dashboard.st, "warning", lambda text: messages.append(text))
+    monkeypatch.setattr(ai26_dashboard, "monitor", lambda frame: {
+        "formations": pd.DataFrame(), "signifiers": pd.DataFrame(), "actors": pd.DataFrame()
+    })
+    monkeypatch.setattr(ai26_dashboard, "timeline_counts", lambda frame: pd.DataFrame())
+
+    class Column:
+        def metric(self, label, value):
+            pass
+
+    monkeypatch.setattr(ai26_dashboard.st, "columns", lambda count: [Column() for _ in range(count)])
+    snapshot = LiveSnapshot(
+        frame=pd.DataFrame(), counts={"records": 1, "analyzed": 127, "processing": 8},
+        failures=(), loaded_at=datetime.now(UTC).isoformat(), query_ms=1, page_size=100,
+        newest_analyzed_at=datetime.now(UTC).isoformat(), analyzed_age_hours=0.1,
+    )
+    ai26_dashboard._monitor(snapshot, pd.DataFrame())
+    assert sum("Analysis freshness:" in str(message) for message in messages) == 1
+    assert not any("Analysis is stale" in str(message) for message in messages)
