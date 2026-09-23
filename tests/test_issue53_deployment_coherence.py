@@ -29,4 +29,4 @@ def test_ai26_dashboard_surfaces_analysis_freshness() -> None:
     assert "newest_analyzed_at" in source
     assert "analyzed_age_hours" in source
     assert "Analysis is stale" in source
-    assert "freshness is unknown" in source
+    assert "Analysis freshness unavailable: no durable analysis result" in source
