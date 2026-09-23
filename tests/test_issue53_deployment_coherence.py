@@ -23,10 +23,24 @@ def test_runbook_retires_legacy_jsonl_export() -> None:
 
 
 def test_ai26_dashboard_surfaces_analysis_freshness() -> None:
+    """Freshness must be surfaced with all three states handled.
+
+    Asserted on structure rather than one exact sentence: issue #165 rewrote the
+    wording (freshness now comes from the durable results store, and the
+    duplicate Monitor banner was removed), and a test pinned to a phrase from
+    the previous wording turned that into a red `main` rather than a caught
+    regression.
+    """
     source = (REPO_ROOT / "src" / "laclaugpt_visualization" / "ai26_dashboard.py").read_text(
         encoding="utf-8"
     )
     assert "newest_analyzed_at" in source
     assert "analyzed_age_hours" in source
+    # Stale state.
     assert "Analysis is stale" in source
-    assert "freshness is unknown" in source
+    # Unknown/unavailable state: the capability must remain, whatever it is called.
+    assert "Analysis freshness unavailable" in source
+    # Fresh state.
+    assert "Analysis freshness:" in source
+    # The threshold must still exist, so the warning was not silenced.
+    assert "FRESHNESS_WARNING_HOURS" in source
