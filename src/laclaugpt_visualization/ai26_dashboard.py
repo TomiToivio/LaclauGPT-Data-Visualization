@@ -70,8 +70,8 @@ def ai26_collection_names(settings: Settings) -> dict[str, str]:
     ns = ai26_namespace(settings)
     return {
         "records": ns.mongo_collection("records"),
-        "processing": ns.mongo_collection("processing"),
-        "analyzed": ns.mongo_collection("analyzed"),
+        "processing": ns.mongo_collection("processing"),  # Legacy diagnostics only.
+        "analyzed": settings.expected_mongodb_collection,
         "relations": ns.mongo_collection("relations"),
         "reviews": ns.mongo_collection("reviews"),
         "runs": ns.mongo_collection("runs"),
@@ -157,7 +157,7 @@ class LiveSnapshot:
 
 
 def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) -> LiveSnapshot:
-    """Read a bounded project-scoped snapshot from current records/analyzed/processing stores."""
+    """Read a bounded project-scoped snapshot using canonical durable analysis results."""
     if not settings.mongodb_uri:
         raise RuntimeError("AI26 dashboard requires a private MongoDB URI")
     limit = max(1, min(int(limit), MAX_PAGE_SIZE))
@@ -383,10 +383,10 @@ def _sidebar(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
 
 def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
     if snapshot.analyzed_age_hours is None:
-        st.warning("Analysis freshness unavailable: no analyzed record with created_at was found.")
+        st.warning("Analysis freshness unavailable: no durable analysis result with created_at was found.")
     elif snapshot.analyzed_age_hours >= FRESHNESS_WARNING_HOURS:
         st.warning(
-            f"Analysis is stale: newest analyzed record is {snapshot.analyzed_age_hours:.1f} hours old "
+            f"Analysis is stale: newest durable analysis result is {snapshot.analyzed_age_hours:.1f} hours old "
             f"({snapshot.newest_analyzed_at})."
         )
     else:
@@ -395,27 +395,16 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
             f"({snapshot.newest_analyzed_at})."
         )
     values = monitor(frame)
-    if snapshot.analyzed_age_hours is None:
-        st.warning("No timestamped analyzed records are available, so analysis freshness is unknown.")
-    elif snapshot.analyzed_age_hours >= 6:
-        st.warning(
-            f"Analysis is stale: newest analyzed record is {snapshot.analyzed_age_hours:.1f} hours old "
-            f"({snapshot.newest_analyzed_at})."
-        )
-    else:
-        st.caption(
-            f"Analysis freshness: newest analyzed record is {snapshot.analyzed_age_hours:.1f} hours old."
-        )
     cols = st.columns(6)
     for column, (label, value) in zip(
         cols,
         (
             ("Collected", snapshot.counts["records"]),
             ("Analyzed", snapshot.counts["analyzed"]),
-            ("Processing", snapshot.counts["processing"]),
+            ("Legacy processing", snapshot.counts["processing"]),
             ("Loaded", len(frame)),
             ("Query", f"{snapshot.query_ms} ms"),
-            ("Failures in page", len(snapshot.failures)),
+            ("Legacy failures in page", len(snapshot.failures)),
         ),
         strict=True,
     ):
