@@ -66,7 +66,11 @@ def test_ai26_uses_current_pipeline_collections_and_project_namespace():
     names = ai26_collection_names(cfg)
     assert names["records"] == "ai26__records"
     assert names["processing"] == "ai26__processing"
-    assert names["analyzed"] == "ai26__analyzed"
+    # Results come from the durable store the current Analysis worker writes.
+    assert names["results"] == "ai26__analysis_results"
+    # The legacy collection is still addressable, but only under a name that
+    # says so; it must not be the source of a progress or freshness metric.
+    assert names["legacy_analyzed"] == "ai26__analyzed"
     assert names["relations"] == "ai26__relations"
 
     redis = ai26_redis_contract(cfg)

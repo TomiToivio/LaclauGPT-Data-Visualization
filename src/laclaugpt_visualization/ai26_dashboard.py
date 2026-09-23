@@ -71,7 +71,13 @@ def ai26_collection_names(settings: Settings) -> dict[str, str]:
     return {
         "records": ns.mongo_collection("records"),
         "processing": ns.mongo_collection("processing"),
-        "analyzed": ns.mongo_collection("analyzed"),
+        # The current Analysis worker writes durable results to
+        # ``analysis_results``. ``analyzed`` is a legacy collection frozen at
+        # 2026-09-17: it is retained here only so a deployment that still has
+        # those documents can keep displaying them, and it must never be the
+        # source of a freshness or progress metric (issue #165).
+        "results": ns.mongo_collection("analysis_results"),
+        "legacy_analyzed": ns.mongo_collection("analyzed"),
         "relations": ns.mongo_collection("relations"),
         "reviews": ns.mongo_collection("reviews"),
         "runs": ns.mongo_collection("runs"),
@@ -157,7 +163,15 @@ class LiveSnapshot:
 
 
 def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) -> LiveSnapshot:
-    """Read a bounded project-scoped snapshot from current records/analyzed/processing stores."""
+    """Read a bounded project-scoped snapshot from current records/results/processing stores.
+
+    Newest-result freshness is measured from the durable ``analysis_results``
+    store, because that is where the current Analysis worker writes. The legacy
+    ``analyzed`` collection is still read so its documents remain visible, but it
+    cannot report on pipeline progress: it stopped advancing on 2026-09-17 and
+    deriving a staleness warning from it produced a false alarm while results
+    were accumulating (issue #165).
+    """
     if not settings.mongodb_uri:
         raise RuntimeError("AI26 dashboard requires a private MongoDB URI")
     limit = max(1, min(int(limit), MAX_PAGE_SIZE))
@@ -168,14 +182,16 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
     try:
         db = client[settings.mongodb_database]
         records = list(db[names["records"]].find(query).sort("_id", -1).limit(limit))
-        analyses = list(db[names["analyzed"]].find(query).sort("_id", -1).limit(limit))
+        results = list(db[names["results"]].find(query).sort("_id", -1).limit(limit))
+        legacy = list(db[names["legacy_analyzed"]].find(query).sort("_id", -1).limit(limit))
         processing = list(db[names["processing"]].find(query).sort("_id", -1).limit(limit))
         counts = {
             "records": db[names["records"]].count_documents(query),
-            "analyzed": db[names["analyzed"]].count_documents(query),
+            "analyzed": db[names["results"]].count_documents(query),
             "processing": db[names["processing"]].count_documents(query),
         }
-        newest_analyzed = db[names["analyzed"]].find_one(
+        # Freshness must come from the same store the results view is built from.
+        newest_analyzed = db[names["results"]].find_one(
             {**query, "created_at": {"$exists": True, "$ne": None}},
             sort=[("created_at", -1)],
             projection={"created_at": 1},
@@ -183,6 +199,9 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
     finally:
         client.close()
 
+    # Results first so their top-level ``source_url`` supplies the identity the
+    # legacy documents lack; legacy fills any identity that is still unseen.
+    analyses = results + legacy
     analysis_by_id = {_identity(item): item for item in analyses if _identity(item)}
     merged = [_merge_record(item, analysis_by_id.get(_identity(item))) for item in records]
     known = {_identity(item) for item in records if _identity(item)}
