@@ -23,6 +23,8 @@ By default the launcher binds Streamlit to loopback. Reach it from a researcher 
 ssh -N -L 18501:127.0.0.1:18501 RESEARCH_SERVER
 ```
 
+A private overlay network (such as a WireGuard-based mesh) is also an acceptable approved access layer. In that case bind the service to the overlay interface address rather than `0.0.0.0` — the preflight deliberately refuses a wildcard bind, and binding the overlay address keeps the socket off the LAN, loopback and container bridges while remaining reachable by mesh peers. Run the service under a supervising unit (for example a `systemd --user` unit with lingering enabled) rather than an ad-hoc background process, so it survives session end; an unsupervised launch stops when its parent session does.
+
 Do not expose a research dashboard containing row-level data directly to the public Internet.
 
 ## EP24 visualization on CSC Pouta
