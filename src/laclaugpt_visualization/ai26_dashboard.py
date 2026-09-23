@@ -18,15 +18,18 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from .canonical_explore import canonical_explore
-from .config import Settings, get_settings
-from .data import filter_frame, normalize_frame
-from .distributed import ProjectNamespace
-from .integrations.hermes import clear_derived_cache, inspect_effective_config
-from .provenance import provenance_frame, safe_provenance_events
-from .research_views import load_reports, timeline_counts
-from .transforms import graph_projection, monitor, relations
-from .worker_status import RedisOperationalStatus
+from laclaugpt_visualization.canonical_explore import canonical_explore
+from laclaugpt_visualization.config import Settings, get_settings
+from laclaugpt_visualization.data import filter_frame, normalize_frame
+from laclaugpt_visualization.distributed import ProjectNamespace
+from laclaugpt_visualization.integrations.hermes import (
+    clear_derived_cache,
+    inspect_effective_config,
+)
+from laclaugpt_visualization.provenance import provenance_frame, safe_provenance_events
+from laclaugpt_visualization.research_views import load_reports, timeline_counts
+from laclaugpt_visualization.transforms import graph_projection, monitor, relations
+from laclaugpt_visualization.worker_status import RedisOperationalStatus
 
 AI26_PROJECT_ID = "ai26"
 DEFAULT_PAGE_SIZE = 500
@@ -196,6 +199,10 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
         value = newest_analyzed["created_at"]
         if isinstance(value, datetime):
             dt = value if value.tzinfo else value.replace(tzinfo=UTC)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            # MongoDB persists created_at as a UTC epoch float in the AI26
+            # collections, so a numeric value is a normal case, not a malformed one.
+            dt = datetime.fromtimestamp(float(value), tz=UTC)
         else:
             dt = datetime.fromisoformat(str(value))
             if dt.tzinfo is None:
