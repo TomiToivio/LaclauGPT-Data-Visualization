@@ -8,28 +8,28 @@ from typing import Any
 import plotly.express as px
 import streamlit as st
 
-from .canonical import LEGACY_COLUMNS
-from .config import get_settings
-from .data import filter_frame, load_frame
-from .ep24 import country_counts as ep24_country_counts
-from .ep24 import dimension_counts as ep24_dimension_counts
-from .ep24 import legacy_change_summary as ep24_legacy_change_summary
-from .ep24 import load_ep24_bundle
-from .ep24 import overview as ep24_overview
-from .ep24 import qa_summary as ep24_qa_summary
-from .graph_explorer import (
+from laclaugpt_visualization.canonical import LEGACY_COLUMNS
+from laclaugpt_visualization.config import get_settings
+from laclaugpt_visualization.data import filter_frame, load_frame
+from laclaugpt_visualization.ep24 import country_counts as ep24_country_counts
+from laclaugpt_visualization.ep24 import dimension_counts as ep24_dimension_counts
+from laclaugpt_visualization.ep24 import legacy_change_summary as ep24_legacy_change_summary
+from laclaugpt_visualization.ep24 import load_ep24_bundle
+from laclaugpt_visualization.ep24 import overview as ep24_overview
+from laclaugpt_visualization.ep24 import qa_summary as ep24_qa_summary
+from laclaugpt_visualization.graph_explorer import (
     evidence_for_edge,
     filter_explorer_graph,
     jsonld_bytes,
     plotly_network_figure,
     projection_envelope,
 )
-from .phase0_browser import render_phase0_browser
-from .pledge_dashboard import render_pledge_dashboard
-from .plugin_pages import discover_plugin_pages, render_plugin_page
-from .plugins import default_registry
-from .products import DataProduct, InMemoryProvider, ProductKind
-from .provenance import (
+from laclaugpt_visualization.phase0_browser import render_phase0_browser
+from laclaugpt_visualization.pledge_dashboard import render_pledge_dashboard
+from laclaugpt_visualization.plugin_pages import discover_plugin_pages, render_plugin_page
+from laclaugpt_visualization.plugins import default_registry
+from laclaugpt_visualization.products import DataProduct, InMemoryProvider, ProductKind
+from laclaugpt_visualization.provenance import (
     UNKNOWN,
     comparison_warning,
     compatibility_provenance,
@@ -38,32 +38,32 @@ from .provenance import (
     safe_provenance_events,
     summarize_provenance,
 )
-from .research_views import (
+from laclaugpt_visualization.research_views import (
     DASHBOARD_MODES,
     infer_dashboard_mode,
     load_reports,
     map_points,
     timeline_counts,
 )
-from .review import (
+from laclaugpt_visualization.review import (
     Review,
     SQLiteReviewStore,
     canonical_review_source_url,
     save_canonical_review,
 )
-from .spatiotemporal import (
+from laclaugpt_visualization.spatiotemporal import (
     spatiotemporal_map_points,
     spatiotemporal_timeline_counts,
 )
-from .storage import (
+from laclaugpt_visualization.storage import (
     artifact_references,
     download_s3_object,
     load_canonical_mongodb,
     load_mongodb,
     resolve_artifact_reference,
 )
-from .transforms import explore, graph_projection, monitor, relations
-from .worker_status import RedisOperationalStatus
+from laclaugpt_visualization.transforms import explore, graph_projection, monitor, relations
+from laclaugpt_visualization.worker_status import RedisOperationalStatus
 
 CAVEAT = (
     "Counts, confidence, graph degree and layout are descriptive aids. They do not by "
