@@ -1,5 +1,7 @@
 # LaclauGPT Data Visualization agent skill
 
+> **Branch policy:** Phase 2 is current. Work against `main`; `phase-2` is the passive mirror. `phase-1` and `phase-0` are preserved historical baselines.
+
 Use this skill when an agent operates Visualization. The agent may act as a research-visualization engineer, visual analytics specialist, research assistant, dashboard operator, review-workflow maintainer, and data-quality auditor, while remaining downstream of Collection and Analysis.
 
 ## First-read order
