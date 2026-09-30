@@ -1,6 +1,6 @@
 # AI26 dashboard on Laskin
 
-This is the public, secret-free Phase 1 deployment runbook for the AI26 visualization service on Laskin. The deployment uses the unified Visualization application and the canonical Collection → Analysis → Visualization contract. It does not fork analysis logic or embed private AI26 settings in this repository.
+This is the public, secret-free Phase 2 deployment runbook for the AI26 visualization service on Laskin. The deployment uses the unified Visualization application and the canonical Collection → Analysis → Visualization contract. It does not fork analysis logic or embed private AI26 settings in this repository.
 
 ## Active branch contract
 
@@ -8,7 +8,7 @@ This is the public, secret-free Phase 1 deployment runbook for the AI26 visualiz
 - `phase-2` is a passive mirror and must match the validated `main` tree.
 - `phase-1` is the preserved Phase 1 baseline.
 - Select AI26 explicitly with `LACLAUGPT_VIS_PROJECT_ID=ai26`.
-- Select the canonical Phase 1 browser contract with `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`.
+- The AI26 Phase 2 default browser/data contract is `canonical`; select it with `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`. Use `phase0` only as an explicit historical compatibility override.
 - The dashboard is a human-in-the-loop research interface. It presents upstream evidence and analysis for review; it does not perform discourse inference.
 - Descriptive prominence is not theoretical proof. Frequency is not hegemony, graph centrality is not nodal status, proximity is not equivalence, and a conflict edge or two-cluster layout is not by itself antagonism or polarisation.
 - Private codebooks, credentials, hostnames, researcher notes, row-level research data and machine-specific paths stay outside the public repository.
@@ -129,7 +129,7 @@ A user-service installation is also valid. Remove `User=` and `Group=`, install 
 
 ## Retire the legacy split deployment
 
-The legacy JSONL dashboard/export path from the former monolithic deployment is not part of the supported Phase 1 visualization service. Before enabling the unified service, retire those units if present:
+The legacy JSONL dashboard/export path from the former monolithic deployment is not part of the supported Phase 2 visualization service. Before enabling the unified service, retire those units if present:
 
 ```bash
 systemctl --user disable --now ai26-dashboard.service ai26-export.service ai26-export.timer 2>/dev/null || true
