@@ -1,6 +1,9 @@
 # LaclauGPT Data Visualization
 
 > [!IMPORTANT]
+> **AI26 Phase 2 only.** This repository's `main` branch is the active AI26 Phase 2 implementation. AI26 is the default and only project developed here. EP24, Hungary26 and Brazil26 are moving to separate project repositories. Historical compatibility code may remain, but it is dormant and must not drive new architecture or defaults. Human-readable/project-publication versions belong in the legacy EP24 or other project-specific repositories; this repository currently prioritizes machine-readable canonical data, reproducibility and Phase 2 operation over human-readable reports or legacy dashboards.
+
+> [!IMPORTANT]
 > **Current development phase: Phase 2.** All Phase 2 work goes directly to `main`. The `phase-2` branch is a passive mirror of the validated `main` tree. The `phase-1` and `phase-0` branches are preserved historical baselines; Phase 3–4 stay isolated until explicitly promoted.
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml)
@@ -13,7 +16,7 @@
 
 The current flagship research programme is **[LaclauGPT: Ideological contestation over AI](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md)**. The canonical theoretical and methodological contract is **[THEORY.md](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)**.
 
-The framework is developed around Ernesto Laclau and Chantal Mouffe's discourse theory and Emilia Palonen's work on populism, polarisation and hegemonic dynamics. The AI/AGI study is the main development case, but LaclauGPT is a **general research framework rather than a single-purpose AI ideology classifier**. The same architecture can support election research, populism, grievance politics, social-media research and other comparative discourse-analysis projects.
+The framework is developed around Ernesto Laclau and Chantal Mouffe's discourse theory and Emilia Palonen's work on populism, polarisation and hegemonic dynamics. The underlying architecture may be reusable, but this repository is operationally scoped to **AI26 Phase 2 only**. Other studies belong in separate repositories.
 
 > [!WARNING]
 > **Human-in-the-loop academic research only.** LaclauGPT's machine-generated summaries, classifications, discourse-theoretical codes, signifier roles, ideological formations, affects and other interpretations are preliminary analyses that must be verified by a human researcher. They are not ground truth or autonomous scholarly judgement. LaclauGPT is designed for academic research, not autonomous operational, administrative, intelligence, moderation, profiling or policy decisions about people or groups.
