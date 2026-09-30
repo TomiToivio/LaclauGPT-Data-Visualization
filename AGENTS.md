@@ -58,12 +58,12 @@ Agents should:
 - inspect data completeness, duplicates, missing timestamps/locations and backend inconsistencies before blaming the chart;
 - avoid implying causality, hegemony, ideological identity or theoretical validity from frequency/centrality/layout alone;
 - support maps, timelines, networks, comparisons and reports when the canonical data actually supports them;
-- provide accessible labels, readable defaults and exportable/reproducible views;
-- keep legacy dashboards available through adapters without contaminating canonical models.
+- prioritize operationally useful AI26 Phase 2 views and reproducible machine-readable outputs over presentation polish;
+- leave legacy dashboards dormant; do not extend or polish them unless Tomi explicitly requests migration/maintenance.
 
-## AI26 public reference study
+## AI26 active study
 
-AI26 (`Ideological contestation over AI`) is the preferred realistic public example for Visualization because the current modular LaclauGPT system is being developed alongside the public AI26 paper. Read `docs/AI26_REFERENCE_CASE.md` when adding examples, filters, dashboard documentation or synthetic fixtures.
+AI26 (`Ideological contestation over AI`) is the active and default study for Visualization. The current `main` implementation is AI26 Phase 2. Read `docs/AI26_REFERENCE_CASE.md` when adding examples, filters, dashboard documentation or synthetic fixtures.
 
 Use the three AI26 arenas (`elites`, `grassroots`, `parliamentary`) and the public AI26 codebook as realistic examples, but never hard-code them into core models or generic UI contracts. Arena is sampling provenance, not ideology.
 
