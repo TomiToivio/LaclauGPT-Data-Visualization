@@ -61,6 +61,173 @@ def _measure_for(
     return value
 
 
+def _scalar_values(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, Mapping):
+        return tuple(str(item) for item in value.values() if item not in (None, ""))
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return tuple(str(item) for item in value if item not in (None, ""))
+    return (str(value),)
+
+
+def _metadata_values(item: Mapping[str, Any], *keys: str) -> tuple[str, ...]:
+    metadata = item.get("metadata")
+    if not isinstance(metadata, Mapping):
+        metadata = {}
+    values: list[str] = []
+    for key in keys:
+        values.extend(_scalar_values(item.get(key)))
+        values.extend(_scalar_values(metadata.get(key)))
+    return tuple(values)
+
+
+def _timestamp(item: Mapping[str, Any]) -> str | None:
+    values = _metadata_values(item, "timestamp", "source_timestamp", "date", "datetime")
+    return values[0] if values else None
+
+
+def _date_in_range(value: str | None, start: str | None, end: str | None) -> bool:
+    if not value:
+        return not (start or end)
+    normalized = value[:10]
+    if start and normalized < start:
+        return False
+    if end and normalized > end:
+        return False
+    return True
+
+
+def filter_sna_product(
+    product: DataProduct,
+    *,
+    node_types: tuple[str, ...] = (),
+    platforms: tuple[str, ...] = (),
+    project: str | None = None,
+    dataset: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    discourse: tuple[str, ...] = (),
+) -> DataProduct:
+    """Return an upstream-semantics-preserving filtered NETWORK product.
+
+    Filters only inspect fields already supplied by Analysis. No missing platform,
+    date, discourse, project, dataset, tie, metric or community value is inferred.
+    """
+    capability = sna_capability(product)
+    if not capability.available:
+        raise ValueError(capability.reason)
+    if project and (product.project or "") != project:
+        payload = {**dict(product.payload), "nodes": [], "edges": []}
+        return DataProduct(
+            kind=product.kind,
+            payload=payload,
+            project=product.project,
+            dataset=product.dataset,
+            version=product.version,
+            metadata=product.metadata,
+            evidence=product.evidence,
+        )
+    if dataset and (product.dataset or "") != dataset:
+        payload = {**dict(product.payload), "nodes": [], "edges": []}
+        return DataProduct(
+            kind=product.kind,
+            payload=payload,
+            project=product.project,
+            dataset=product.dataset,
+            version=product.version,
+            metadata=product.metadata,
+            evidence=product.evidence,
+        )
+
+    wanted_types = {value for value in node_types if value}
+    wanted_platforms = {value for value in platforms if value}
+    wanted_discourse = {value for value in discourse if value}
+    raw_nodes = [node for node in product.payload["nodes"] if isinstance(node, Mapping)]
+    raw_edges = [edge for edge in product.payload["edges"] if isinstance(edge, Mapping)]
+
+    allowed_nodes: set[str] = set()
+    for node in raw_nodes:
+        node_id = _node_id(node)
+        if not node_id:
+            continue
+        if wanted_types and _node_type(node) not in wanted_types:
+            continue
+        node_platforms = set(_metadata_values(node, "platform", "source_platform"))
+        if wanted_platforms and node_platforms and node_platforms.isdisjoint(wanted_platforms):
+            continue
+        node_discourse = set(
+            _metadata_values(
+                node,
+                "concept",
+                "concepts",
+                "discourse_concept",
+                "formation",
+                "formations",
+            )
+        )
+        if wanted_discourse and node_discourse and node_discourse.isdisjoint(wanted_discourse):
+            continue
+        if (start or end) and not _date_in_range(_timestamp(node), start, end):
+            continue
+        allowed_nodes.add(node_id)
+
+    kept_edges: list[dict[str, Any]] = []
+    for edge in raw_edges:
+        source = str(edge.get("source") or "").strip()
+        target = str(edge.get("target") or "").strip()
+        if source not in allowed_nodes or target not in allowed_nodes:
+            continue
+        edge_platforms = set(_metadata_values(edge, "platform", "source_platform"))
+        if wanted_platforms and (
+            not edge_platforms or edge_platforms.isdisjoint(wanted_platforms)
+        ):
+            continue
+        edge_discourse = set(
+            _metadata_values(
+                edge,
+                "concept",
+                "concepts",
+                "discourse_concept",
+                "formation",
+                "formations",
+            )
+        )
+        if wanted_discourse and (
+            not edge_discourse or edge_discourse.isdisjoint(wanted_discourse)
+        ):
+            continue
+        if (start or end) and not _date_in_range(_timestamp(edge), start, end):
+            continue
+        kept_edges.append(dict(edge))
+
+    connected = {
+        str(endpoint)
+        for edge in kept_edges
+        for endpoint in (edge.get("source"), edge.get("target"))
+        if endpoint
+    }
+    if raw_edges and (wanted_platforms or wanted_discourse or start or end):
+        allowed_nodes &= connected
+
+    payload = dict(product.payload)
+    payload["nodes"] = [
+        dict(node) for node in raw_nodes if _node_id(node) in allowed_nodes
+    ]
+    payload["edges"] = kept_edges
+    return DataProduct(
+        kind=product.kind,
+        payload=payload,
+        project=product.project,
+        dataset=product.dataset,
+        version=product.version,
+        metadata=product.metadata,
+        evidence=product.evidence,
+    )
+
+
 def sna_envelope(
     product: DataProduct,
     *,
