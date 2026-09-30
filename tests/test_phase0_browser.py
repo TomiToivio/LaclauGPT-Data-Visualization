@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
 import json
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
