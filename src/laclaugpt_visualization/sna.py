@@ -217,6 +217,14 @@ def filter_sna_product(
         dict(node) for node in raw_nodes if _node_id(node) in allowed_nodes
     ]
     payload["edges"] = kept_edges
+    derived_results = payload.get("derived_results")
+    if isinstance(derived_results, list):
+        payload["derived_results"] = [
+            dict(result)
+            for result in derived_results
+            if isinstance(result, Mapping)
+            and str(result.get("target_id") or "") in allowed_nodes
+        ]
     return DataProduct(
         kind=product.kind,
         payload=payload,
