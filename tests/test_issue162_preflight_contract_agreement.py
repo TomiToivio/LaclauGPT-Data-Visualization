@@ -1,16 +1,13 @@
-"""Issue #162: the AI26 preflight must be satisfiable by the shipped artifacts.
+"""Issue #162/#172: shipped AI26 Phase 2 artifacts must agree on the canonical contract.
 
-`deploy/preflight-laskin-ai26.sh` requires `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`,
-while the application default is deliberately `phase0` (compatibility). The variable was
-required and documented but provisioned in **no** deployment artifact, so the documented
-canonical deployment path could not pass its own `ExecStartPre`:
+Issue #162 originally preserved a Phase 0 compatibility default in `.env.example` while
+requiring AI26 deployments to opt into `canonical`. That governance decision is superseded
+by the repository's AI26 Phase 2-only contract: `canonical` is now the application and
+public-example default, while `phase0` remains an explicit historical compatibility mode.
 
-    ERROR: browser data contract must be canonical
-
-These tests pin the agreement between the preflight's requirement and the artifacts that
-configure the service, so the two cannot drift apart again. Nothing here reads private
-configuration: only the public preflight, the public service example and the public
-`.env.example` are inspected.
+These tests pin agreement between the preflight and the shipped public artifacts so the
+Phase 2 default cannot drift back toward the historical contract accidentally. Nothing here
+reads private configuration.
 """
 from __future__ import annotations
 
@@ -53,15 +50,10 @@ def test_preflight_documents_the_variable_in_its_own_error() -> None:
 # --------------------------------------------------------------------------
 
 def test_service_example_provisions_the_canonical_contract() -> None:
-    """A service started from the shipped template must not silently select Phase 0.
-
-    The template already sets two other `Environment=` values, so provisioning the
-    contract here is consistent with how the unit is configured.
-    """
+    """The service template must pin the same canonical AI26 Phase 2 contract."""
     text = _text(SERVICE_EXAMPLE)
     assert f"Environment={CONTRACT_VAR}=canonical" in text, (
-        "the service example must select the canonical contract explicitly, because the "
-        "application default is phase0"
+        "the service example must explicitly pin the canonical AI26 Phase 2 contract"
     )
 
 
@@ -71,14 +63,14 @@ def test_env_example_names_the_variable() -> None:
     assert CONTRACT_VAR in text
 
 
-def test_env_example_keeps_the_compatibility_default() -> None:
-    """The public example documents the value, and must not imply canonical is default."""
+def test_env_example_uses_the_phase2_canonical_default() -> None:
+    """The public example must reflect the repository's AI26 Phase 2-only default."""
     text = _text(ENV_EXAMPLE)
     match = re.search(rf"^{CONTRACT_VAR}=(.+)$", text, flags=re.MULTILINE)
     assert match, f"{CONTRACT_VAR} must be set in .env.example"
-    assert match.group(1).strip() == "phase0", (
-        "the public example must keep the deliberate Phase 0 compatibility default; "
-        "Phase 1 deployments opt in"
+    assert match.group(1).strip() == "canonical", (
+        "AI26 Phase 2 ships the canonical browser/data contract by default; "
+        "phase0 is historical compatibility only"
     )
 
 
