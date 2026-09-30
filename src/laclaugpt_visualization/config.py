@@ -44,7 +44,7 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    project_id: str = "default"
+    project_id: str = "ai26"
     profile: Literal["local", "server", "custom"] = "local"
     machine: Literal["laptop", "linux-server", "custom"] = "laptop"
     execution: Literal["cli", "web-service", "agent"] = "cli"
