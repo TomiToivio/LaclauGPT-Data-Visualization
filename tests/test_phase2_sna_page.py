@@ -107,3 +107,117 @@ def test_phase2_filters_use_only_upstream_metadata():
     empty = filter_sna_product(product, platforms=("tiktok",))
     assert empty.payload["nodes"] == []
     assert empty.payload["edges"] == []
+
+
+def _analytical_graph():
+    return {
+        "schema_version": "1.0.0",
+        "project_id": "AI26",
+        "base_uri": "https://data.example/laclaugpt",
+        "metadata": {"projection": "cross-layer", "exports": {"rdf": "analysis://AI26/research.ttl"}},
+        "nodes": [
+            {
+                "id": "actor:a",
+                "uri": "https://data.example/laclaugpt/AI26/actor/a",
+                "kind": "actor",
+                "layer": "sna",
+                "label": "Actor A",
+                "assertion_kind": "empirical",
+                "properties": {},
+                "provenance": {
+                    "source_id": "source:1",
+                    "source_url": "https://example.org/source/1",
+                    "evidence_ids": ["ev:1"],
+                },
+            },
+            {
+                "id": "actor:b",
+                "uri": "https://data.example/laclaugpt/AI26/actor/b",
+                "kind": "actor",
+                "layer": "sna",
+                "label": "Actor B",
+                "assertion_kind": "empirical",
+                "properties": {},
+                "provenance": {
+                    "source_id": "source:1",
+                    "source_url": "https://example.org/source/1",
+                    "evidence_ids": [],
+                },
+            },
+            {
+                "id": "derived:degree-a",
+                "uri": "https://data.example/laclaugpt/AI26/sna-result/degree-a",
+                "kind": "derived-centrality",
+                "layer": "sna",
+                "assertion_kind": "graph-statistical",
+                "properties": {"value": 0.5, "parameters": {"name": "degree"}},
+                "provenance": {"source_id": "derived:sna", "method": "networkx"},
+                "snapshot_id": "snapshot-1",
+            },
+        ],
+        "edges": [
+            {
+                "id": "rel:1",
+                "uri": "https://data.example/laclaugpt/AI26/edge/sna/rel:1",
+                "source": "actor:a",
+                "target": "actor:b",
+                "kind": "mention",
+                "layer": "sna",
+                "directed": True,
+                "weight": 1.0,
+                "assertion_kind": "empirical",
+                "properties": {"platform": "x"},
+                "provenance": {
+                    "source_id": "source:1",
+                    "source_url": "https://example.org/source/1",
+                    "evidence_ids": ["ev:1"],
+                },
+                "valid_from": "2026-09-20T12:00:00Z",
+            },
+            {
+                "id": "degree-a:describes",
+                "uri": "https://data.example/laclaugpt/AI26/edge/sna-derived/degree-a",
+                "source": "derived:degree-a",
+                "target": "actor:a",
+                "kind": "describes",
+                "layer": "sna",
+                "directed": True,
+                "assertion_kind": "graph-statistical",
+                "properties": {"metric": "centrality", "source_relation_ids": ["rel:1"]},
+                "provenance": {"source_id": "derived:sna", "method": "networkx"},
+                "snapshot_id": "snapshot-1",
+            },
+        ],
+    }
+
+
+def test_phase2_accepts_canonical_analysis_analytical_graph():
+    product = network_product_from_mapping(_analytical_graph())
+
+    assert product.kind is ProductKind.NETWORK
+    assert product.project == "AI26"
+    assert product.version == "1.0.0"
+    assert product.metadata["source_contract"] == "AnalyticalGraph"
+    assert product.metadata["exports"]["rdf"].endswith(".ttl")
+    assert {node["id"] for node in product.payload["nodes"]} == {"actor:a", "actor:b"}
+    assert len(product.payload["edges"]) == 1
+    assert product.payload["edges"][0]["type"] == "mention"
+    assert product.payload["edges"][0]["evidence_ids"] == ["ev:1"]
+    assert product.payload["derived_results"][0]["metric"] == "centrality"
+    assert product.payload["derived_results"][0]["value"] == 0.5
+
+    graph = sna_envelope(product)
+    assert len(graph.nodes) == 2
+    assert len(graph.edges) == 1
+    assert graph.edges[0]["properties"]["platform"] == "x"
+
+
+def test_phase2_rejects_analytical_graph_without_sna_layer():
+    data = _analytical_graph()
+    for node in data["nodes"]:
+        node["layer"] = "dna"
+    for edge in data["edges"]:
+        edge["layer"] = "dna"
+
+    with pytest.raises(ValueError, match="NETWORK|AnalyticalGraph"):
+        network_product_from_mapping(data)
