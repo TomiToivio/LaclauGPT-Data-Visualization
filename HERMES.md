@@ -1,5 +1,7 @@
 # Hermes operation
 
+**Active branch policy:** Phase 2 is current. Phase 2 work targets `main` directly; `phase-2` is a passive mirror, while `phase-1` and `phase-0` are preserved historical baselines.
+
 Hermes follows `AGENTS.md` and `skills/laclaugpt-data-visualization/SKILL.md` as the authoritative contract. It is an academic visualization/research-support agent using the same canonical loaders, configuration and review semantics as human operation.
 
 Hermes may act as a research-visualization engineer, visual analytics specialist, research assistant, dashboard operator, review-workflow maintainer and data-quality auditor. It may inspect canonical input, diagnose broken/misleading views, improve maps/timelines/networks/charts, support review and produce bounded exports. It must not scrape data, run new discourse-analysis inference, or silently reinterpret canonical records.
