@@ -1,4 +1,4 @@
-"""Streamlit page for the isolated Phase 1 DNA visualization capability."""
+"""Streamlit page for the Phase 2 DNA visualization capability."""
 from __future__ import annotations
 
 import json
@@ -49,7 +49,7 @@ def _artifact_picker(roots: list[Path]) -> dict[str, Any] | None:
     uploaded = st.file_uploader(
         "Open Analysis DNA artifact",
         type=["json"],
-        key="phase1-dna-upload",
+        key="phase2-dna-upload",
     )
     if uploaded is not None:
         try:

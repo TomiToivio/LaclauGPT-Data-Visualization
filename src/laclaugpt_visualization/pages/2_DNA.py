@@ -1,4 +1,4 @@
-"""Phase 1 isolated Discourse Network Analysis visualization page."""
+"""Phase 2 Discourse Network Analysis visualization page."""
 from pathlib import Path
 
 import pandas as pd

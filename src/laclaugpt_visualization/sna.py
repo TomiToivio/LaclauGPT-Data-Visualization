@@ -1,4 +1,4 @@
-"""Isolated Phase-1 Social Network Analysis (SNA) visualization adapter.
+"""Phase 2 Social Network Analysis (SNA) visualization adapter.
 
 Visualization consumes an explicit upstream NETWORK product. It never derives social
 ties, communities, or centrality from canonical records.
@@ -188,7 +188,7 @@ def sna_envelope(
         metadata={
             "contract": "laclaugpt.graph.v1",
             "adapter": "sna-network-product",
-            "phase": 1,
+            "phase": 2,
             "source_product_kind": product.kind.value,
             "source_product_version": product.version,
             "descriptive_only": True,
