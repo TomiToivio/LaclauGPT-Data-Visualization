@@ -15,7 +15,7 @@ LAYER_MIN_PHASE = {
     "source": 0,
     "provenance": 0,
     "laclau": 0,
-    "sna": 1,
+    "sna": 2,
     "dna": 2,
 }
 
