@@ -11,10 +11,10 @@ from laclaugpt_visualization.phase0_browser import phase0_collection_name
 from laclaugpt_visualization.query_backends import BackendUnavailable
 
 
-def test_phase0_is_the_explicit_browser_contract_default() -> None:
+def test_canonical_is_the_ai26_phase2_browser_contract_default() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.browser_data_contract == "phase0"
+    assert settings.browser_data_contract == "canonical"
 
 
 def test_phase0_selector_uses_the_phase0_collection_contract() -> None:
