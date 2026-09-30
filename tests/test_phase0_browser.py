@@ -20,6 +20,10 @@ from laclaugpt_visualization.phase0_browser import (
 
 
 def _settings(**overrides) -> Settings:
+    # These tests exercise the Phase 0 renderer/adapter path independently of the
+    # browser_data_contract selector. Contract selectability is guarded separately
+    # in test_issue162_browser_contract.py (#173), where an explicit phase0 setting
+    # must remain valid even though canonical is the application default.
     values = {
         "phase0_browser_enabled": True,
         "phase0_mongodb_uri": "mongodb://phase0.invalid",
