@@ -26,8 +26,8 @@ def _analysis_graph_product(data: Mapping[str, Any]) -> DataProduct | None:
     raw_edges = data.get("edges")
     if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
         return None
-    sna_nodes = [item for item in raw_nodes if isinstance(item, Mapping) and str(item.get("layer") or "") == "sna"]
-    sna_edges = [item for item in raw_edges if isinstance(item, Mapping) and str(item.get("layer") or "") == "sna"]
+    sna_nodes = [\n        item\n        for item in raw_nodes\n        if isinstance(item, Mapping) and str(item.get("layer") or "") == "sna"\n    ]
+    sna_edges = [\n        item\n        for item in raw_edges\n        if isinstance(item, Mapping) and str(item.get("layer") or "") == "sna"\n    ]
     if not sna_nodes and not sna_edges:
         return None
     renderable_ids = {
@@ -80,7 +80,7 @@ def _analysis_graph_product(data: Mapping[str, Any]) -> DataProduct | None:
             properties = {}
         if kind == "describes" or source.startswith("derived:"):
             result_node = by_id.get(source)
-            result_properties = result_node.get("properties") if isinstance(result_node, Mapping) else {}
+            result_properties = (\n                result_node.get("properties")\n                if isinstance(result_node, Mapping)\n                else {}\n            )
             if not isinstance(result_properties, Mapping):
                 result_properties = {}
             derived_results.append({
@@ -90,7 +90,7 @@ def _analysis_graph_product(data: Mapping[str, Any]) -> DataProduct | None:
                 "metric": properties.get("metric"),
                 "value": result_properties.get("value"),
                 "method": provenance.get("method"),
-                "snapshot_id": item.get("snapshot_id") or (result_node.get("snapshot_id") if isinstance(result_node, Mapping) else None),
+                "snapshot_id": item.get("snapshot_id")\n                or (\n                    result_node.get("snapshot_id")\n                    if isinstance(result_node, Mapping)\n                    else None\n                ),
                 "valid_from": item.get("valid_from"),
                 "valid_to": item.get("valid_to"),
                 "source_relation_ids": properties.get("source_relation_ids") or [],
@@ -149,7 +149,7 @@ def network_product_from_mapping(data: Mapping[str, Any]) -> DataProduct:
         return graph_product
     raw_kind = str(data.get("kind") or data.get("product_kind") or "network").casefold()
     if raw_kind != ProductKind.NETWORK.value:
-        raise ValueError("Phase 2 SNA requires an Analysis NETWORK product or canonical AnalyticalGraph.")
+        raise ValueError(\n            "Phase 2 SNA requires an Analysis NETWORK product or canonical AnalyticalGraph."\n        )
     payload = data.get("payload", data)
     if not isinstance(payload, Mapping):
         raise ValueError("NETWORK payload must be a JSON object.")
@@ -167,7 +167,7 @@ def network_product_from_mapping(data: Mapping[str, Any]) -> DataProduct:
         metadata=dict(metadata) if isinstance(metadata, Mapping) else {},
     )
 
-def _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
+\n\ndef _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
     if not rows:
         return b""
     keys: list[str] = []
@@ -202,7 +202,7 @@ def render_sna_workspace() -> None:
     )
     if uploaded is None:
         st.info(
-            "No SNA artifact selected. Export a NETWORK product or canonical AnalyticalGraph from Data Analysis and open it here. "
+            "No SNA artifact selected. Export a NETWORK product or canonical AnalyticalGraph "\n            "from Data Analysis and open it here. "
             "Visualization will not synthesize missing ties, metrics, communities, or temporal slices."
         )
         st.caption(SNA_CAVEAT)
@@ -315,7 +315,7 @@ def render_sna_workspace() -> None:
     else:
         derived_results = payload.get("derived_results")
         if isinstance(derived_results, list) and derived_results:
-            st.caption("Canonical AnalyticalGraph statistical results are shown exactly as supplied by Analysis.")
+            st.caption(\n                "Canonical AnalyticalGraph statistical results are shown exactly as supplied "\n                "by Analysis."\n            )
             st.dataframe(derived_results, use_container_width=True, hide_index=True)
         else:
             st.caption("No metrics supplied by Analysis. Visualization does not calculate them.")
