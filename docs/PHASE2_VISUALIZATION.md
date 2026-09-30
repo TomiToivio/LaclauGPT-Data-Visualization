@@ -50,7 +50,7 @@ Every layer should retain the shortest available path back to `source_url` and e
 
 ## Filters
 
-DA keeps the existing Phase 1 filters. DNA exposes statement/projection filters. SNA exposes node/actor type, platform, project, dataset, date range and discourse concept/formation filters plus bounded node/edge inspection. These filters only inspect fields already supplied by Analysis; missing metadata is never inferred or synthesized. RDF exposes provider-backed type/stage/query filters.
+DA keeps the existing Phase 1 filters. DNA exposes statement/projection filters. SNA exposes node/actor type, platform, project, dataset, date range and discourse concept/formation filters plus bounded node/edge inspection. These filters only inspect fields already supplied by Analysis; missing metadata is never inferred or synthesized. RDF exposes provider-backed type, explicit research-stage, provenance and query filters. The stage filter passes Analysis-owned labels through unchanged; Visualization does not infer a stage from RDF class names.
 
 ## Exchange and interoperability
 
@@ -71,5 +71,6 @@ Degree, betweenness, closeness, PageRank, eigenvector centrality, communities an
 - existing DNA interoperability and export tests cover statement/projection semantics and GraphML/GEXF;
 - `tests/test_phase2_sna_page.py` covers NETWORK contract normalization, rejection of non-network inputs, and upstream-only actor/platform/project/dataset/date/discourse filtering;
 - `tests/test_issue101_graph_api.py` enforces that both DNA and SNA are Phase 2 graph layers;
+- the shared graph contract tests require `multimodal` and `summary` to remain distinct stage layers, and the RDF explorer exposes the provider-owned stage/layer field for filtering and inspection;
 - existing RDF tests cover read-only provider behavior, bounded graphs and evidence paths;
 - existing Phase 1 tests remain the regression gate.
