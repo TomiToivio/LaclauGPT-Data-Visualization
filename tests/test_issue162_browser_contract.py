@@ -37,6 +37,6 @@ def test_profile_and_health_expose_effective_browser_contract(tmp_path: Path) ->
     assert readiness(settings)["config"]["browser_data_contract"] == "canonical"
 
 
-def test_phase0_remains_code_level_compatibility_default() -> None:
+def test_canonical_is_code_level_ai26_phase2_default() -> None:
     settings = Settings(_env_file=None)
-    assert settings.browser_data_contract == "phase0"
+    assert settings.browser_data_contract == "canonical"
