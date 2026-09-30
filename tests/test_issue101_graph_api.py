@@ -75,7 +75,7 @@ def test_phase_layers_use_explicit_minimum_phase_gates():
     assert layer_enabled("provenance", phase=0)
     assert layer_enabled("laclau", phase=0)
     assert not layer_enabled("sna", phase=0)
-    assert layer_enabled("sna", phase=1)
+    assert not layer_enabled("sna", phase=1)
     assert not layer_enabled("dna", phase=1)
     assert layer_enabled("dna", phase=2)
     assert layer_enabled("sna", phase=2)
