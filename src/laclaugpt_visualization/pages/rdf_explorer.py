@@ -111,6 +111,7 @@ def _render_graph(nodes, edges) -> None:
                 for item in (
                     preferred_label(node),
                     kind or "",
+                    str(node.get("stage") or node.get("layer") or ""),
                     compact_uri(uri),
                     uri,
                 )
@@ -144,6 +145,7 @@ def _node_table(nodes) -> pd.DataFrame:
             {
                 "label": preferred_label(node),
                 "semantic_type": theory_label(node) or "",
+                "stage": node.get("stage") or node.get("layer") or "",
                 "compact_uri": compact_uri(_resource_uri(node)),
                 "uri": _resource_uri(node),
                 "review_status": node.get("review_status"),
@@ -186,21 +188,26 @@ with graph_tab:
     predicate_filter = c3.text_input("Predicate/edge")
 
     c1, c2, c3 = st.columns(3)
-    source_filter = c1.text_input("Source / source record")
-    author_filter = c2.text_input("Author")
-    formation_filter = c3.text_input("Formation")
+    stage_filter = c1.text_input(
+        "Research stage",
+        help="Filter Analysis-owned stage/layer labels such as source, multimodal, summary, laclau, dna, sna or provenance.",
+    )
+    source_filter = c2.text_input("Source / source record")
+    author_filter = c3.text_input("Author")
 
     c1, c2, c3 = st.columns(3)
-    signifier_filter = c1.text_input("Signifier")
-    entity_filter = c2.text_input("Entity")
-    review_filter = c3.text_input("Review state")
+    formation_filter = c1.text_input("Formation")
+    signifier_filter = c2.text_input("Signifier")
+    entity_filter = c3.text_input("Entity")
 
     c1, c2, c3 = st.columns(3)
-    time_filter = c1.text_input("Time/window")
-    min_confidence = c2.number_input(
+    review_filter = c1.text_input("Review state")
+    time_filter = c2.text_input("Time/window")
+    min_confidence = c3.number_input(
         "Minimum confidence", min_value=0.0, max_value=1.0, value=0.0, step=0.05
     )
-    resource_search = c3.text_input("Resource URI / search")
+
+    resource_search = st.text_input("Resource URI / search")
 
     c1, c2, c3 = st.columns(3)
     depth = c1.slider("Neighbor depth", min_value=0, max_value=4, value=1)
@@ -213,6 +220,7 @@ with graph_tab:
             "named_graph": _clean(named_graph),
             "class": _clean(class_filter),
             "predicate": _clean(predicate_filter),
+            "stage": _clean(stage_filter),
             "source": _clean(source_filter),
             "author": _clean(author_filter),
             "formation": _clean(formation_filter),
