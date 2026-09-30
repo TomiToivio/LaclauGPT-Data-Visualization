@@ -51,9 +51,9 @@ class Settings(BaseSettings):
     storage: Literal["local", "distributed", "custom"] = "local"
     caller: str = "human-cli"
 
-    # Explicit browser contract selection. Phase 0 remains the compatibility default;
-    # canonical Phase 1 is opt-in and never inferred from backend availability.
-    browser_data_contract: Literal["phase0", "canonical"] = "phase0"
+    # AI26 Phase 2 uses the canonical contract by default.
+    # Phase 0 is an explicit historical compatibility surface only.
+    browser_data_contract: Literal["phase0", "canonical"] = "canonical"
 
     # ``storage_backend`` is the researcher-facing read/query selection. The older
     # ``data_backend`` remains the deployment/storage adapter setting for compatibility.
