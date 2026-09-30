@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from laclaugpt_visualization.products import ProductKind
-from laclaugpt_visualization.sna import sna_capability, sna_envelope
+from laclaugpt_visualization.sna import filter_sna_product, sna_capability, sna_envelope
 from laclaugpt_visualization.sna_page import network_product_from_mapping
 
 
@@ -70,3 +70,40 @@ def test_phase2_rejects_missing_nodes_or_edges():
     del data["payload"]["edges"]
     with pytest.raises(ValueError, match="nodes and edges"):
         network_product_from_mapping(data)
+
+
+
+def test_phase2_filters_use_only_upstream_metadata():
+    data = _network()
+    data["dataset"] = "pilot"
+    data["payload"]["nodes"][0]["metadata"] = {
+        "platform": "x",
+        "formation": "accelerationist",
+        "timestamp": "2026-09-20T12:00:00Z",
+    }
+    data["payload"]["nodes"][1]["metadata"] = {
+        "platform": "x",
+        "formation": "accelerationist",
+        "timestamp": "2026-09-20T12:00:00Z",
+    }
+    data["payload"]["edges"][0]["platform"] = "x"
+    data["payload"]["edges"][0]["formation"] = "accelerationist"
+    data["payload"]["edges"][0]["timestamp"] = "2026-09-20T12:00:00Z"
+
+    product = network_product_from_mapping(data)
+    filtered = filter_sna_product(
+        product,
+        node_types=("person", "ai_agent"),
+        platforms=("x",),
+        project="ai26",
+        dataset="pilot",
+        start="2026-09-01",
+        end="2026-09-30",
+        discourse=("accelerationist",),
+    )
+    assert len(filtered.payload["nodes"]) == 2
+    assert len(filtered.payload["edges"]) == 1
+
+    empty = filter_sna_product(product, platforms=("tiktok",))
+    assert empty.payload["nodes"] == []
+    assert empty.payload["edges"] == []
