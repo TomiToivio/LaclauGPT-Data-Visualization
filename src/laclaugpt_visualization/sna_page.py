@@ -15,7 +15,7 @@ import streamlit as st
 
 from .graph_explorer import plotly_network_figure
 from .products import DataProduct, ProductKind
-from .sna import SNA_CAVEAT, sna_capability, sna_envelope
+from .sna import SNA_CAVEAT, filter_sna_product, sna_capability, sna_envelope
 
 
 def network_product_from_mapping(data: Mapping[str, Any]) -> DataProduct:
@@ -97,44 +97,77 @@ def render_sna_workspace() -> None:
 
     payload = product.payload
     raw_nodes = [item for item in payload["nodes"] if isinstance(item, Mapping)]
+    raw_edges = [item for item in payload["edges"] if isinstance(item, Mapping)]
+
     actor_types = sorted(
         {
             str(item.get("node_type") or item.get("type") or "actor")
             for item in raw_nodes
         }
     )
-    selected_types = st.multiselect("Actor / node types", actor_types, default=actor_types)
+    platforms = sorted(
+        {
+            str(value)
+            for item in [*raw_nodes, *raw_edges]
+            for value in (
+                item.get("platform"),
+                (item.get("metadata") or {}).get("platform")
+                if isinstance(item.get("metadata"), Mapping)
+                else None,
+            )
+            if value
+        }
+    )
+    discourse_values: set[str] = set()
+    for item in [*raw_nodes, *raw_edges]:
+        metadata = item.get("metadata")
+        if not isinstance(metadata, Mapping):
+            metadata = {}
+        for key in ("concept", "concepts", "discourse_concept", "formation", "formations"):
+            value = item.get(key, metadata.get(key))
+            if isinstance(value, str) and value:
+                discourse_values.add(value)
+            elif isinstance(value, (list, tuple, set)):
+                discourse_values.update(str(entry) for entry in value if entry)
+
+    st.markdown("#### Filters")
+    first, second = st.columns(2)
+    selected_types = first.multiselect("Actor / node types", actor_types, default=actor_types)
+    selected_platforms = second.multiselect("Platforms", platforms)
+    third, fourth = st.columns(2)
+    selected_discourse = third.multiselect(
+        "Discourse concept / formation",
+        sorted(discourse_values),
+    )
+    project_filter = fourth.text_input(
+        "Project",
+        value=product.project or "",
+        help="Matches the Analysis product project exactly; blank means any.",
+    )
+    fifth, sixth, seventh = st.columns(3)
+    dataset_filter = fifth.text_input(
+        "Dataset",
+        value=product.dataset or "",
+        help="Matches the Analysis product dataset exactly; blank means any.",
+    )
+    start_date = sixth.text_input("Start date", placeholder="YYYY-MM-DD")
+    end_date = seventh.text_input("End date", placeholder="YYYY-MM-DD")
+
+    product = filter_sna_product(
+        product,
+        node_types=tuple(selected_types),
+        platforms=tuple(selected_platforms),
+        project=project_filter.strip() or None,
+        dataset=dataset_filter.strip() or None,
+        start=start_date.strip() or None,
+        end=end_date.strip() or None,
+        discourse=tuple(selected_discourse),
+    )
+    payload = product.payload
+
     max_nodes, max_edges = st.columns(2)
     node_limit = int(max_nodes.number_input("Max nodes", 10, 2000, 250, 10))
     edge_limit = int(max_edges.number_input("Max edges", 10, 5000, 500, 10))
-
-    if selected_types and set(selected_types) != set(actor_types):
-        allowed = {
-            str(item.get("node_id") or item.get("id") or "")
-            for item in raw_nodes
-            if str(item.get("node_type") or item.get("type") or "actor") in selected_types
-        }
-        filtered_payload = dict(payload)
-        filtered_payload["nodes"] = [
-            dict(item)
-            for item in raw_nodes
-            if str(item.get("node_id") or item.get("id") or "") in allowed
-        ]
-        filtered_payload["edges"] = [
-            dict(edge)
-            for edge in payload["edges"]
-            if isinstance(edge, Mapping)
-            and str(edge.get("source") or "") in allowed
-            and str(edge.get("target") or "") in allowed
-        ]
-        product = DataProduct(
-            kind=ProductKind.NETWORK,
-            payload=filtered_payload,
-            project=product.project,
-            dataset=product.dataset,
-            version=product.version,
-            metadata=product.metadata,
-        )
 
     graph = sna_envelope(product, max_nodes=node_limit, max_edges=edge_limit)
     metrics = st.columns(4)
