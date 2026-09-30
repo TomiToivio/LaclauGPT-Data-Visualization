@@ -30,7 +30,7 @@ set +a
 [[ "${LACLAUGPT_VIS_MACHINE:-}" == "linux-server" ]] || fail "machine must be linux-server"
 [[ "${LACLAUGPT_VIS_EXECUTION:-}" == "web-service" ]] || fail "execution must be web-service"
 [[ "${LACLAUGPT_VIS_SERVER_HOST:-127.0.0.1}" != "0.0.0.0" ]] || fail "refusing wildcard bind without a protected access layer"
-info "AI26 Phase 1 profile shape verified"
+info "AI26 Phase 2 profile shape verified"
 
 # Optional distributed services are configuration choices. The application health command
 # performs sanitized validation and must degrade cleanly when optional capabilities are absent.
