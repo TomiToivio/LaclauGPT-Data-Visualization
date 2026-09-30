@@ -2,10 +2,11 @@
 
 This is the public, secret-free Phase 1 deployment runbook for the AI26 visualization service on Laskin. The deployment uses the unified Visualization application and the canonical Collection → Analysis → Visualization contract. It does not fork analysis logic or embed private AI26 settings in this repository.
 
-## Phase 1 contract
+## Active branch contract
 
-- `main` is the canonical active/stable Phase 1 development branch.
-- `phase-1` is a passive mirror and must match the validated `main` tree.
+- `main` is the canonical active/stable Phase 2 development branch.
+- `phase-2` is a passive mirror and must match the validated `main` tree.
+- `phase-1` is the preserved Phase 1 baseline.
 - Select AI26 explicitly with `LACLAUGPT_VIS_PROJECT_ID=ai26`.
 - Select the canonical Phase 1 browser contract with `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`.
 - The dashboard is a human-in-the-loop research interface. It presents upstream evidence and analysis for review; it does not perform discourse inference.
@@ -83,7 +84,7 @@ export LACLAUGPT_VIS_ENV_FILE=/path/to/private/ai26-visualization.env
 bash deploy/preflight-laskin-ai26.sh
 ```
 
-It verifies AI26 selection, the canonical Phase 1 contract, Linux web-service execution, safe binding, retirement of obsolete legacy services, and then runs the sanitized application commands:
+It verifies AI26 selection, the active Phase 2 branch contract, the canonical browser contract, Linux web-service execution, safe binding, retirement of obsolete legacy services, and then runs the sanitized application commands:
 
 ```bash
 .venv/bin/laclaugpt-visualize profile
