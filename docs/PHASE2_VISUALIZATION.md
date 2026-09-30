@@ -26,7 +26,7 @@ Input is the DNA-compatible Analysis artifact already consumed by `dna_views.py`
 
 ### SNA
 
-Input is a portable `DataProduct(kind="network")`-shaped JSON object, or a direct JSON object with `nodes` and `edges`. Optional `measures` are displayed exactly as supplied. Missing measures are shown as missing; the UI does not compute substitutes.
+Input may be a portable `DataProduct(kind="network")`-shaped JSON object or the canonical Phase 2 Analysis `AnalyticalGraph` (`schema_version`, `project_id`, layered `nodes`/`edges`). The adapter selects only objects explicitly labelled `layer="sna"` upstream. Empirical relations become the visible network; graph-statistical `describes` results remain separate upstream-derived results. Optional `measures` are displayed exactly as supplied. Missing measures are shown as missing; the UI does not compute substitutes.
 
 Recognized node typing is intentionally open and supports human and artificial communicators such as person, organization, government, party, media, movement, platform, llm, ai_agent, bot, algorithmic_system, device and unknown when supplied upstream.
 
@@ -54,7 +54,7 @@ DA keeps the existing Phase 1 filters. DNA exposes statement/projection filters.
 
 ## Exchange and interoperability
 
-DNA-compatible exports, GraphML, GEXF and RDF are canonical Analysis exports. Visualization makes those exports discoverable rather than rebuilding their semantics. DNA additionally has the existing GraphML/GEXF/node+edge export helpers. SNA exposes visible node/edge CSV tables and shows canonical upstream export references when the NETWORK product metadata contains `exports`.
+DNA-compatible exports, GraphML, GEXF and RDF are canonical Analysis exports. Visualization makes those exports discoverable rather than rebuilding their semantics. DNA additionally has the existing GraphML/GEXF/node+edge export helpers. SNA exposes visible node/edge CSV tables and shows canonical upstream export references when the NETWORK product or `AnalyticalGraph.metadata` contains `exports`.
 
 DATS remains document/annotation/code/entity exchange. It is not described as an SNA method.
 
