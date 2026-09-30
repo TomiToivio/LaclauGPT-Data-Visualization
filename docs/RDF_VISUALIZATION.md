@@ -39,7 +39,7 @@ When RDF is disabled, the RDF page clearly reports that project policy disables 
 
 The Streamlit page `pages/rdf_explorer.py` supports bounded semantic exploration with:
 
-- class/type and predicate filters;
+- class/type, predicate and explicit Analysis-owned research-stage filters;
 - named/project graph filters;
 - source, author, time, formation, signifier, entity, review-state and confidence filters;
 - resource search/describe;
