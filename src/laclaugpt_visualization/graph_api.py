@@ -10,9 +10,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-GRAPH_LAYERS = frozenset({"source", "provenance", "laclau", "dna", "sna"})
+GRAPH_LAYERS = frozenset({"source", "multimodal", "summary", "provenance", "laclau", "dna", "sna"})
 LAYER_MIN_PHASE = {
     "source": 0,
+    "multimodal": 1,
+    "summary": 1,
     "provenance": 0,
     "laclau": 0,
     "sna": 2,
