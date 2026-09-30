@@ -221,3 +221,16 @@ def test_phase2_rejects_analytical_graph_without_sna_layer():
 
     with pytest.raises(ValueError, match="NETWORK|AnalyticalGraph"):
         network_product_from_mapping(data)
+
+
+def test_phase2_analytical_graph_filters_derived_results_with_visible_nodes():
+    product = network_product_from_mapping(_analytical_graph())
+
+    kept = filter_sna_product(product, platforms=("x",))
+    assert {node["id"] for node in kept.payload["nodes"]} == {"actor:a", "actor:b"}
+    assert len(kept.payload["derived_results"]) == 1
+
+    hidden = filter_sna_product(product, platforms=("tiktok",))
+    assert hidden.payload["nodes"] == []
+    assert hidden.payload["edges"] == []
+    assert hidden.payload["derived_results"] == []
