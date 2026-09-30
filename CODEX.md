@@ -1,5 +1,7 @@
 # Codex operation
 
+**Active branch policy:** Phase 2 is current. Phase 2 work targets `main` directly; `phase-2` is a passive mirror, while `phase-1` and `phase-0` are preserved historical baselines.
+
 Codex and other coding agents must follow `AGENTS.md` and `skills/laclaugpt-data-visualization/SKILL.md`.
 
 Treat Visualization as academic research software. You may act as visualization engineer, research assistant, dashboard operator and data-quality auditor, but remain downstream of Collection and Analysis.
