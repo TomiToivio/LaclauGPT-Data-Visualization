@@ -173,11 +173,11 @@ def network_product_from_mapping(data: Mapping[str, Any]) -> DataProduct:
         )
     payload = data.get("payload", data)
     if not isinstance(payload, Mapping):
-        raise TypeError("NETWORK payload must be a JSON object.")
+        raise ValueError("NETWORK payload must be a JSON object.")  # noqa: TRY004
     nodes = payload.get("nodes")
     edges = payload.get("edges")
     if not isinstance(nodes, list) or not isinstance(edges, list):
-        raise TypeError("NETWORK payload must contain list-valued nodes and edges.")
+        raise ValueError("NETWORK payload must contain list-valued nodes and edges.")  # noqa: TRY004
     metadata = data.get("metadata")
     return DataProduct(
         kind=ProductKind.NETWORK,
@@ -234,9 +234,9 @@ def render_sna_workspace() -> None:
     try:
         raw = json.loads(uploaded.getvalue().decode("utf-8"))
         if not isinstance(raw, Mapping):
-            raise TypeError("NETWORK artifact must be a JSON object.")
+            raise ValueError("NETWORK artifact must be a JSON object.")  # noqa: TRY004
         product = network_product_from_mapping(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         st.error(f"Cannot open SNA artifact: {exc}")
         return
 
