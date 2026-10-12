@@ -124,7 +124,7 @@ def rdf_files(root: str | Path) -> list[Path]:
 
 
 def rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
-    return frame.where(pd.notna(frame), None).to_dict("records") if not frame.empty else []
+    return [{key: (None if value is pd.NA or (isinstance(value, float) and pd.isna(value)) else value)\n             for key, value in record.items()} for record in frame.to_dict("records")] if not frame.empty else []
 
 
 @dataclass(frozen=True)
