@@ -1,0 +1,30 @@
+{
+  "_comment": "Recorded snapshot, NOT an import. Read once from the deployed AI26 store so the visualization's declared namespace vocabulary can be checked against what Data Analysis actually produces. Refresh deliberately, with the date and the counts, when either side changes.",
+  "provenance": {
+    "kind": "recorded snapshot",
+    "measured_on": "2026-10-15",
+    "method": "read-only pymongo against the deployed AI26 project database on Laskin; counts from estimated_document_count(); collection names discovered with a bounded server-side listCollections name filter because a full listing on this legacy database times out",
+    "producer": "TomiToivio/LaclauGPT-Data-Analysis",
+    "producer_settings": "private runtime env for the ai26 project (LACLAUGPT_MONGODB_DATABASE, LACLAUGPT_PROJECT_ID=ai26)",
+    "project_id": "ai26",
+    "mongo_separator": "__",
+    "note": "Counts are aggregates; no record content, source identity, credential or host is recorded here."
+  },
+  "deployed_collections": {
+    "ai26__records": 1511,
+    "ai26__analysis_results": 2120,
+    "ai26__analysis_failures": 1190,
+    "ai26__periodic_summaries": 44756,
+    "ai26__processing": 8,
+    "ai26__analyzed": 21
+  },
+  "produced_but_not_consumed_by_visualization": {
+    "ai26__analysis_failures": "Data Analysis records per-record retries here for diagnosis. The visualization has no collection kind for it and does not read it. Recorded so the omission is deliberate and visible rather than looking like an oversight.",
+    "ai26__analyzed": "Legacy completion ledger, superseded by ai26__analysis_results. The visualization namespace still declares the kind for compatibility with older deployments; it must not be consulted as the current source of results."
+  },
+  "absent_and_not_expected_under_the_phase_1_profile": [
+    "ai26__relations",
+    "ai26__annotations"
+  ],
+  "absent_note": "Both belong to the experimental network modules and to human annotation. The project capability gate disables those modules in the Phase 1 profile, so nothing writes them yet; their absence is the expected state, not a broken handoff."
+}
