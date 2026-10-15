@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import pandas as pd
 
@@ -124,7 +125,16 @@ def rdf_files(root: str | Path) -> list[Path]:
 
 
 def rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
-    return [{key: (None if value is pd.NA or (isinstance(value, float) and pd.isna(value)) else value)\n             for key, value in record.items()} for record in frame.to_dict("records")] if not frame.empty else []
+    if frame.empty:
+        return []
+    return [
+        {
+            key: (None if value is pd.NA or (isinstance(value, float) and pd.isna(value))
+                  else value)
+            for key, value in record.items()
+        }
+        for record in frame.to_dict("records")
+    ]
 
 
 @dataclass(frozen=True)
