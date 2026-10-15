@@ -215,7 +215,7 @@ def _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
 def render_sna_workspace() -> None:
     st.markdown("### Social Network Analysis")
     st.caption(
-        "Phase 2 view over ordinary upstream network structures and metrics. "
+        "Experimental Phase 2 SNA (not validated Phase 1) over upstream network structures and metrics. "
         "Metrics retain their conventional names; none is relabelled as Castells network power."
     )
     uploaded = st.file_uploader(
