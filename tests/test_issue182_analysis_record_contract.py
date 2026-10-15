@@ -96,3 +96,15 @@ def test_unwrapped_analysis_envelope_preserves_transport_provenance():
 def test_future_version_not_silently_accepted():
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     assert "1.3.0" not in schema["properties"]["schema_version"]["enum"]
+
+
+def test_ai26_mongo_routing_matches_analysis_contract():
+    from laclaugpt_visualization.config import Settings
+    from laclaugpt_visualization.distributed import ProjectNamespace
+
+    # Analysis task_queue.py uses namespace.mongo_collection("analysis_results").
+    expected = ProjectNamespace(project_id="ai26").mongo_collection("analysis_results")
+    assert expected == "ai26__analysis_results"
+    settings = Settings(project_id="ai26")
+    assert settings.expected_mongodb_collection == expected
+    assert settings.resolved_mongodb_collection == expected
