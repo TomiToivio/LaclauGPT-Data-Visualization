@@ -76,7 +76,7 @@ def _artifact_picker(roots: list[Path]) -> dict[str, Any] | None:
 
 def render_dna_workspace(frame: pd.DataFrame, roots: list[Path]) -> None:
     st.markdown("## Discourse Network Analysis")
-    st.caption("Phase 1 isolated capability. All DNA analysis is produced upstream by Data Analysis.")
+    st.caption("Experimental Phase 2 DNA (not validated Phase 1). All DNA analysis is produced upstream by Data Analysis.")
     st.warning(DNA_CAVEAT)
 
     artifact = _artifact_picker(roots)
