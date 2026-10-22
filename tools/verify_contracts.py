@@ -17,13 +17,13 @@ This tool verifies, without network access, a live service or any research data:
   provenance/uncertainty/review state, and keep review human-controlled.
 
 The check is observational: it loads, transforms and compares. It never writes
-research data, contacts a service or mutates configuration. Exit status is 0
-when every check passes and 1 otherwise, so it can gate CI directly.
+research data, contacts a service or mutates configuration. Exit status is 0 when every check passes, 1 for a contract failure, and 2 for
+an unsupported Python interpreter, so host setup errors remain distinguishable.
 
 Usage::
 
-    python tools/verify_contracts.py
-    python tools/verify_contracts.py --fixture /path/to/canonical_parity_v1.json
+    ./.venv/bin/python tools/verify_contracts.py
+    ./.venv/bin/python tools/verify_contracts.py --fixture /path/to/canonical_parity_v1.json
 """
 from __future__ import annotations
 
@@ -39,6 +39,27 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 DEFAULT_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "canonical_parity_v1.json"
+
+# Keep this aligned with pyproject.toml. Laskin's system Python is 3.10,
+# but the Visualization package imports enum.StrEnum (available in 3.11+).
+MINIMUM_PYTHON = (3, 11)
+INTERPRETER_EXIT_STATUS = 2
+
+
+def check_interpreter(minimum: tuple[int, ...] = MINIMUM_PYTHON) -> str | None:
+    """Return an actionable error for an interpreter below the required floor."""
+    if sys.version_info >= minimum:
+        return None
+    wanted = ".".join(str(part) for part in minimum)
+    running = ".".join(str(part) for part in sys.version_info[:3])
+    return (
+        f"this check needs Python >= {wanted} (pyproject.toml declares "
+        f'requires-python = ">={wanted}"), but it is running under {running} '
+        f"({sys.executable}). Visualization imports enum.StrEnum, which requires "
+        "Python 3.11+. Re-run with the repository virtualenv, e.g. "
+        "`./.venv/bin/python tools/verify_contracts.py`."
+    )
+
 
 # Normative invariants from the fixture README.
 EXPECTED_SOURCE_URL = "https://example.invalid/laclaugpt/synthetic/record-001"
@@ -216,6 +237,11 @@ def main(argv: list[str] | None = None) -> int:
         help="path to the shared canonical parity fixture",
     )
     args = parser.parse_args(argv)
+
+    interpreter_problem = check_interpreter()
+    if interpreter_problem is not None:
+        print(f"ERROR interpreter: {interpreter_problem}")
+        return INTERPRETER_EXIT_STATUS
 
     payload = _load_fixture(args.fixture)
     frame = _load_frame(args.fixture)
