@@ -63,6 +63,10 @@ def test_main_aborts_on_a_distinct_status_for_an_old_interpreter(
     tool: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(tool, "check_interpreter", lambda *a, **k: "interpreter too old")
+    # The fixture is read at the top of main(), before any check: if the guard ever
+    # moves below it, this fails instead of the tool quietly opening research data
+    # on an interpreter it does not support.
+    monkeypatch.setattr(tool, "_load_fixture", lambda path: pytest.fail("fixture was loaded"))
     status = tool.main([])
     out = capsys.readouterr().out
     assert status == tool.INTERPRETER_EXIT_STATUS == 2

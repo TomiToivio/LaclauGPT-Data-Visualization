@@ -18,12 +18,17 @@ This tool verifies, without network access, a live service or any research data:
 
 The check is observational: it loads, transforms and compares. It never writes
 research data, contacts a service or mutates configuration. Exit status is 0
-when every check passes and 1 otherwise, so it can gate CI directly.
+when every check passes, 1 for a contract failure, and 2 for an unsupported Python
+interpreter, so host setup errors stay distinguishable from broken contracts.
+
+Run it with the repository virtualenv: on hosts whose system interpreter predates
+the declared floor (Laskin's is 3.10) the bare ``python`` command would otherwise
+fail in the package import — the very confusion this exit status exists to prevent.
 
 Usage::
 
-    python tools/verify_contracts.py
-    python tools/verify_contracts.py --fixture /path/to/canonical_parity_v1.json
+    ./.venv/bin/python tools/verify_contracts.py
+    ./.venv/bin/python tools/verify_contracts.py --fixture /path/to/canonical_parity_v1.json
 """
 from __future__ import annotations
 
