@@ -1,6 +1,6 @@
-# Phase-1 optional visualization libraries
+# Optional visualization libraries
 
-Status: **backlog implementation scaffold, not activated in Phase 0**.
+Status: **backlog implementation scaffold, not activated in the default pipeline**.
 
 Issue #99 adds reusable interchange adapters and isolated research prototypes without touching the current Streamlit/Plotly defaults.
 
@@ -22,7 +22,7 @@ The serializers accept already-derived node/edge projections and retain provenan
 
 ## Deferred candidates
 
-Observable Plot, Arquero, DuckDB-Wasm, Altair, quanteda.textplots, rDNA and a locked `renv` environment remain evaluation targets for Phase 1. They are intentionally not added to Phase-0 dependency manifests.
+Observable Plot, Arquero, DuckDB-Wasm, Altair, quanteda.textplots, rDNA and a locked `renv` environment remain evaluation targets for the current pipeline. They are intentionally not added to the core dependency manifests.
 
 ## Scientific boundary
 
@@ -30,4 +30,4 @@ Every graph output is descriptive. Degree is not a nodal point, layout proximity
 
 ## Activation
 
-Nothing in this scaffold is imported by the default dashboard entrypoint. Phase 1 can promote individual components after benchmark/researcher review without changing the canonical data contract.
+Nothing in this scaffold is imported by the default dashboard entrypoint. Individual components can be promoted after benchmark/researcher review without changing the canonical data contract.

@@ -17,9 +17,9 @@ and analysis for review; it **does not perform discourse inference**, and **it m
 trigger analysis merely because the UI started** (see "Starting the dashboard must not
 start analysis" below).
 
-## Active branch contract
+## Development branch
 
-- `main` is the canonical active/stable Phase 2 development branch.
+- `main` is the canonical active development branch; short-lived branches merge back into it. Research phases do not determine branch selection, and historical `phase-N` branches are inert snapshots.
 - Select AI26 explicitly with `LACLAUGPT_VIS_PROJECT_ID=ai26`.
 - Select the canonical browser contract with `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`.
 - Private codebooks, credentials, hostnames, researcher notes, row-level research data

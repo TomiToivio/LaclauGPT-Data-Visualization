@@ -1,7 +1,7 @@
-# Phase 1 DNA visualization decision
+# DNA visualization decision
 
-Issue #94 restores Discourse Network Analysis visualization as an isolated,
-read-only capability.
+Issue #94 added Discourse Network Analysis visualization to the current pipeline as an
+isolated, read-only capability.
 
 ## Decision: adapt
 
@@ -40,5 +40,5 @@ network structure is not evidence of hegemony.
 ## Rollback
 
 The capability is isolated behind pages/2_DNA.py. Removing that page and the two
-DNA modules returns the preceding Phase 1 baseline without changing Phase 0
-list/inspect/export behavior or canonical adapters.
+DNA modules returns the pipeline to its pre-DNA state without changing legacy
+compatibility list/inspect/export behaviour or canonical adapters.

@@ -11,11 +11,11 @@ AI26 Visualization is a downstream presentation/control profile over the canonic
 
 The public dashboard profile is `configs/projects/ai26.yaml`. Its `canonical_analysis_codebook` points to the current public Analysis codebook instead of duplicating it.
 
-## Phase 1 capability parity
+## Capability parity with Analysis
 
-Visualization mirrors the Analysis-owned Phase 1 capability switches under the same `analysis` namespace. These settings are downstream gates only; Visualization never turns on an upstream analytical stage.
+Visualization mirrors the Analysis-owned capability switches of the current pipeline under the same `analysis` namespace. These settings are downstream gates only; Visualization never turns on an upstream analytical stage.
 
-The current Phase 1 defaults are:
+The current defaults are:
 
 ```yaml
 analysis:
@@ -33,7 +33,7 @@ analysis:
 
 Critical AI, DNA and SNA are therefore off by default. RDF is also optional and disabled by default. The ordinary dashboard and canonical graph projection remain usable without RDF.
 
-`optional_capabilities` remains a presentation-facing capability summary. Its Phase 1 values must agree with the nested `analysis` policy for `sna`, `dna`, `critical_ai`, `rdf` and `rdf_graphrag`.
+`optional_capabilities` remains a presentation-facing capability summary. Its current values must agree with the nested `analysis` policy for `sna`, `dna`, `critical_ai`, `rdf` and `rdf_graphrag`.
 
 ## Canonical AI26 IDs
 
@@ -116,7 +116,7 @@ Do not use flat `rdf` or `rdf_graphrag` flags as the authoritative RDF policy. R
 
 When RDF is disabled, the RDF explorer reports that it is disabled and stops cleanly. The ordinary dashboard, including canonical MongoDB/CSV graph projections, remains independent from RDF.
 
-Synthetic tests may enable RDF explicitly to verify the optional path without making RDF a Phase 1 requirement.
+Synthetic tests may enable RDF explicitly to verify the optional path without making RDF a requirement of the current pipeline.
 
 ## Diagnostics and provenance
 
