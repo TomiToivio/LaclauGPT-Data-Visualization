@@ -1,13 +1,13 @@
-# Phase 2 visualization layers
+# DNA and SNA visualization layers
 
-Issue #169 activates researcher-facing Phase 2 inspection without moving analysis semantics into Visualization.
+Issue #169 activated researcher-facing DNA and SNA inspection without moving analysis semantics into Visualization.
 
 ## Research layers
 
 The workbench keeps the scientific objects explicit instead of folding them into one generic graph:
 
 1. **Source / multimodal evidence**: canonical source records, transcripts, OCR, frames and exact evidence selectors.
-2. **DA**: the existing Laclaudian discourse-analysis views from Phase 1.
+2. **DA**: the existing Laclaudian discourse-analysis views of the current pipeline.
 3. **DNA**: `pages/2_DNA.py` consumes the Analysis-owned `laclaugpt.multimethod.v1` statement/projection contract. Actor-concept, actor-actor and concept-concept projections remain upstream analytical products.
 4. **SNA**: `pages/3_SNA.py` consumes an explicit Analysis `NETWORK` product through `sna.py`. It displays ordinary node/edge structure and upstream metrics without renaming centrality as a theoretical construct.
 5. **RDF**: `pages/rdf_explorer.py` consumes the Analysis-owned RDF service and preserves exact URIs, stage/type distinctions, provenance and evidence drill-down.
@@ -18,7 +18,7 @@ Visualization never creates a replacement DNA ontology or RDF vocabulary.
 
 ### DA
 
-Input is the canonical Analysis/Visualization record. Existing Phase 1 behavior remains unchanged.
+Input is the canonical Analysis/Visualization record. Existing DA behaviour remains unchanged.
 
 ### DNA
 
@@ -26,7 +26,7 @@ Input is the DNA-compatible Analysis artifact already consumed by `dna_views.py`
 
 ### SNA
 
-Input may be a portable `DataProduct(kind="network")`-shaped JSON object or the canonical Phase 2 Analysis `AnalyticalGraph` (`schema_version`, `project_id`, layered `nodes`/`edges`). The adapter selects only objects explicitly labelled `layer="sna"` upstream. Empirical relations become the visible network; graph-statistical `describes` results remain separate upstream-derived results. Optional `measures` are displayed exactly as supplied. Missing measures are shown as missing; the UI does not compute substitutes.
+Input may be a portable `DataProduct(kind="network")`-shaped JSON object or the canonical Analysis `AnalyticalGraph` (`schema_version`, `project_id`, layered `nodes`/`edges`). The adapter selects only objects explicitly labelled `layer="sna"` upstream. Empirical relations become the visible network; graph-statistical `describes` results remain separate upstream-derived results. Optional `measures` are displayed exactly as supplied. Missing measures are shown as missing; the UI does not compute substitutes.
 
 Recognized node typing is intentionally open and supports human and artificial communicators such as person, organization, government, party, media, movement, platform, llm, ai_agent, bot, algorithmic_system, device and unknown when supplied upstream.
 
@@ -50,7 +50,7 @@ Every layer should retain the shortest available path back to `source_url` and e
 
 ## Filters
 
-DA keeps the existing Phase 1 filters. DNA exposes statement/projection filters. SNA exposes node/actor type, platform, project, dataset, date range and discourse concept/formation filters plus bounded node/edge inspection. These filters only inspect fields already supplied by Analysis; missing metadata is never inferred or synthesized. RDF exposes provider-backed type, explicit research-stage, provenance and query filters. The stage filter passes Analysis-owned labels through unchanged; Visualization does not infer a stage from RDF class names.
+DA keeps the existing canonical-record filters. DNA exposes statement/projection filters. SNA exposes node/actor type, platform, project, dataset, date range and discourse concept/formation filters plus bounded node/edge inspection. These filters only inspect fields already supplied by Analysis; missing metadata is never inferred or synthesized. RDF exposes provider-backed type, explicit research-stage, provenance and query filters. The stage filter passes Analysis-owned labels through unchanged; Visualization does not infer a stage from RDF class names.
 
 ## Exchange and interoperability
 
@@ -70,7 +70,7 @@ Degree, betweenness, closeness, PageRank, eigenvector centrality, communities an
 
 - existing DNA interoperability and export tests cover statement/projection semantics and GraphML/GEXF;
 - `tests/test_phase2_sna_page.py` covers NETWORK contract normalization, rejection of non-network inputs, and upstream-only actor/platform/project/dataset/date/discourse filtering;
-- `tests/test_issue101_graph_api.py` enforces that both DNA and SNA are Phase 2 graph layers;
+- `tests/test_issue101_graph_api.py` enforces that both DNA and SNA are gated graph layers;
 - the shared graph contract tests require `multimodal` and `summary` to remain distinct stage layers, and the RDF explorer exposes the provider-owned stage/layer field for filtering and inspection;
 - existing RDF tests cover read-only provider behavior, bounded graphs and evidence paths;
-- existing Phase 1 tests remain the regression gate.
+- the existing suite remains the regression gate.

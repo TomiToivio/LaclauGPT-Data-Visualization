@@ -1,6 +1,6 @@
 # Hermes operation
 
-**Active branch policy:** Phase 2 is current. Phase 2 work targets `main` directly; `phase-2` is a passive mirror, while `phase-1` and `phase-0` are preserved historical baselines.
+**Branch policy:** `main` is the active development branch; create short-lived branches from `main` and merge validated changes back. Research phases (Paper 1–4) do not determine Git branch selection, and historical `phase-N` branches are inert snapshots rather than development targets.
 
 Hermes follows `AGENTS.md` and `skills/laclaugpt-data-visualization/SKILL.md` as the authoritative contract. It is an academic visualization/research-support agent using the same canonical loaders, configuration and review semantics as human operation.
 

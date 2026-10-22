@@ -1,7 +1,7 @@
-# Phase 1 interoperability exports
+# Interoperability exports
 
-Issue #89 restores interoperability/export behavior against the current canonical
-Analysis → Visualization contract without changing the preserved Phase 0 exporter.
+Issue #89 added interoperability/export behaviour for the current canonical
+Analysis → Visualization contract without changing the preserved legacy exporter.
 
 ## Decision
 
@@ -15,7 +15,7 @@ This is an **adapt** decision:
 - preserve the useful legacy DATS/DNA serializers for their own interchange objects;
 - add a current-contract canonical JSONL surface beside them;
 - do not route canonical records through legacy graph/DATS adapters;
-- do not replace or modify Phase 0 JSONL/CSV export.
+- do not replace or modify the legacy JSONL/CSV export.
 
 ## Canonical JSONL contract
 
@@ -34,7 +34,7 @@ interchange payload.
 ## Non-goals
 
 This slice does not add CSV/Parquet conversion, mutate source records, infer missing
-canonical sections, migrate Phase 0 compatibility records, or alter DATS/DNA graph
+canonical sections, migrate legacy compatibility records, or alter DATS/DNA graph
 exports. Additional formats should be restored independently and only when they can
 preserve the canonical semantics without lossy coercion.
 

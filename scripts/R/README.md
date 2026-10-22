@@ -1,4 +1,4 @@
-# Phase-1 R reproducibility layer
+# Optional R reproducibility layer
 
 This directory is optional and independent from the Python dashboard. It reads portable exports and writes publication/QA artifacts under the ignored `data/artifacts/` or `data/exports/` tree.
 
@@ -6,7 +6,7 @@ Suggested packages:
 
 `ggplot2`, `igraph`, `tidygraph`, `ggraph`, `patchwork`, optional `plotly`, `quanteda.textplots`, `rDNA`, and `renv`.
 
-Bootstrap locally with `renv::init()` when Phase 1 resumes. Do not activate R in Phase 0 CI/runtime.
+Bootstrap locally with `renv::init()` when the layer is enabled locally. R remains outside the default CI/runtime.
 
 Examples:
 

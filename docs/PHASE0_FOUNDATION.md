@@ -1,78 +1,80 @@
-# Phase 0 foundation and incremental Phase 1 restoration
+# Hand-coded baseline and incremental implementation
 
 Repository doctrine for Visualization (issue #56). This records the rules for
-rebuilding Phase 1 **around** the hand-coded Phase 0 baseline. It defines
-restoration rules only; it does not implement Phase 0.
+building the current pipeline **around** the hand-coded baseline in `laclaugpt/`.
+It defines implementation rules only; the baseline itself is not implemented by
+this document.
 
-The hand-coded Phase 0 visualization baseline lives under `laclaugpt/`. Tomi builds
-and finishes it manually. It is the **foundation** around which Phase 1
-functionality is restored — not a first draft to be replaced.
+The hand-coded visualization baseline lives under `laclaugpt/`. Tomi builds
+and finishes it manually. It is the **foundation** around which further
+visualization functionality is added incrementally — not a first draft to be replaced.
 
 ## Treat `laclaugpt/` as the foundation
 
-- Agents MUST inspect `laclaugpt/` before making Phase 1 changes.
-- Do not replace Phase 0 wholesale with a new abstraction, framework,
+- Agents MUST inspect `laclaugpt/` before changing visualization behaviour.
+- Do not replace the hand-coded baseline wholesale with a new abstraction, framework,
   orchestration layer, plugin architecture, or agent-generated redesign.
-- Do not move functionality out of `laclaugpt/` merely to match the older Phase 1
-  layout.
-- Prefer adapters and wrappers around Phase 0 over rewrites.
-- Preserve working Phase 0 behavior unless the task explicitly says otherwise.
+- Do not move functionality out of `laclaugpt/` merely to match the older modular
+  package layout.
+- Prefer adapters and wrappers around the baseline over rewrites.
+- Preserve working baseline behaviour unless the task explicitly says otherwise.
 
-## Existing Phase 1 code is a source, not the architecture
+## The earlier modular code is a source, not the architecture
 
-Phase 1 code outside `laclaugpt/` remains useful as:
+Code outside `laclaugpt/` (the earlier modular package) remains useful as:
 
 - a reference implementation;
 - a source of tests;
 - a source of schemas and interfaces;
-- a source of isolated functionality to restore.
+- a source of isolated functionality to adapt.
 
-It is **not** automatically authoritative over the hand-coded Phase 0
-implementation. When Phase 0 and older Phase 1 code differ, agents must not
-silently choose the Phase 1 version. Preserve Phase 0 and surface the difference
+It is **not** automatically authoritative over the hand-coded `laclaugpt/`
+implementation. When the baseline and the earlier modular code differ, agents must not
+silently choose the modular version. Preserve the baseline and surface the difference
 unless the task explicitly instructs otherwise.
 
-## Restore one capability at a time
+## Add one capability at a time
 
 1. Inspect `laclaugpt/` first.
-2. Identify exactly **one** Phase 1 capability to restore.
-3. Add that capability around the Phase 0 implementation with the smallest
+2. Identify exactly **one** capability to add.
+3. Add that capability around the baseline implementation with the smallest
    possible change.
-4. Preserve existing Phase 0 behavior unless the task explicitly says otherwise.
+4. Preserve existing baseline behaviour unless the task explicitly says otherwise.
 5. Run the tests/validation for that one step.
 6. Stop.
 7. Continue with the next capability only in a separate, explicitly requested task.
 
-Do not attempt a "big bang" restoration of Phase 1. Do not combine multiple
-architectural restorations into one change unless Tomi explicitly asks.
+Do not attempt a "big bang" rewrite. Do not combine multiple
+architectural changes into one change unless Tomi explicitly asks.
 
 ```
-Phase 0 legacy core in laclaugpt/
+hand-coded baseline in laclaugpt/   (legacy core)
         ↓
-small Phase 1 addition
+one small capability added to the current pipeline
         ↓
 validation
         ↓
-next Phase 1 addition
+next addition
 ```
 
-Agents working on Phase 1 restoration MUST also:
+Agents working on incremental implementation MUST also:
 
 - preserve TOMI-LOCKED elements exactly (see below);
 - avoid unrelated refactors;
 - avoid speculative abstraction;
 - avoid large migrations;
-- avoid replacing hand-coded Phase 0 logic with framework-driven equivalents unless
+- avoid replacing hand-coded baseline logic with framework-driven equivalents unless
   explicitly requested;
 - keep changes small enough to review and reason about;
-- stop after the requested restoration step is complete.
+- stop after the requested step is complete.
 
-Broad requests such as "continue Phase 1", "modernize", "refactor", "clean up" or
-"make the architecture nicer" are **not** authorization to rewrite the Phase 0 core.
+Broad requests such as "continue the implementation", "modernize", "refactor",
+"clean up" or "make the architecture nicer" are **not** authorization to rewrite the
+`laclaugpt/` core.
 
 ## Distributed architecture defaults
 
-From this point forward, assume the main deployment/runtime model is distributed:
+Assume the main deployment/runtime model is distributed:
 
 - **MongoDB** for records and document persistence;
 - **Redis** for coordination, cache, state, queues, pub/sub and lightweight
@@ -123,5 +125,5 @@ grep -R "TOMI-LOCKED" .
 ## Status
 
 `laclaugpt/` does not exist in this repository yet; Tomi creates it manually.
-Phase 1 restoration begins only after Tomi explicitly requests the first
-restoration step. No Phase 0 code is implemented by this document.
+Incremental implementation begins only after Tomi explicitly requests the first
+step. No baseline code is implemented by this document.
