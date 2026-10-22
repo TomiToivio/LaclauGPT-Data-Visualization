@@ -1,8 +1,14 @@
+## Research-paper phases and continuous software development (LaclauGPT #82)
+
+**Phases refer only to research papers and scientific programmes, never to software generations.** Collection, Analysis and Visualization are continuously maintained interoperable modules on `main`. Build, fix, test and deploy incrementally in support of real data collection, analysis and visualization. A new paper does not trigger a new pipeline, architecture, branch, dataset or migration. Prioritize operational AI26 evidence, quality, coverage and researcher review over phase-labelled rewrites. Paper-specific theories and methods are expressed in research documents, study configuration and well-scoped extensions; preserve the locked Paper 1 framework.
+
+Historical `phase-N` branches, directories, commands and identifiers are compatibility/archival names, **not** development instructions. Do not rename or remove them solely to modernize terminology. Where older guidance conflicts with this rule, this rule takes precedence. Use short-lived branches from `main`, verify changes, and merge back to `main`.
+
 ## Development workflow and research phases
 
 `main` is the active development branch. Create short-lived feature/fix branches from `main` and merge validated changes back to `main`. Research phases do not determine Git branch selection, and no `phase-N` branch synchronization is required. Existing phase branches can remain as historical references without being advanced or deleted.
 
-The programme is currently in **research Phase 1**. Phase 2 is optional and may be skipped. Phases 3 and 4 concern research analyses and results, not distinct coding or pipeline branches. Preserve all existing privacy, scientific-method, locked-paper, and module-boundary constraints.
+The research papers may be numbered, but software modules are developed continuously; no codebase is currently in a numbered development phase. Preserve all existing privacy, scientific-method, locked-paper, and module-boundary constraints.
 
 # AGENTS.md
 
@@ -23,7 +29,7 @@ The project-wide data contract is owned by [`TomiToivio/LaclauGPT`](https://gith
 
 ## AI26 active pipeline scope
 
-**This repository's `main` branch contains the active AI26 implementation (research Phase 1).**
+**This repository's `main` branch contains the continuous AI26 implementation.**
 
 - AI26 is the only active/default study in this repository. New code, configuration, tests, examples, documentation, commands and agent work MUST assume AI26 unless Tomi explicitly says otherwise.
 - EP24, Hungary26 and Brazil26 are out of scope here. They will live in separate project repositories. Do not add new EP24/Hungary26/Brazil26 pipelines, codebooks, launchers, dashboards, adapters, deployment documentation or project-specific defaults here.
@@ -43,12 +49,12 @@ Agents should:
 - inspect data completeness, duplicates, missing timestamps/locations and backend inconsistencies before blaming the chart;
 - avoid implying causality, hegemony, ideological identity or theoretical validity from frequency/centrality/layout alone;
 - support maps, timelines, networks, comparisons and reports when the canonical data actually supports them;
-- prioritize operationally useful AI26 Phase 2 views and reproducible machine-readable outputs over presentation polish;
+- prioritize operationally useful AI26 views and reproducible machine-readable outputs over presentation polish;
 - leave legacy dashboards dormant; do not extend or polish them unless Tomi explicitly requests migration/maintenance.
 
 ## AI26 active study
 
-AI26 (`Ideological contestation over AI`) is the active and default study for Visualization. The current `main` implementation is AI26 Phase 2. Read `docs/AI26_REFERENCE_CASE.md` when adding examples, filters, dashboard documentation or synthetic fixtures.
+AI26 (`Ideological contestation over AI`) is the active and default study for Visualization. The current `main` implementation supports the live AI26 study. Read `docs/AI26_REFERENCE_CASE.md` when adding examples, filters, dashboard documentation or synthetic fixtures.
 
 Use the three AI26 arenas (`elites`, `grassroots`, `parliamentary`) and the public AI26 codebook as realistic examples, but never hard-code them into core models or generic UI contracts. Arena is sampling provenance, not ideology.
 
