@@ -17,13 +17,13 @@ This tool verifies, without network access, a live service or any research data:
   provenance/uncertainty/review state, and keep review human-controlled.
 
 The check is observational: it loads, transforms and compares. It never writes
-research data, contacts a service or mutates configuration. Exit status is 0 when every check passes, 1 for a contract failure, and 2 for
-an unsupported Python interpreter, so host setup errors remain distinguishable.
+research data, contacts a service or mutates configuration. Exit status is 0
+when every check passes and 1 otherwise, so it can gate CI directly.
 
 Usage::
 
-    ./.venv/bin/python tools/verify_contracts.py
-    ./.venv/bin/python tools/verify_contracts.py --fixture /path/to/canonical_parity_v1.json
+    python tools/verify_contracts.py
+    python tools/verify_contracts.py --fixture /path/to/canonical_parity_v1.json
 """
 from __future__ import annotations
 
@@ -40,14 +40,27 @@ if str(SRC) not in sys.path:
 
 DEFAULT_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "canonical_parity_v1.json"
 
-# Keep this aligned with pyproject.toml. Laskin's system Python is 3.10,
-# but the Visualization package imports enum.StrEnum (available in 3.11+).
+# ---------------------------------------------------------------------------
+# Interpreter floor (#186)
+# ---------------------------------------------------------------------------
+# The module imports `enum.StrEnum` and `datetime.UTC`, which exist only from
+# 3.11, and ``pyproject.toml`` declares ``requires-python = ">=3.11"``. On a host
+# whose *system* interpreter is older, the import dies with a bare ImportError
+# that reads like a contract violation, so fail closed with an actionable
+# message and a distinct status.
 MINIMUM_PYTHON = (3, 11)
+
+# Distinct from 1 (a genuine contract failure) so that logs, callers and the
+# daily Laskin maintenance job can tell a wrong interpreter apart from a broken
+# contract.
 INTERPRETER_EXIT_STATUS = 2
 
 
 def check_interpreter(minimum: tuple[int, ...] = MINIMUM_PYTHON) -> str | None:
-    """Return an actionable error for an interpreter below the required floor."""
+    """Return an actionable message when the running interpreter is too old.
+
+    Returns ``None`` when the interpreter satisfies ``minimum``.
+    """
     if sys.version_info >= minimum:
         return None
     wanted = ".".join(str(part) for part in minimum)
@@ -55,10 +68,12 @@ def check_interpreter(minimum: tuple[int, ...] = MINIMUM_PYTHON) -> str | None:
     return (
         f"this check needs Python >= {wanted} (pyproject.toml declares "
         f'requires-python = ">={wanted}"), but it is running under {running} '
-        f"({sys.executable}). Visualization imports enum.StrEnum, which requires "
-        "Python 3.11+. Re-run with the repository virtualenv, e.g. "
+        f"({sys.executable}). The module imports enum.StrEnum and datetime.UTC, which do not "
+        "exist before 3.11, so the import would fail in a way that looks like a contract "
+        "violation. Re-run with the repository virtualenv, e.g. "
         "`./.venv/bin/python tools/verify_contracts.py`."
     )
+
 
 
 # Normative invariants from the fixture README.
