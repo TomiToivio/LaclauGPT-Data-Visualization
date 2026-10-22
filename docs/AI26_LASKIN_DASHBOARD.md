@@ -1,14 +1,14 @@
 # AI26 dashboard on Laskin
 
-This is the public, secret-free Phase 2 deployment runbook for the AI26 visualization service on Laskin. The deployment uses the unified Visualization application and the canonical Collection → Analysis → Visualization contract. It does not fork analysis logic or embed private AI26 settings in this repository.
+This is the public, secret-free deployment runbook for the AI26 visualization service on Laskin. The deployment uses the unified Visualization application and the canonical Collection → Analysis → Visualization contract. It does not fork analysis logic or embed private AI26 settings in this repository.
 
-## Active branch contract
+## Development branch
 
-- `main` is the canonical active/stable Phase 2 development branch.
-- `phase-2` is a passive mirror and must match the validated `main` tree.
-- `phase-1` is the preserved Phase 1 baseline.
+- `main` is the canonical active development branch. Create short-lived branches from `main` and merge validated changes back.
+- Research phases belong to the papers (Paper 1–4) and do not determine branch selection.
+- Historical `phase-N` branches are inert snapshots and must not receive new work.
 - Select AI26 explicitly with `LACLAUGPT_VIS_PROJECT_ID=ai26`.
-- The AI26 Phase 2 default browser/data contract is `canonical`; select it with `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`. Use `phase0` only as an explicit historical compatibility override.
+- The current AI26 default browser/data contract is `canonical`; select it with `LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`. Use `phase0` only as an explicit historical compatibility override.
 - The dashboard is a human-in-the-loop research interface. It presents upstream evidence and analysis for review; it does not perform discourse inference.
 - Descriptive prominence is not theoretical proof. Frequency is not hegemony, graph centrality is not nodal status, proximity is not equivalence, and a conflict edge or two-cluster layout is not by itself antagonism or polarisation.
 - Private codebooks, credentials, hostnames, researcher notes, row-level research data and machine-specific paths stay outside the public repository.
@@ -84,7 +84,7 @@ export LACLAUGPT_VIS_ENV_FILE=/path/to/private/ai26-visualization.env
 bash deploy/preflight-laskin-ai26.sh
 ```
 
-It verifies AI26 selection, the active Phase 2 branch contract, the canonical browser contract, Linux web-service execution, safe binding, retirement of obsolete legacy services, and then runs the sanitized application commands:
+It verifies AI26 selection, the active `main` branch contract, the canonical browser contract, Linux web-service execution, safe binding, retirement of obsolete legacy services, and then runs the sanitized application commands:
 
 ```bash
 .venv/bin/laclaugpt-visualize profile
@@ -129,7 +129,7 @@ A user-service installation is also valid. Remove `User=` and `Group=`, install 
 
 ## Retire the legacy split deployment
 
-The legacy JSONL dashboard/export path from the former monolithic deployment is not part of the supported Phase 2 visualization service. Before enabling the unified service, retire those units if present:
+The legacy JSONL dashboard/export path from the former monolithic deployment is not part of the supported visualization service. Before enabling the unified service, retire those units if present:
 
 ```bash
 systemctl --user disable --now ai26-dashboard.service ai26-export.service ai26-export.timer 2>/dev/null || true

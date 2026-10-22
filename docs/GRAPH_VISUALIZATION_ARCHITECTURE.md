@@ -1,6 +1,6 @@
 # Backend-neutral graph visualization architecture
 
-Status: Phase-0 implementation scaffold for issue #101. Existing dashboards remain unchanged by default.
+Status: implementation scaffold for issue #101. Existing dashboards remain unchanged by default.
 
 ## Contract
 
@@ -12,7 +12,7 @@ Every response contains bounded nodes and typed edges plus optional continuation
 metadata and provenance. Nodes and edges can carry `provenance_refs` so a researcher can move
 from an analytical relation to source evidence without creating a second evidence store.
 
-## Layers and phase safety
+## Layers and capability gating
 
 The shared layer vocabulary is:
 
@@ -22,8 +22,10 @@ The shared layer vocabulary is:
 - `dna`: actor-concept/statement networks, stance/agreement/conflict and temporal coalitions.
 - `sna`: interaction networks, weighted/directed edges, communities, metrics and temporal snapshots.
 
-DNA and SNA are gated by `layer_enabled(..., phase=2)`. This repository does not compute any of
-those classifications; it only renders upstream analytical objects.
+DNA and SNA are gated by the project selector `layer_enabled(..., phase=2)`. The `phase`
+argument selects a project capability profile, not a software development stage. This
+repository does not compute any of those classifications; it only renders upstream
+analytical objects.
 
 ## Backends
 

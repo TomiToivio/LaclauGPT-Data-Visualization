@@ -1,4 +1,4 @@
-# Phase 0 ontology and discourse graph rendering
+# Legacy `phase0` ontology and discourse graph rendering
 
 Issue #84 decision: **ADAPT**.
 
@@ -8,8 +8,9 @@ projection is not reused for Phase 0 records.
 
 ## Why adapt instead of reuse
 
-Phase 0 ontology output is a JSON-LD/Turtle export of Phase 0 discourse analysis. It is not the
-canonical Phase 1 relation contract. Reusing `transforms.graph_projection()` would blur the
+The `phase0` ontology output is a JSON-LD/Turtle export of the legacy `phase0`
+discourse-analysis contract (a record contract, not a software stage). It is not the
+canonical relation contract. Reusing `transforms.graph_projection()` would blur the
 Analysis/Visualization boundary and could make candidate nodal, floating, and empty signifiers
 look like canonical graph claims.
 
@@ -25,7 +26,7 @@ The adapter therefore:
 - synthesizes display-only endpoint nodes for assertion URIs that the Phase 0 exporter references
   but does not emit as separate resources;
 - enforces node/edge bounds and reports truncation;
-- never calls the canonical Phase 1 graph transform.
+- never calls the canonical graph transform.
 
 ## Epistemic label
 
@@ -39,7 +40,7 @@ classes do not establish theoretical validity or human validation.
 ## Default enablement
 
 This adapter is deliberately not wired into the default canonical graph UI by this issue.
-Integration can enable it only through an explicit Phase 0 path after the bounded canonical graph
+Integration can enable it only through the explicit `phase0` compatibility path after the bounded canonical graph
 prerequisite is proven. Removing that future integration leaves Phase 0 list/inspect/export
 behavior unchanged.
 

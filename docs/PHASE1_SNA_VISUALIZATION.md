@@ -1,6 +1,6 @@
-# Phase 1 SNA visualization
+# SNA visualization
 
-Issue #95 restores Social Network Analysis visualization as an **isolated downstream capability**.
+Issue #95 added Social Network Analysis visualization to the current pipeline as an **isolated downstream capability**.
 
 ## Decision: adapt, do not infer
 
@@ -51,8 +51,8 @@ Degree, centrality, PageRank, clustering, component membership and layout are de
 structural measures. They do not by themselves establish influence, power, hegemony,
 ideology, coordination, brokerage, or theoretical significance.
 
-## Phase boundary
+## Capability boundary
 
 This capability is read-only Visualization. SNA extraction, graph construction, metric
 calculation, community detection and theoretical interpretation remain Analysis concerns.
-The preserved Phase 0 list/inspect/export path is untouched.
+The legacy compatibility list/inspect/export path is untouched.

@@ -24,9 +24,9 @@ review/history, legacy fields, and optional stages 2/3 (not applicable),
 
 ## Scientific interpretation
 
-Stage 6 AI26 Phase 1 findings remain provisional until reviewed. Optional
-stage 7 DNA and stage 8 SNA are **experimental Phase 2** interpretations,
-never Phase 1 validation. Do not infer discourse or hegemonic status
+Stage 6 AI26 research Phase 1 (Paper 1) findings remain provisional until reviewed.
+Optional stage 7 DNA and stage 8 SNA are **experimental research Phase 2 (Paper 2)**
+interpretations, never research Phase 1 validation. Do not infer discourse or hegemonic status
 from graph topology, sentiment, cluster proximity or centrality.
 The upstream record's `phase_status` and `experimental_phase_2`
 markers must be preserved in the record inspector and graph source payload.
