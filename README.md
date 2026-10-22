@@ -1,10 +1,14 @@
 # LaclauGPT Data Visualization
 
 > [!IMPORTANT]
-> **AI26 Phase 2 only.** This repository's `main` branch is the active AI26 Phase 2 implementation. AI26 is the default and only project developed here. EP24, Hungary26 and Brazil26 are moving to separate project repositories. Historical compatibility code may remain, but it is dormant and must not drive new architecture or defaults. Human-readable/project-publication versions belong in the legacy EP24 or other project-specific repositories; this repository currently prioritizes machine-readable canonical data, reproducibility and Phase 2 operation over human-readable reports or legacy dashboards.
+> **The AI26 study only.** This repository's `main` branch is the active AI26 implementation. AI26 is the default and only project developed here. EP24, Hungary26 and Brazil26 are moving to separate project repositories. Historical compatibility code may remain, but it is dormant and must not drive new architecture or defaults. Human-readable/project-publication versions belong in the legacy EP24 or other project-specific repositories; this repository currently prioritizes machine-readable canonical data, reproducibility and current operation over human-readable reports or legacy dashboards.
 
 > [!IMPORTANT]
-> **Current development phase: Phase 2.** All Phase 2 work goes directly to `main`. The `phase-2` branch is a passive mirror of the validated `main` tree. The `phase-1` and `phase-0` branches are preserved historical baselines; Phase 3–4 stay isolated until explicitly promoted.
+> **Phases describe research papers, not software generations.** `main` is the single active
+> development branch: create short-lived branches from it and merge validated changes back.
+> `phase-N` branches are preserved historical references and are not synchronised, advanced or
+> deleted. Paper 1 / research Phase 1 is the current manuscript; Collection, Analysis and
+> Visualization are one continuously maintained system whose studies are configuration and data.
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/actions/workflows/tests.yml)
 
@@ -16,7 +20,7 @@
 
 The current flagship research programme is **[LaclauGPT: Ideological contestation over AI](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md)**. The canonical theoretical and methodological contract is **[THEORY.md](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)**.
 
-The framework is developed around Ernesto Laclau and Chantal Mouffe's discourse theory and Emilia Palonen's work on populism, polarisation and hegemonic dynamics. The underlying architecture may be reusable, but this repository is operationally scoped to **AI26 Phase 2 only**. Other studies belong in separate repositories.
+The framework is developed around Ernesto Laclau and Chantal Mouffe's discourse theory and Emilia Palonen's work on populism, polarisation and hegemonic dynamics. The underlying architecture may be reusable, but this repository is operationally scoped to **the AI26 study**. Other studies belong in separate repositories.
 
 > [!WARNING]
 > **Human-in-the-loop academic research only.** LaclauGPT's machine-generated summaries, classifications, discourse-theoretical codes, signifier roles, ideological formations, affects and other interpretations are preliminary analyses that must be verified by a human researcher. They are not ground truth or autonomous scholarly judgement. LaclauGPT is designed for academic research, not autonomous operational, administrative, intelligence, moderation, profiling or policy decisions about people or groups.
@@ -92,7 +96,7 @@ It provides one researcher-facing application with Monitor, Researcher Review, a
 - **Researcher Review**: one-record close reading with transcript, OCR, multimodal/frame evidence, human-readable summary, structured analysis fields, provenance, uncertainty, typed corrections, notes and rerun/reprocess requests.
 - **Explore**: shared filters, timelines, formation/topic/entity distributions, relation tables and graph-projection inputs.
 
-Counts, model confidence, graph degree and layout are descriptive aids. They do not by themselves establish hegemony, nodal status, empty/floating signification, antagonism or theoretical validity.\n\nPhase 1 also restores SNA visualization as an isolated downstream capability: it renders only an explicit upstream `NETWORK` product, preserves source/evidence provenance, and stays unavailable when Analysis has not supplied a stable network result. Visualization does not compute social ties, centrality, communities, or missing network structure. See `docs/PHASE1_SNA_VISUALIZATION.md`.
+Counts, model confidence, graph degree and layout are descriptive aids. They do not by themselves establish hegemony, nodal status, empty/floating signification, antagonism or theoretical validity.\n\nThe current pipeline also provides SNA visualization as an isolated downstream capability: it renders only an explicit upstream `NETWORK` product, preserves source/evidence provenance, and stays unavailable when Analysis has not supplied a stable network result. Visualization does not compute social ties, centrality, communities, or missing network structure. See `docs/PHASE1_SNA_VISUALIZATION.md`.
 
 ## Legacy / Specialized dashboards
 

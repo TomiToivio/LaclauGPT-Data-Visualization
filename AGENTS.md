@@ -3,6 +3,8 @@
 `main` is the active development branch. Create short-lived feature/fix branches from `main` and merge validated changes back to `main`. Research phases do not determine Git branch selection, and no `phase-N` branch synchronization is required. Existing phase branches can remain as historical references without being advanced or deleted.
 
 The programme is currently in **research Phase 1**. Phase 2 is optional and may be skipped. Phases 3 and 4 concern research analyses and results, not distinct coding or pipeline branches. Preserve all existing privacy, scientific-method, locked-paper, and module-boundary constraints.
+Technical work is planned as incremental change to the current working modules. A paper advancing is not a reason to propose a "Phase 2 pipeline", a "Phase 3 architecture" or a replacement design: the next research phase adds requirements to the same code, contracts and datasets. Prefer the live loop — collect real AI26 data reliably, analyse it with the existing pipeline, visualize and inspect the outputs, fix what is observed, improve coverage — over any structural rewrite that is not needed by a concrete fault.
+
 
 # AGENTS.md
 
@@ -23,7 +25,7 @@ The project-wide data contract is owned by [`TomiToivio/LaclauGPT`](https://gith
 
 ## AI26 active pipeline scope
 
-**This repository's `main` branch contains the active AI26 implementation (research Phase 1).**
+**This repository's `main` branch contains the active AI26 pipeline.** Research Phase 1 names the current paper, not the software generation.
 
 - AI26 is the only active/default study in this repository. New code, configuration, tests, examples, documentation, commands and agent work MUST assume AI26 unless Tomi explicitly says otherwise.
 - EP24, Hungary26 and Brazil26 are out of scope here. They will live in separate project repositories. Do not add new EP24/Hungary26/Brazil26 pipelines, codebooks, launchers, dashboards, adapters, deployment documentation or project-specific defaults here.
@@ -43,12 +45,12 @@ Agents should:
 - inspect data completeness, duplicates, missing timestamps/locations and backend inconsistencies before blaming the chart;
 - avoid implying causality, hegemony, ideological identity or theoretical validity from frequency/centrality/layout alone;
 - support maps, timelines, networks, comparisons and reports when the canonical data actually supports them;
-- prioritize operationally useful AI26 Phase 2 views and reproducible machine-readable outputs over presentation polish;
+- prioritize operationally useful AI26 views and reproducible machine-readable outputs over presentation polish;
 - leave legacy dashboards dormant; do not extend or polish them unless Tomi explicitly requests migration/maintenance.
 
 ## AI26 active study
 
-AI26 (`Ideological contestation over AI`) is the active and default study for Visualization. The current `main` implementation is AI26 Phase 2. Read `docs/AI26_REFERENCE_CASE.md` when adding examples, filters, dashboard documentation or synthetic fixtures.
+AI26 (`Ideological contestation over AI`) is the active and default study for Visualization. The current `main` implementation serves the AI26 study. Read `docs/AI26_REFERENCE_CASE.md` when adding examples, filters, dashboard documentation or synthetic fixtures.
 
 Use the three AI26 arenas (`elites`, `grassroots`, `parliamentary`) and the public AI26 codebook as realistic examples, but never hard-code them into core models or generic UI contracts. Arena is sampling provenance, not ideology.
 
