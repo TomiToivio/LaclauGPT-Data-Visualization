@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
 
 import pandas as pd
-from laclaugpt_visualization.ep24_reprocessed import STAGES, identity, status, unpack, text
+from laclaugpt_visualization.ep24_reprocessed import STAGES, identity, status, text, unpack
 
 COUNTRIES = ("finland", "poland", "portugal")
 ALIASES = {"fi": "finland", "pl": "poland", "pt": "portugal"}
@@ -116,7 +116,7 @@ def export(inputs, output):
             output / f"{name}.csv", index=False)
         child_counts[name] = len(rows)
     manifest = {
-        "schema": "ep24-reprocessed-demo/1", "exported_at_utc": datetime.now(timezone.utc).isoformat(),
+        "schema": "ep24-reprocessed-demo/1", "exported_at_utc": datetime.now(UTC).isoformat(),
         "source_files": [str(path) for path in inputs.values()],
         "records": len(work), "invalid_id_rows_excluded": invalid_count,
         "by_country": {c: int((work["country"] == c).sum()) for c in COUNTRIES},
