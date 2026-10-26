@@ -24,7 +24,17 @@ python scripts/ep24/export_demo.py \
   --output /private/LaclauGPT-Private/analysis/ep24/demo-export
 ```
 
-Inspect `manifest.json` for excluded bad IDs, row counts per country,
+Two properties of the real frames are handled explicitly, because both used to abort the export:
+
+* **a repeated identity** — a cumulative frame carries one video through several runs, each with
+  more stage output. The most complete row wins, the rest are counted in
+  `manifest.json → duplicate_rows_merged`; the merge is never silent.
+* **a shared source** — the Portuguese rows live inside the shared legacy `:8501` export that also
+  holds Finland, Poland, Sweden, …. Pass `--filter-country portugal=Portugal` to select that country
+  out of the file. Without a selector, a country mismatch still fails: two countries are never
+  silently merged.
+
+Inspect `manifest.json` for excluded bad IDs, row counts per country, merged duplicate rows,
 and per-stage availability. Outputs are `combined.csv`, three country CSVs,
 `records.jsonl`, child relation CSVs, and the manifest. The allowlist omits
 intermediate prompts, caches and scratch state while retaining final analyses.

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
+
 from laclaugpt_visualization.ep24_reprocessed import STAGES, identity, status, text, unpack
 
 COUNTRIES = ("finland", "poland", "portugal")
@@ -47,9 +48,19 @@ def _read(path):
     raise ValueError(f"Unsupported input: {path}")
 
 
-def export(inputs, output):
-    """Return manifest; fail fast for unrecognized files and absent input data."""
+def _completeness(row, fields):
+    """How much of the pipeline a row actually carries — used to pick one row per identity."""
+    return sum(1 for name in fields if text(row.get(name)))
+
+
+def export(inputs, output, selectors=None):
+    """Return manifest; fail fast for unrecognized files and absent input data.
+
+    ``selectors`` maps a country to the in-file ``country`` value to keep, for sources that hold
+    several countries (the shared legacy ``:8501`` export carries Finland, Poland, Portugal, …).
+    """
     output = Path(output)
+    selectors = {str(k).casefold(): str(v).casefold() for k, v in (selectors or {}).items()}
     if not inputs:
         raise ValueError("Pass one or more source CSV/JSONL files")
     frames = []
@@ -63,6 +74,14 @@ def export(inputs, output):
             raise ValueError(f"Unsupported country {name}")
         if "country" in frame:
             observed = frame["country"].map(_country)
+            wanted = selectors.get(country)
+            if wanted is not None:
+                # A deliberately shared source: select this country out of it instead of failing.
+                keep = observed.eq(wanted)
+                if not keep.any():
+                    raise ValueError(f"{path}: no rows for country {wanted!r}")
+                frame = frame.loc[keep].copy()
+                observed = observed.loc[keep]
             mismatched = observed[(observed != "") & (observed != country)]
             if not mismatched.empty:
                 raise ValueError(f"{path}: country mismatch in {len(mismatched)} rows")
@@ -78,10 +97,18 @@ def export(inputs, output):
     invalid = work["record_id"].eq("") | work.get("video_id", pd.Series("", index=work.index)).astype(str).str.strip().eq("")
     invalid_count = int(invalid.sum())
     work = work.loc[~invalid].copy()
-    duplicates = int(work.duplicated("record_id").sum())
-    if duplicates:
-        # Fail rather than silently discarding different versions/runs.
-        raise ValueError(f"{duplicates} duplicate source identities; select one checkpoint/run per country")
+    # A cumulative frame legitimately repeats one video through successive runs, each carrying more
+    # stage output than the last. Keeping the first occurrence would export a partly-filled row and
+    # understate coverage, so the most complete row of an identity wins and the rest are counted.
+    stage_fields = [k for k in present if k in {
+        *BASE, *(k for _, keys in STAGES.values() for k in keys)}]
+    duplicate_rows = int(work.duplicated("record_id").sum())
+    if duplicate_rows:
+        score = work.apply(lambda row: _completeness(row, stage_fields), axis=1)
+        order = score.sort_values(ascending=False, kind="stable").index
+        work = work.loc[order]
+        work = work.loc[~work["record_id"].duplicated(keep="first")].copy()
+        work = work.sort_values("record_id", kind="stable").reset_index(drop=True)
     for step in STAGES:
         work[f"step_{step}_status"] = [
             status(row, step) if step != 9 else "unavailable (RDF files not in row export)"
@@ -119,6 +146,7 @@ def export(inputs, output):
         "schema": "ep24-reprocessed-demo/1", "exported_at_utc": datetime.now(UTC).isoformat(),
         "source_files": [str(path) for path in inputs.values()],
         "records": len(work), "invalid_id_rows_excluded": invalid_count,
+        "duplicate_rows_merged": duplicate_rows,
         "by_country": {c: int((work["country"] == c).sum()) for c in COUNTRIES},
         "stage_status": {str(step): work[f"step_{step}_status"].value_counts().to_dict()
                          for step in STAGES},
@@ -138,8 +166,13 @@ def main():
     for name in COUNTRIES:
         parser.add_argument(f"--{name}", type=Path, required=True, help="Roihu cumulative CSV or JSONL")
     parser.add_argument("--output", type=Path, required=True, help="Private output directory")
+    parser.add_argument("--filter-country", action="append", default=[], metavar="COUNTRY=VALUE",
+                        help="source holds several countries: keep rows whose in-file country "
+                             "equals VALUE for COUNTRY (e.g. portugal=Portugal)")
     args = parser.parse_args()
-    print(json.dumps(export({c: getattr(args, c) for c in COUNTRIES}, args.output), indent=2))
+    selectors = dict(pair.split("=", 1) for pair in args.filter_country) if args.filter_country else {}
+    manifest = export({c: getattr(args, c) for c in COUNTRIES}, args.output, selectors)
+    print(json.dumps(manifest, indent=2))
 
 
 if __name__ == "__main__":
