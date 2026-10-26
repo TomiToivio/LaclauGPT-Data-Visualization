@@ -34,8 +34,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from export_visualization_data import COUNTRIES
-from export_visualization_data import main as export_main
+from export_streaming import COUNTRIES
+from export_streaming import main as export_main
 
 
 def _country_values(path: Path) -> list[str]:
