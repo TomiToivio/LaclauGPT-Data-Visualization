@@ -796,10 +796,17 @@ def write_manifest(output: Path, stats: Sequence[CountryStats], inputs: Mapping[
     total = sum(s.rows_exported for s in stats)
     coverage = {}
     for stat in stats:
+        # "0 records" and "this source has no such stage" are different findings: an unavailable
+        # stage must never read as a stage that ran and produced nothing.
         coverage[stat.country] = {
-            step: {"records": stat.stage_records.get(step, 0),
-                   "pct_of_exported": round(100 * stat.stage_records.get(step, 0) / stat.rows_exported, 1)
-                   if stat.rows_exported else 0.0}
+            step: ({"records": 0, "available": False,
+                    "reason": "stage not present in this source (legacy/pre-Roihu frame)",
+                    "pct_of_exported": 0.0}
+                   if step in stat.stage_unavailable else
+                   {"records": stat.stage_records.get(step, 0), "available": True,
+                    "pct_of_exported": round(100 * stat.stage_records.get(step, 0)
+                                             / stat.rows_exported, 1)
+                    if stat.rows_exported else 0.0})
             for step in STAGE_FIELDS
         }
     manifest = {
