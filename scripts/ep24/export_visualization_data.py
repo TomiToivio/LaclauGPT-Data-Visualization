@@ -326,7 +326,7 @@ def clean_scalar(value: Any, limit: int = 400) -> str:
     return text[:limit]
 
 
-def identity_key(country: str, row: Mapping[str, str]) -> str:
+def identity_key(country: str, row: Mapping[str, str], *, require_video_id: bool = False) -> str:
     """A stable, collision-free key for one source row.
 
     ``video_id`` alone is **not** unique in the EP24 corpus (HEPP24 ids collide across folders and
@@ -335,6 +335,8 @@ def identity_key(country: str, row: Mapping[str, str]) -> str:
     media key, recording, segment and platform. The human-readable ``video_id`` stays a visible
     column, and only *identical* tuples are treated as duplicates.
     """
+    if require_video_id and not (cell(row, "video_id") or cell(row, "_storage_id")):
+        return ""
     media = cell(row, "allas_filename") or cell(row, "_storage_id")
     if media:
         # the contract calls allas_filename the authoritative media key; _storage_id is its fallback
@@ -562,7 +564,8 @@ def iter_source(source: Path) -> Iterator[tuple[int, dict[str, str]]]:
 
 
 def select_primary_rows(source: Path, country: str, profile: str, limit: int | None,
-                        filter_value: str | None) -> tuple[dict[str, int], CountryStats]:
+                        filter_value: str | None,
+                        require_video_id: bool = False) -> tuple[dict[str, int], CountryStats]:
     """Pass 1: choose one *most complete* row per identity, and count what was seen.
 
     Keeping the first occurrence would export a video's early, partly-filled row and understate stage
@@ -577,7 +580,7 @@ def select_primary_rows(source: Path, country: str, profile: str, limit: int | N
         if filter_value is not None and cell(row, "country").lower() != filter_value.lower():
             continue
         stats.rows_read += 1
-        key = identity_key(country, row)
+        key = identity_key(country, row, require_video_id=require_video_id)
         if not key:
             stats.invalid_ids += 1
             continue
@@ -595,11 +598,13 @@ def select_primary_rows(source: Path, country: str, profile: str, limit: int | N
 
 def export_country(country: str, source: Path, output: Path, limit: int | None,
                    manifest_inputs: dict[str, Any], *, profile: str = "reprocessed",
-                   filter_value: str | None = None) -> CountryStats:
+                   filter_value: str | None = None,
+                   require_video_id: bool = False) -> CountryStats:
     stats = CountryStats(country=country, source_path=str(source),
                          source_bytes=source.stat().st_size, source_sha256=sha256_file(source))
 
-    winners, pre_stats = select_primary_rows(source, country, profile, limit, filter_value)
+    winners, pre_stats = select_primary_rows(source, country, profile, limit, filter_value,
+                                             require_video_id)
     stats.rows_read = pre_stats.rows_read
     stats.duplicates = pre_stats.duplicates
     stats.invalid_ids = pre_stats.invalid_ids
@@ -654,7 +659,7 @@ def export_country(country: str, source: Path, output: Path, limit: int | None,
                     break
                 if filter_value is not None and cell(row, "country").lower() != filter_value.lower():
                     continue
-                key = identity_key(country, row)
+                key = identity_key(country, row, require_video_id=require_video_id)
                 # export only the most complete row for this identity (chosen in pass 1)
                 if not key or winners.get(key) != number:
                     continue
@@ -926,6 +931,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--filter-country", action="append", default=[], metavar="COUNTRY=VALUE",
                         help="keep only rows whose in-file country equals VALUE "
                              "(a shared legacy file may hold many countries)")
+    parser.add_argument("--require-video-id", action="store_true", default=False,
+                        help="treat a row without video_id/_storage_id as unusable even when it "
+                             "carries a media key (the historical export_demo contract)")
     parser.add_argument("--fail-on-unaccounted", action="store_true", default=True,
                         help="fail when a producer column is neither kept nor dropped (default)")
     parser.add_argument("--allow-unaccounted", dest="fail_on_unaccounted", action="store_false")
@@ -948,7 +956,8 @@ def main(argv: list[str] | None = None) -> int:
     inputs: dict[str, Any] = {}
     stats = [export_country(country, path, output, args.limit, inputs,
                             profile=(profile or args.profile),
-                            filter_value=filters.get(country))
+                            filter_value=filters.get(country),
+                            require_video_id=args.require_video_id)
              for country, (path, profile) in sources.items()]
 
     combined = write_combined(output, [c for c in COUNTRIES if c in sources])
