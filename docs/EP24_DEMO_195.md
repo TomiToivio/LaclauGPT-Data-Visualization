@@ -24,12 +24,24 @@ python scripts/ep24/export_demo.py \
   --output /private/LaclauGPT-Private/analysis/ep24/demo-export
 ```
 
-Inspect `manifest.json` for excluded bad IDs, row counts per country,
-and per-stage availability. Outputs are `combined.csv`, three country CSVs,
-`records.jsonl`, child relation CSVs, and the manifest. The allowlist omits
-intermediate prompts, caches and scratch state while retaining final analyses.
-Structured child records remain JSON in `item_json` with stable `record_id`.
-Do not interpret a stage's present output as human-validated research.
+`export_demo.py` is a thin adapter over `export_visualization_data.py`, which streams the frame
+(a 1.1 GB cumulative CSV is normal, so the file is never loaded whole) and chooses, for a video that
+appears several times, the row that carries the **most** stage output rather than the first one.
+
+Inspect `MANIFEST.json` for source hashes, row counts per country (read / exported / duplicates /
+unusable ids) and per-stage coverage with denominators; `QA_REPORT.md` says what is missing and what
+failed to parse. Outputs are `combined.csv`, three country CSVs, a gzipped text bundle with each
+stage's human- and machine-readable output (`text.jsonl.gz`, `<country>_text.jsonl.gz`), the child
+tables `entities.csv`, `discourse_claims.csv`, `dna_statements.csv`, `sna_nodes.csv`,
+`sna_edges.csv`, `rdf_resources.csv`, plus `MANIFEST.json`, `QA_REPORT.md` and
+`DATA_DICTIONARY.md`. Every column is either kept, derived or dropped **with a reason**, and an
+unclassified producer column fails the build rather than disappearing.
+
+**Country casing and shared files.** Real frames say `Poland`, not `poland`, and the Portuguese
+rows live inside a shared export that also holds other countries; an exact lowercase match aborts the
+export. Use `--filter-country portugal=Portugal` for a shared file, and `:legacy` on a source whose
+frame predates the Roihu steps — every reprocessed stage is then reported as *unavailable*, never as
+zero records. Do not interpret a stage's present output as human-validated research.
 
 Step 9 RDF files must be copied/mounted separately with permission; the
 exporter deliberately does not claim a per-record RDF completion state from
