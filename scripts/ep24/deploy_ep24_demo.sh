@@ -44,7 +44,8 @@ echo "== external check"
 # `hostname -I` is the host's *internal* address, which is not the address a researcher opens and is
 # routinely unreachable from here — it printed a misleading "000" on every deploy. Check the address
 # people actually use, and say what a failure means.
-PUBLIC_HOST="${PUBLIC_HOST:-$HOST}"
+# An SSH alias ("SpectacleScraper") is not resolvable by curl, so resolve it through ssh -G first.
+PUBLIC_HOST="${PUBLIC_HOST:-$(ssh -G "$HOST" 2>/dev/null | awk '/^hostname /{print $2; exit}')}"
 code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://$PUBLIC_HOST:$PORT/" || true)"
 if [ "$code" = "200" ]; then
     echo "reachable: http://$PUBLIC_HOST:$PORT/"
