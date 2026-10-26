@@ -6,14 +6,47 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from laclaugpt_visualization.ep24_reprocessed import (
-    SCHEMA_VERSION, STAGES, identity, multilayer, rdf_files,
-    read_records, rows, status, text, unpack,
-)
+# Run from anywhere: `streamlit run src/laclaugpt_visualization/ep24_reprocessed_app.py` puts the
+# package directory (not src/) on sys.path, so make the package importable explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+try:  # normal case: the package is importable (development, pip install -e .)
+    from laclaugpt_visualization.ep24_reprocessed import (
+        SCHEMA_VERSION,
+        STAGES,
+        coverage_rows,
+        identity,
+        multilayer,
+        rdf_files,
+        read_manifest,
+        read_records,
+        rows,
+        status,
+        text,
+        unpack,
+    )
+except ModuleNotFoundError:  # standalone deployment: only this module was shipped
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from ep24_reprocessed import (  # type: ignore[no-redef]
+        SCHEMA_VERSION,
+        STAGES,
+        coverage_rows,
+        identity,
+        multilayer,
+        rdf_files,
+        read_manifest,
+        read_records,
+        rows,
+        status,
+        text,
+        unpack,
+    )
 
 st.set_page_config(page_title="EP24 Reprocessed", layout="wide")
 st.title("EP24 Reprocessed · research explorer")
@@ -21,9 +54,20 @@ st.caption("Read-only multimodal pipeline evidence | Separate from AI26 | " + SC
 root = st.sidebar.text_input("Private EP24 exported data root",
                              value=os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR", "data"))
 frame = read_records(root)
+manifest = read_manifest(root)
 if frame.empty:
     st.info("No local EP24 export found. Provide a private combined.csv, records.jsonl or SQLite database. No records are fabricated.")
     st.stop()
+
+if "country" in frame:
+    totals = frame["country"].fillna("unknown").astype(str).value_counts()
+    st.sidebar.markdown("### Corpus")
+    st.sidebar.caption(f"{int(totals.sum())} records in this export")
+    scopes = ["All countries"] + [f"{name} ({count})" for name, count in totals.items()]
+    scope = st.sidebar.radio("Country scope", scopes)
+    if scope != "All countries":
+        picked = scope.rsplit(" (", 1)[0]
+        frame = frame[frame["country"].fillna("unknown").astype(str) == picked]
 
 for column, label in (("country", "Country"), ("source_type", "Platform"),
                       ("source_language", "Language"), ("laclau_status", "Discourse status")):
@@ -40,17 +84,25 @@ view = st.sidebar.radio("Research view", [
     "Pipeline overview", "Multimodal · Steps 0–5",
     "Laclaudian discourse · Step 6", "DNA · Step 7",
     "Social network · Step 8", "Combined multilayer", "RDF · Step 9",
-    "Legacy / QA"
+    "Legacy / QA", "Data & methods",
 ])
 data = rows(frame)
 st.caption(f"{len(data)} records match current filters. All graph views are bounded and evidence-linked.")
 
 def table(items, key):
-    if items:
-        st.dataframe(pd.DataFrame(items), use_container_width=True,
-                     on_select="rerun", selection_mode="single-row", key=key)
-    else:
+    """A table whose selected row becomes the inspected record (drilldown to source)."""
+    if not items:
         st.info("No exported evidence available for this view.")
+        return
+    event = st.dataframe(pd.DataFrame(items), use_container_width=True,
+                         on_select="rerun", selection_mode="single-row", key=key)
+    chosen = getattr(event, "selection", None)
+    rows_selected = list(getattr(chosen, "rows", []) or [])
+    if rows_selected:
+        document = (items[rows_selected[0]] or {}).get("document")
+        if document:
+            st.session_state["ep24_inspect"] = document
+            st.caption(f"Selected `{document}` — the inspector below follows the selection.")
 
 def pick_record():
     names = [(identity(row), row) for row in data if identity(row)]
@@ -58,8 +110,11 @@ def pick_record():
         st.warning("No records with stable source identities")
         return None
     labels = [f"{i+1}: {name}" for i, (name, _) in enumerate(names)]
-    selected = st.selectbox("Inspect source record", range(len(labels)),
+    wanted = st.session_state.get("ep24_inspect")
+    default = next((i for i, (name, _) in enumerate(names) if name == wanted), 0)
+    selected = st.selectbox("Inspect source record", range(len(labels)), index=default,
                             format_func=lambda i: labels[i])
+    st.session_state["ep24_inspect"] = names[selected][0]
     return names[selected][1]
 
 def inspect(row):
@@ -79,9 +134,10 @@ def inspect(row):
                         5: ("postprocess_", "ep24_"), 6: ("laclau_", "formula_of_populism_"),
                         7: ("dna_",), 8: ("sna_",)}
             for key in row:
-                if key not in values and any(key.startswith(prefix) for prefix in prefixes.get(step, ())):
-                    if text(row.get(key)):
-                        values[key] = unpack(row[key])
+                if (key not in values
+                        and any(key.startswith(prefix) for prefix in prefixes.get(step, ()))
+                        and text(row.get(key))):
+                    values[key] = unpack(row[key])
             st.json(values if values else {"availability": "not exported"})
     with st.expander("Complete source/export row"):
         st.json({k: unpack(v) for k, v in row.items()})
@@ -175,10 +231,44 @@ elif view == "RDF · Step 9":
         st.info("No graph.ttl or graph.nt exported. Step 9 cannot be marked complete.")
     for p in files:
         st.write({"file": str(p.relative_to(root)), "bytes": p.stat().st_size})
-        with st.expander("Preview RDF (first 40 lines)"):
-            with p.open(encoding="utf-8", errors="replace") as stream:
-                st.code("".join([next(stream, "") for _ in range(40)]), language="turtle")
+        with st.expander("Preview RDF (first 40 lines)"), \
+                p.open(encoding="utf-8", errors="replace") as stream:
+            st.code("".join([next(stream, "") for _ in range(40)]), language="turtle")
     inspect(pick_record())
+elif view == "Data & methods":
+    st.subheader("Export manifest and stage coverage")
+    if not manifest:
+        st.info("No MANIFEST.json next to the export. Coverage cannot be asserted without it.")
+    else:
+        st.caption(f"Builder `{manifest.get('builder_version')}` · generated "
+                   f"{manifest.get('generated_at')} · schema {SCHEMA_VERSION}")
+        counts = manifest.get("record_counts") or {}
+        rows_counts = [{"country": k, **v} for k, v in counts.items() if isinstance(v, dict)]
+        table(rows_counts, "manifest_counts")
+        covering = coverage_rows(manifest)
+        if covering:
+            st.markdown("**Stage coverage** — denominator is that country's exported records.")
+            st.dataframe(pd.DataFrame(covering), use_container_width=True)
+        inputs = manifest.get("inputs") or {}
+        profiles = {k: (v or {}).get("profile", "reprocessed") for k, v in inputs.items()}
+        st.markdown("**Source profile per country**")
+        st.write(profiles)
+        dropped = {k: (v or {}).get("dropped_reasons") or {} for k, v in inputs.items()}
+        with st.expander("Dropped source columns and why"):
+            for country, reasons in dropped.items():
+                if reasons:
+                    st.markdown(f"*{country}*")
+                    st.dataframe(pd.DataFrame([{"column": c, "reason": r}
+                                               for c, r in sorted(reasons.items())]),
+                                 use_container_width=True)
+        unaccounted = manifest.get("unaccounted_source_columns") or {}
+        if any(unaccounted.values()):
+            st.warning("Unclassified producer columns: " + json.dumps(unaccounted))
+        failures = manifest.get("parse_failures") or {}
+        if any(any(v.values()) for v in failures.values() if isinstance(v, dict)):
+            st.warning("Unparseable JSON cells (excluded from child tables): " + json.dumps(failures))
+        st.caption("A status field proves a stage ran. It does not validate the interpretation, "
+                   "and a missing stage is never read as \"no phenomenon\".")
 else:
     st.caption("Raw export QA and optional legacy comparison; nothing auto-corrected.")
     st.write({"duplicate_namespaced_ids":
