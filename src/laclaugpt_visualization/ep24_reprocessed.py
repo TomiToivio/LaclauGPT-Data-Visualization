@@ -226,3 +226,46 @@ def multilayer(records: list[Mapping[str, Any]], max_records: int = 1000,
     if len(edges) >= max_edges:
         warnings.append(f"Graph capped at {max_edges} edges")
     return Graph(tuple(nodes.values()), tuple(edges.values()), tuple(warnings))
+
+def read_manifest(root: str | Path) -> dict[str, Any]:
+    """The export's own manifest, if present. An absent manifest is reported, never invented."""
+    root = Path(root)
+    for folder in (root, root / "data"):
+        path = folder / "MANIFEST.json"
+        if path.is_file():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                return {}
+    return {}
+
+
+def coverage_rows(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """One row per country and stage: how many records carry it, and out of how many.
+
+    A denominator of zero means the country has no exported records, not that the stage is empty.
+    An ``unavailable`` stage is marked as such rather than rendered as 0 %.
+    """
+    rows_out: list[dict[str, Any]] = []
+    counts = manifest.get("record_counts") or {}
+    coverage = manifest.get("stage_coverage") or {}
+    unavailable = {country: set(data.get("stage_unavailable") or ())
+                   for country, data in (manifest.get("inputs") or {}).items()
+                   if isinstance(data, Mapping)}
+    for country, stages in coverage.items():
+        denominator = 0
+        if isinstance(counts.get(country), Mapping):
+            denominator = int(counts[country].get("exported") or 0)
+        profile = (manifest.get("inputs", {}).get(country) or {}).get("profile", "reprocessed")
+        for stage, data in stages.items():
+            records = int((data or {}).get("records") or 0)
+            missing = stage in unavailable.get(country, set())
+            rows_out.append({
+                "country": country, "profile": profile, "stage": stage,
+                "records": records, "denominator": denominator,
+                "coverage_pct": None if missing or not denominator
+                else round(100 * records / denominator, 1),
+                "availability": "unavailable in this source" if missing else
+                ("no records" if not records else "present"),
+            })
+    return rows_out
