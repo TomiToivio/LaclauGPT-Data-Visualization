@@ -41,10 +41,11 @@ import gzip
 import hashlib
 import json
 import sys
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping, Sequence
+from typing import Any
 
 csv.field_size_limit(200 * 1024 * 1024)
 
@@ -503,8 +504,7 @@ def child_rows(row: Mapping[str, str], key: str, stats: CountryStats) -> dict[st
     if isinstance(structured, dict):
         for section, value in structured.items():
             if isinstance(value, list):
-                for item in _item_rows(value, key, f"discourse:{section}"):
-                    claims.append(item)
+                claims.extend(_item_rows(value, key, f"discourse:{section}"))
             elif isinstance(value, (str, int, float)) and str(value).strip():
                 claims.append({
                     "record_key": key, "item_index": "0", "kind": f"discourse:{section}",
@@ -558,8 +558,7 @@ def iter_source(source: Path) -> Iterator[tuple[int, dict[str, str]]]:
     with source.open("r", encoding="utf-8", errors="replace", newline="") as handle:
         reader = csv.DictReader(handle)
         reader.fieldnames = [name.lstrip("\ufeff") for name in (reader.fieldnames or ())]
-        for number, row in enumerate(reader):
-            yield number, row
+        yield from enumerate(reader)
 
 
 def select_primary_rows(source: Path, country: str, profile: str, limit: int | None,
@@ -868,30 +867,30 @@ def write_dictionary(output: Path) -> None:
              "Every artifact is keyed by `record_key` (`country/video_id`).", "",
              "## Files", "",
              "| file | shape | meaning |", "| --- | --- | --- |",
-             "| `combined.csv`, `<country>.csv` | one row per video | identity, stage statuses, "
-             "derived counts; the researcher-facing table |",
-             "| `text.jsonl.gz`, `<country>_text.jsonl.gz` | one JSON object per video | the "
-             "human-readable and machine-readable output of every stage, keyed by step |",
-             "| `entities.csv` | one row per entity/theme mention | `kind` distinguishes model "
-             "(step 5) from legacy entity columns |",
-             "| `discourse_claims.csv` | one row per Laclau/Palonen coding section or statement | "
-             "model-coded hypotheses, traceable to the record |",
-             "| `dna_statements.csv` | one row per actor–concept statement | Step 7, evidence quote "
-             "in `evidence` when the producer supplies one |",
-             "| `sna_nodes.csv`, `sna_edges.csv` | one row per node/edge | Step 8 empirical graph; "
-             "actor–actor only when the producer emitted an edge |",
-             "| `rdf_resources.csv` | one row per record | Step 9 export status/resources, when the "
-             "producer writes them into the frame (Step 9 is otherwise file-based) |",
-             "| `MANIFEST.json` | — | source hashes, row counts, stage coverage, kept/dropped "
-             "columns with reasons |",
+             ("| `combined.csv`, `<country>.csv` | one row per video | identity, stage statuses, "
+             "derived counts; the researcher-facing table |"),
+             ("| `text.jsonl.gz`, `<country>_text.jsonl.gz` | one JSON object per video | the "
+             "human-readable and machine-readable output of every stage, keyed by step |"),
+             ("| `entities.csv` | one row per entity/theme mention | `kind` distinguishes model "
+             "(step 5) from legacy entity columns |"),
+             ("| `discourse_claims.csv` | one row per Laclau/Palonen coding section or statement | "
+             "model-coded hypotheses, traceable to the record |"),
+             ("| `dna_statements.csv` | one row per actor–concept statement | Step 7, evidence quote "
+             "in `evidence` when the producer supplies one |"),
+             ("| `sna_nodes.csv`, `sna_edges.csv` | one row per node/edge | Step 8 empirical graph; "
+             "actor–actor only when the producer emitted an edge |"),
+             ("| `rdf_resources.csv` | one row per record | Step 9 export status/resources, when the "
+             "producer writes them into the frame (Step 9 is otherwise file-based) |"),
+             ("| `MANIFEST.json` | — | source hashes, row counts, stage coverage, kept/dropped "
+             "columns with reasons |"),
              "| `QA_REPORT.md` | — | what is present, what is missing, what failed to parse |", "",
              "## Derived columns", "", "| column | meaning |", "| --- | --- |"]
     lines += [f"| `{name}` | {reason} |" for name, reason in DERIVED_COLUMNS.items()]
     lines += ["", "## Dropped columns and why", "", "| column | reason |", "| --- | --- |"]
     lines += [f"| `{name}` | {reason} |" for name, reason in sorted(DROP_REASONS.items())]
-    lines += ["", "Dropping a backend payload is not a data loss: prompt contexts, retrieval "
+    lines += ["", ("Dropping a backend payload is not a data loss: prompt contexts, retrieval "
               "payloads, hashes and telemetry are regenerable, and every *finding* they inform is "
-              "kept in its own stage block."]
+              "kept in its own stage block.")]
     (output / "DATA_DICTIONARY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -943,7 +942,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("refusing to write into the source directory")
 
     output.mkdir(parents=True, exist_ok=True)
-    generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    generated_at = datetime.now(UTC).isoformat(timespec="seconds")
     filters = dict(pair.split("=", 1) for pair in args.filter_country) if args.filter_country else {}
     filters = {k.strip().lower(): v.strip() for k, v in filters.items()}
     inputs: dict[str, Any] = {}

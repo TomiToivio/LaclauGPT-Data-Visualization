@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts" / "ep24"))
 
-import export_visualization_data as export  # noqa: E402
+import export_visualization_data as export
 
 
 def write_source(path: Path, rows: list[dict[str, str]], columns: list[str]) -> None:

@@ -14,8 +14,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from laclaugpt_visualization.ep24_reprocessed import (  # noqa: E402
-    coverage_rows, read_manifest, status,
+from laclaugpt_visualization.ep24_reprocessed import (
+    coverage_rows,
+    read_manifest,
+    status,
 )
 
 MANIFEST = {

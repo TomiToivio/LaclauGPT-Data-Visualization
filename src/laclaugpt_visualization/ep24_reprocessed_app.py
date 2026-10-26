@@ -18,14 +18,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 try:  # normal case: the package is importable (development, pip install -e .)
     from laclaugpt_visualization.ep24_reprocessed import (
-        SCHEMA_VERSION, STAGES, coverage_rows, identity, multilayer, rdf_files,
-        read_manifest, read_records, rows, status, text, unpack,
+        SCHEMA_VERSION,
+        STAGES,
+        coverage_rows,
+        identity,
+        multilayer,
+        rdf_files,
+        read_manifest,
+        read_records,
+        rows,
+        status,
+        text,
+        unpack,
     )
 except ModuleNotFoundError:  # standalone deployment: only this module was shipped
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from ep24_reprocessed import (  # type: ignore[no-redef]
-        SCHEMA_VERSION, STAGES, coverage_rows, identity, multilayer, rdf_files,
-        read_manifest, read_records, rows, status, text, unpack,
+        SCHEMA_VERSION,
+        STAGES,
+        coverage_rows,
+        identity,
+        multilayer,
+        rdf_files,
+        read_manifest,
+        read_records,
+        rows,
+        status,
+        text,
+        unpack,
     )
 
 st.set_page_config(page_title="EP24 Reprocessed", layout="wide")
@@ -114,9 +134,10 @@ def inspect(row):
                         5: ("postprocess_", "ep24_"), 6: ("laclau_", "formula_of_populism_"),
                         7: ("dna_",), 8: ("sna_",)}
             for key in row:
-                if key not in values and any(key.startswith(prefix) for prefix in prefixes.get(step, ())):
-                    if text(row.get(key)):
-                        values[key] = unpack(row[key])
+                if (key not in values
+                        and any(key.startswith(prefix) for prefix in prefixes.get(step, ()))
+                        and text(row.get(key))):
+                    values[key] = unpack(row[key])
             st.json(values if values else {"availability": "not exported"})
     with st.expander("Complete source/export row"):
         st.json({k: unpack(v) for k, v in row.items()})
@@ -210,9 +231,9 @@ elif view == "RDF · Step 9":
         st.info("No graph.ttl or graph.nt exported. Step 9 cannot be marked complete.")
     for p in files:
         st.write({"file": str(p.relative_to(root)), "bytes": p.stat().st_size})
-        with st.expander("Preview RDF (first 40 lines)"):
-            with p.open(encoding="utf-8", errors="replace") as stream:
-                st.code("".join([next(stream, "") for _ in range(40)]), language="turtle")
+        with st.expander("Preview RDF (first 40 lines)"), \
+                p.open(encoding="utf-8", errors="replace") as stream:
+            st.code("".join([next(stream, "") for _ in range(40)]), language="turtle")
     inspect(pick_record())
 elif view == "Data & methods":
     st.subheader("Export manifest and stage coverage")
