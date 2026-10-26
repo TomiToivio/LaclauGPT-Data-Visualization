@@ -18,15 +18,16 @@ from laclaugpt_visualization.ep24_reprocessed import (
 st.set_page_config(page_title="EP24 Reprocessed", layout="wide")
 st.title("EP24 Reprocessed · research explorer")
 st.caption("Read-only multimodal pipeline evidence | Separate from AI26 | " + SCHEMA_VERSION)
-root = st.sidebar.text_input("Private EP24 exported data root",
-                             value=os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR", "data"))
+root = os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR", "data")
+st.sidebar.caption("Read-only data root configured by the server operator.")
 frame = read_records(root)
 if frame.empty:
     st.info("No local EP24 export found. Provide a private combined.csv, records.jsonl or SQLite database. No records are fabricated.")
     st.stop()
 
 for column, label in (("country", "Country"), ("source_type", "Platform"),
-                      ("source_language", "Language"), ("laclau_status", "Discourse status")):
+                      ("source_language", "Language"), ("language", "Source language"),
+                      ("laclau_status", "Discourse status")):
     if column in frame:
         options = sorted(frame[column].dropna().astype(str).unique().tolist())
         selected = st.sidebar.multiselect(label, options)
@@ -36,6 +37,17 @@ if "video_id" in frame:
     query = st.sidebar.text_input("Video ID contains")
     if query:
         frame = frame[frame["video_id"].astype(str).str.contains(query, case=False, regex=False)]
+date_field = next((key for key in ("created_at", "published_at", "source_recording")
+                   if key in frame.columns), None)
+if date_field is not None:
+    dates = pd.to_datetime(frame[date_field], errors="coerce", utc=True)
+    valid_dates = dates.dropna()
+    if not valid_dates.empty:
+        beginning, ending = valid_dates.min().date(), valid_dates.max().date()
+        picked = st.sidebar.date_input("Publication / recording date", value=(beginning, ending),
+                                        min_value=beginning, max_value=ending)
+        if isinstance(picked, (tuple, list)) and len(picked) == 2:
+            frame = frame.loc[dates.dt.date.between(picked[0], picked[1])]
 view = st.sidebar.radio("Research view", [
     "Pipeline overview", "Multimodal · Steps 0–5",
     "Laclaudian discourse · Step 6", "DNA · Step 7",
@@ -44,6 +56,9 @@ view = st.sidebar.radio("Research view", [
 ])
 data = rows(frame)
 st.caption(f"{len(data)} records match current filters. All graph views are bounded and evidence-linked.")
+st.download_button("Download filtered video table (CSV)", data=frame.to_csv(index=False).encode("utf-8-sig"),
+                   file_name="ep24_filtered_videos.csv", mime="text/csv",
+                   help="Contains the current filtered research data; only download to an approved location.")
 
 def table(items, key):
     if items:
