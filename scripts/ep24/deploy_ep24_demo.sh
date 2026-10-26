@@ -41,6 +41,17 @@ sleep 12
 ss -ltn | grep -q ':$PORT ' && echo LISTENING || { echo DOWN; tail -20 /tmp/ep24_demo_$PORT.log; exit 1; }"
 
 echo "== external check"
-HOSTNAME_OR_IP="$(ssh "$HOST" "hostname -I | awk '{print \$1}'")"
-curl -s -o /dev/null -m 10 -w "http://$HOSTNAME_OR_IP:$PORT/ -> %{http_code}\n" "http://$HOSTNAME_OR_IP:$PORT/" || true
+# `hostname -I` is the host's *internal* address, which is not the address a researcher opens and is
+# routinely unreachable from here — it printed a misleading "000" on every deploy. Check the address
+# people actually use, and say what a failure means.
+# An SSH alias ("SpectacleScraper") is not resolvable by curl, so resolve it through ssh -G first.
+PUBLIC_HOST="${PUBLIC_HOST:-$(ssh -G "$HOST" 2>/dev/null | awk '/^hostname /{print $2; exit}')}"
+code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://$PUBLIC_HOST:$PORT/" || true)"
+if [ "$code" = "200" ]; then
+    echo "reachable: http://$PUBLIC_HOST:$PORT/"
+else
+    echo "NOT reachable from here: http://$PUBLIC_HOST:$PORT/ -> ${code:-timeout}"
+    echo "  Service up locally?  ssh $HOST 'ss -ltn | grep :$PORT'"
+    echo "  If it listens but is unreachable, port $PORT is closed in the host firewall."
+fi
 echo "done: inspect /tmp/ep24_demo_$PORT.log on the host for runtime errors"
