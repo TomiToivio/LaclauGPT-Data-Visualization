@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.ep24.export_demo import export  # noqa: E402
+from scripts.ep24.export_demo import export
 
 
 def _frame(path: Path, rows: list[dict]) -> Path:
