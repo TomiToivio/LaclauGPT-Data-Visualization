@@ -10,6 +10,17 @@ restricted documentation; large or sensitive datasets should remain on approved
 CSC private storage, mounted into the private data root. A private GitHub repo is
 not automatically an approved store for sensitive research records.
 
+## Which exporter
+
+| tool | for | contract |
+| --- | --- | --- |
+| `scripts/ep24/export_visualization_data.py` | the documented, canonical entrypoint | `--countries/--input/--output`, `qa.json`, `records.jsonl`, `record_id` |
+| `scripts/ep24/export_demo.py` | the runbook CLI below | `--finland/--poland/--portugal`, delegates to the streaming exporter |
+| `scripts/ep24/export_streaming.py` | frames that are actually large (the Finnish cumulative frame is 1.1 GB) and pre-Roihu sources | streams the CSV, `:legacy` profile, per-stage text bundle, `MANIFEST.json`, `QA_REPORT.md` |
+
+Use the streaming variant when the canonical exporter cannot cope: a >500 MB frame, a country whose
+source predates the Roihu steps, or a shared file out of which one country must be selected.
+
 ## Export on an authorized host
 
 Install the repository, then run from the repository root with your authorized
