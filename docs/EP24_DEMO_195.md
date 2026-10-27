@@ -10,6 +10,17 @@ restricted documentation; large or sensitive datasets should remain on approved
 CSC private storage, mounted into the private data root. A private GitHub repo is
 not automatically an approved store for sensitive research records.
 
+## Which exporter
+
+| tool | for | contract |
+| --- | --- | --- |
+| `scripts/ep24/export_visualization_data.py` | the documented, canonical entrypoint | `--countries/--input/--output`, `qa.json`, `records.jsonl`, `record_id` |
+| `scripts/ep24/export_demo.py` | the runbook CLI below | `--finland/--poland/--portugal`, delegates to the streaming exporter |
+| `scripts/ep24/export_streaming.py` | frames that are actually large (the Finnish cumulative frame is 1.1 GB) and pre-Roihu sources | streams the CSV, `:legacy` profile, per-stage text bundle, `MANIFEST.json`, `QA_REPORT.md` |
+
+Use the streaming variant when the canonical exporter cannot cope: a >500 MB frame, a country whose
+source predates the Roihu steps, or a shared file out of which one country must be selected.
+
 ## Export on an authorized host
 
 Install the repository, then run from the repository root with your authorized
@@ -24,22 +35,24 @@ python scripts/ep24/export_demo.py \
   --output /private/LaclauGPT-Private/analysis/ep24/demo-export
 ```
 
-Two properties of the real frames are handled explicitly, because both used to abort the export:
+`export_demo.py` is a thin adapter over `export_visualization_data.py`, which streams the frame
+(a 1.1 GB cumulative CSV is normal, so the file is never loaded whole) and chooses, for a video that
+appears several times, the row that carries the **most** stage output rather than the first one.
 
-* **a repeated identity** — a cumulative frame carries one video through several runs, each with
-  more stage output. The most complete row wins, the rest are counted in
-  `manifest.json → duplicate_rows_merged`; the merge is never silent.
-* **a shared source** — the Portuguese rows live inside the shared legacy `:8501` export that also
-  holds Finland, Poland, Sweden, …. Pass `--filter-country portugal=Portugal` to select that country
-  out of the file. Without a selector, a country mismatch still fails: two countries are never
-  silently merged.
+Inspect `MANIFEST.json` for source hashes, row counts per country (read / exported / duplicates /
+unusable ids) and per-stage coverage with denominators; `QA_REPORT.md` says what is missing and what
+failed to parse. Outputs are `combined.csv`, three country CSVs, a gzipped text bundle with each
+stage's human- and machine-readable output (`text.jsonl.gz`, `<country>_text.jsonl.gz`), the child
+tables `entities.csv`, `discourse_claims.csv`, `dna_statements.csv`, `sna_nodes.csv`,
+`sna_edges.csv`, `rdf_resources.csv`, plus `MANIFEST.json`, `QA_REPORT.md` and
+`DATA_DICTIONARY.md`. Every column is either kept, derived or dropped **with a reason**, and an
+unclassified producer column fails the build rather than disappearing.
 
-Inspect `manifest.json` for excluded bad IDs, row counts per country, merged duplicate rows,
-and per-stage availability. Outputs are `combined.csv`, three country CSVs,
-`records.jsonl`, child relation CSVs, and the manifest. The allowlist omits
-intermediate prompts, caches and scratch state while retaining final analyses.
-Structured child records remain JSON in `item_json` with stable `record_id`.
-Do not interpret a stage's present output as human-validated research.
+**Country casing and shared files.** Real frames say `Poland`, not `poland`, and the Portuguese
+rows live inside a shared export that also holds other countries; an exact lowercase match aborts the
+export. Use `--filter-country portugal=Portugal` for a shared file, and `:legacy` on a source whose
+frame predates the Roihu steps — every reprocessed stage is then reported as *unavailable*, never as
+zero records. Do not interpret a stage's present output as human-validated research.
 
 Step 9 RDF files must be copied/mounted separately with permission; the
 exporter deliberately does not claim a per-record RDF completion state from
