@@ -334,7 +334,12 @@ def clean_scalar(value: Any, limit: int = 400) -> str:
     return text[:limit]
 
 
-def identity_key(country: str, row: Mapping[str, str], *, require_video_id: bool = False) -> str:
+RECORD_UNITS = ("video", "ingest")
+DEFAULT_RECORD_UNIT = "video"
+
+
+def identity_key(country: str, row: Mapping[str, str], *, unit: str = DEFAULT_RECORD_UNIT,
+                 require_video_id: bool = False) -> str:
     """A stable, collision-free key for one source row.
 
     ``video_id`` alone is **not** unique in the EP24 corpus (HEPP24 ids collide across folders and
@@ -343,8 +348,20 @@ def identity_key(country: str, row: Mapping[str, str], *, require_video_id: bool
     media key, recording, segment and platform. The human-readable ``video_id`` stays a visible
     column, and only *identical* tuples are treated as duplicates.
     """
+    if unit not in RECORD_UNITS:
+        raise ValueError(f"unknown record unit {unit!r}; expected one of {RECORD_UNITS}")
     if require_video_id and not (cell(row, "video_id") or cell(row, "_storage_id")):
         return ""
+    if unit == "ingest":
+        # One record per pipeline run: the storage id IS the identity, so repeated runs stay apart.
+        # A row without one falls back to its video id -- the canonical exporter does the same, and
+        # dropping the row instead would make the two exporters disagree about which rows exist.
+        run = cell(row, "_storage_id") or cell(row, "video_id")
+        if not run:
+            return ""
+        parts: tuple[str, ...] = (run,)
+        digest = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:10]
+        return f"{country}/{run}#{digest}"
     media = cell(row, "allas_filename") or cell(row, "_storage_id")
     if media:
         # the contract calls allas_filename the authoritative media key; _storage_id is its fallback
@@ -376,6 +393,7 @@ class CountryStats:
     parse_failures: dict[str, int] = field(default_factory=dict)
     children: dict[str, int] = field(default_factory=dict)
     unaccounted_columns: list[str] = field(default_factory=list)
+    distinct_media: int = 0
 
 
 
@@ -573,7 +591,8 @@ def iter_source(source: Path) -> Iterator[tuple[int, dict[str, str]]]:
 
 def select_primary_rows(source: Path, country: str, profile: str, limit: int | None,
                         filter_value: str | None,
-                        require_video_id: bool = False) -> tuple[dict[str, int], CountryStats]:
+                        require_video_id: bool = False,
+                        unit: str = DEFAULT_RECORD_UNIT) -> tuple[dict[str, int], CountryStats]:
     """Pass 1: choose one *most complete* row per identity, and count what was seen.
 
     Keeping the first occurrence would export a video's early, partly-filled row and understate stage
@@ -582,13 +601,17 @@ def select_primary_rows(source: Path, country: str, profile: str, limit: int | N
     stats = CountryStats(country=country, source_path=str(source))
     best: dict[str, tuple[int, int]] = {}
     seen_ids: dict[str, int] = {}
+    media_seen: set[str] = set()
     for number, row in iter_source(source):
         if limit is not None and number >= limit:
             break
         if filter_value is not None and cell(row, "country").lower() != filter_value.lower():
             continue
         stats.rows_read += 1
-        key = identity_key(country, row, require_video_id=require_video_id)
+        media = cell(row, "allas_filename") or cell(row, "_storage_id")
+        if media:
+            media_seen.add(media)
+        key = identity_key(country, row, unit=unit, require_video_id=require_video_id)
         if not key:
             stats.invalid_ids += 1
             continue
@@ -601,18 +624,21 @@ def select_primary_rows(source: Path, country: str, profile: str, limit: int | N
             best[key] = (score, number)
             seen_ids[key] = 1
     stats.duplicates = sum(count - 1 for count in seen_ids.values())
+    stats.distinct_media = len(media_seen)
     return {key: value[1] for key, value in best.items()}, stats
 
 
 def export_country(country: str, source: Path, output: Path, limit: int | None,
                    manifest_inputs: dict[str, Any], *, profile: str = "reprocessed",
                    filter_value: str | None = None,
-                   require_video_id: bool = False) -> CountryStats:
+                   require_video_id: bool = False,
+                   unit: str = DEFAULT_RECORD_UNIT) -> CountryStats:
     stats = CountryStats(country=country, source_path=str(source),
                          source_bytes=source.stat().st_size, source_sha256=sha256_file(source))
 
     winners, pre_stats = select_primary_rows(source, country, profile, limit, filter_value,
-                                             require_video_id)
+                                             require_video_id, unit)
+    stats.distinct_media = pre_stats.distinct_media
     stats.rows_read = pre_stats.rows_read
     stats.duplicates = pre_stats.duplicates
     stats.invalid_ids = pre_stats.invalid_ids
@@ -667,7 +693,7 @@ def export_country(country: str, source: Path, output: Path, limit: int | None,
                     break
                 if filter_value is not None and cell(row, "country").lower() != filter_value.lower():
                     continue
-                key = identity_key(country, row, require_video_id=require_video_id)
+                key = identity_key(country, row, unit=unit, require_video_id=require_video_id)
                 # export only the most complete row for this identity (chosen in pass 1)
                 if not key or winners.get(key) != number:
                     continue
@@ -812,6 +838,8 @@ def write_manifest(output: Path, stats: Sequence[CountryStats], inputs: Mapping[
     manifest = {
         "builder_version": BUILDER_VERSION,
         "generated_at": generated_at,
+        "record_unit": inputs.get("record_unit", DEFAULT_RECORD_UNIT),
+        "distinct_media": sum(s.distinct_media for s in stats),
         "inputs": inputs,
         "record_counts": {
             "exported_total": total,
@@ -949,6 +977,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require-video-id", action="store_true", default=False,
                         help="treat a row without video_id/_storage_id as unusable even when it "
                              "carries a media key (the historical export_demo contract)")
+    parser.add_argument("--record-unit", choices=RECORD_UNITS, default=DEFAULT_RECORD_UNIT,
+                        help="unit of analysis: video (one record per media, default) or ingest "
+                             "(one record per pipeline run)")
     parser.add_argument("--fail-on-unaccounted", action="store_true", default=True,
                         help="fail when a producer column is neither kept nor dropped (default)")
     parser.add_argument("--allow-unaccounted", dest="fail_on_unaccounted", action="store_false")
@@ -968,11 +999,12 @@ def main(argv: list[str] | None = None) -> int:
     generated_at = datetime.now(UTC).isoformat(timespec="seconds")
     filters = dict(pair.split("=", 1) for pair in args.filter_country) if args.filter_country else {}
     filters = {k.strip().lower(): v.strip() for k, v in filters.items()}
-    inputs: dict[str, Any] = {}
+    inputs: dict[str, Any] = {"record_unit": args.record_unit}
     stats = [export_country(country, path, output, args.limit, inputs,
                             profile=(profile or args.profile),
                             filter_value=filters.get(country),
-                            require_video_id=args.require_video_id)
+                            require_video_id=args.require_video_id,
+                            unit=args.record_unit)
              for country, (path, profile) in sources.items()]
 
     combined = write_combined(output, [c for c in COUNTRIES if c in sources])

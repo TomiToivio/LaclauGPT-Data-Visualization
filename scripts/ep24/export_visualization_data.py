@@ -40,6 +40,12 @@ from typing import Any
 SCHEMA_VERSION = "ep24-visualization-export/1.0"
 
 #: Identity candidates in priority order (mirrors the dashboard's `identity()`).
+#: The unit of analysis (#205). ``video`` counts one record per video and collapses repeated ingest
+#: runs of the same media; ``ingest`` counts one record per pipeline run. Both are legitimate, and the
+#: export must say which one it produced, because every percentage downstream divides by it.
+RECORD_UNITS = ("video", "ingest")
+DEFAULT_RECORD_UNIT = "video"
+
 IDENTITY_FIELDS = ("_storage_id", "video_id", "source_url", "allas_filename")
 
 #: Namespace components — a record may never join across these.
@@ -116,9 +122,20 @@ def clean(value: Any) -> str:
     return "" if text.lower() in {"", "none", "nan", "null", "<na>"} else text
 
 
-def row_identity(row: Mapping[str, Any]) -> str:
-    """Namespaced identity, or '' when the row carries no usable id."""
-    native = next((clean(row.get(f)) for f in IDENTITY_FIELDS if clean(row.get(f))), "")
+def row_identity(row: Mapping[str, Any], unit: str = DEFAULT_RECORD_UNIT) -> str:
+    """Namespaced identity for the chosen unit of analysis, or '' when the row carries no usable id.
+
+    ``video`` (default) identifies the *media*: two ingest runs of the same file are one record.
+    ``ingest`` identifies the *run*: every ``_storage_id`` is its own record. This is the #205
+    contract; ``ep24.export_streaming`` must group identically for the same unit.
+    """
+    if unit not in RECORD_UNITS:
+        raise ValueError(f"unknown record unit {unit!r}; expected one of {RECORD_UNITS}")
+    if unit == "ingest":
+        native = clean(row.get("_storage_id")) or clean(row.get("video_id"))
+    else:
+        native = (clean(row.get("allas_filename")) or clean(row.get("_storage_id"))
+                  or clean(row.get("video_id")))
     if not native:
         return ""
     namespace = "|".join(clean(row.get(f)).casefold() for f in NAMESPACE_FIELDS)
@@ -171,12 +188,13 @@ def project(row: Mapping[str, Any]) -> dict[str, Any]:
     return {field: row.get(field, "") for field in ALLOWLIST if field not in EXCLUDED}
 
 
-def normalise(rows: Iterable[Mapping[str, Any]], country: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """One row per video: dedupe by namespaced identity, exclude and count unusable rows."""
+def normalise(rows: Iterable[Mapping[str, Any]], country: str,
+              unit: str = DEFAULT_RECORD_UNIT) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """One row per unit of analysis: dedupe by namespaced identity, exclude and count unusable rows."""
     by_identity: dict[str, dict[str, Any]] = {}
     invalid = duplicates = 0
     for row in rows:
-        identity = row_identity(row)
+        identity = row_identity(row, unit)
         if not identity:
             invalid += 1
             continue
@@ -302,14 +320,15 @@ def write_data_dictionary(output: Path) -> None:
     (output / "DATA_DICTIONARY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def export(input_dir: Path, output: Path, countries: Sequence[str]) -> dict[str, Any]:
+def export(input_dir: Path, output: Path, countries: Sequence[str],
+           unit: str = DEFAULT_RECORD_UNIT) -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
     combined: list[dict[str, Any]] = []
     report: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "countries": {}}
 
     for country in countries:
         rows, notes = load_country(input_dir, country)
-        normalised, stats = normalise(rows, country)
+        normalised, stats = normalise(rows, country, unit)
         notes.update(stats)
         if not notes.get("found"):
             notes["note"] = "no source file found; exported as an empty country, not as zero findings"
@@ -321,7 +340,12 @@ def export(input_dir: Path, output: Path, countries: Sequence[str]) -> dict[str,
     write_csv(output / "combined.csv", combined)
     write_jsonl(output / "records.jsonl", combined)
     report["children"] = write_children(output, combined)
+    media = {clean(row.get("allas_filename")) or clean(row.get("_storage_id"))
+             for row in combined}
+    media.discard("")
+    report["record_unit"] = unit
     report["rows"] = {"combined": len(combined),
+                      "distinct_media": len(media),
                       "by_country": {c: report["countries"][c].get("kept", 0) for c in countries}}
     report["stage_coverage"] = stage_coverage(combined)
     report["stage_coverage_by_country"] = {
@@ -340,9 +364,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--countries", nargs="+", default=list(COUNTRY_FILES), choices=list(COUNTRY_FILES))
     parser.add_argument("--input", required=True, type=Path, help="directory holding completed EP24 results")
     parser.add_argument("--output", required=True, type=Path, help="destination directory for the export")
+    parser.add_argument("--record-unit", choices=RECORD_UNITS, default=DEFAULT_RECORD_UNIT,
+                        help="unit of analysis: video (one record per media, default) or ingest "
+                             "(one record per pipeline run)")
     args = parser.parse_args(argv)
 
-    report = export(args.input, args.output, args.countries)
+    report = export(args.input, args.output, args.countries, args.record_unit)
     rows = report["rows"]
     print(f"exported {rows['combined']} rows from {args.input} -> {args.output}")
     for country, count in rows["by_country"].items():
