@@ -51,7 +51,8 @@ STAGE_FIELDS: dict[int, tuple[str, ...]] = {
     1: ("preprocess_status",),
     2: ("frame_analysis_status",),
     3: ("vllm_video_status",),
-    4: ("summary_quality_status", "postprocess_summary_md"),
+    4: ("summary_quality_status", "summary_analysis"),
+    5: ("postprocess_entities", "postprocess_themes", "postprocess_summary_md"),
     6: ("laclau_status", "laclau_structured_json"),
     7: ("dna_status", "dna_statements_json"),
     8: ("sna_edges_json",),
@@ -62,11 +63,25 @@ STAGE_FIELDS: dict[int, tuple[str, ...]] = {
 ALLOWLIST: tuple[str, ...] = (
     *IDENTITY_FIELDS,
     *NAMESPACE_FIELDS,
-    "title", "source_platform", "published_at", "duration_seconds", "language",
+    "title", "author_username", "account_type", "source_platform", "source_language",
+    "published_at", "created_at", "duration_seconds", "video_duration", "language",
+    "sequence_number", "source_recording", "political_preference",
+    "entities", "themes", "researcher_note",
+    "asr_transcript", "asr_translation", "asr_translated", "asr_language", "ocr_1",
+    "frame_file", "frame_timestamp_seconds", "frame_analysis_1", "frame_quality_status",
+    "vllm_video_analysis", "vllm_video_markdown_analysis", "vllm_video_structured_json",
+    "summary_analysis", "summary_summary_md", "summary_quality_reason",
     "preprocess_status", "frame_analysis_status", "vllm_video_status",
-    "summary_quality_status", "postprocess_themes", "postprocess_summary_md",
+    "summary_quality_status", "postprocess_entities", "postprocess_themes",
+    "postprocess_summary_md", "positive", "neutral", "negative",
+    "ep24_entity_resolution_json", "ep24_entity_ids", "ep24_entity_canonical_names",
+    "ep24_entity_unresolved_json", "ep24_sentiment_targets_json",
+    "processing_status", "processing_status_reason",
     "laclau_status", "laclau_structured_json", "laclau_summary_md",
-    "dna_status", "dna_statements_json", "sna_edges_json", "sna_analysis_markdown",
+    "laclau_abstention_reason", "laclau_formula_conditions_met",
+    "formula_of_populism_analysis", "formula_of_populism_us", "formula_of_populism_frontier",
+    "dna_status", "dna_statements_json", "dna_analysis_markdown", "dna_statement_count",
+    "sna_nodes_json", "sna_edges_json", "sna_analysis_markdown",
     "rdf_ttl_path", "error_status", "error_message", "provenance", "schema_version",
 )
 
@@ -81,7 +96,10 @@ EXCLUDED: dict[str, str] = {
 
 #: One-to-many children: (json field, table name, stable child id prefix).
 CHILDREN: tuple[tuple[str, str], ...] = (
+    ("postprocess_entities", "entities_model"),
+    ("postprocess_themes", "themes_model"),
     ("dna_statements_json", "dna_statements"),
+    ("sna_nodes_json", "sna_nodes"),
     ("sna_edges_json", "sna_edges"),
 )
 
@@ -229,6 +247,8 @@ def write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
 def parse_children(value: Any) -> list[Any]:
     if isinstance(value, list):
         return value
+    if isinstance(value, dict):
+        return next((part for part in value.values() if isinstance(part, list)), [])
     text = clean(value)
     if not text:
         return []
@@ -236,6 +256,8 @@ def parse_children(value: Any) -> list[Any]:
         parsed = json.loads(text)
     except (ValueError, TypeError):
         return []
+    if isinstance(parsed, dict):
+        parsed = next((value for value in parsed.values() if isinstance(value, list)), [])
     return parsed if isinstance(parsed, list) else []
 
 
@@ -292,8 +314,7 @@ def export(input_dir: Path, output: Path, countries: Sequence[str]) -> dict[str,
         if not notes.get("found"):
             notes["note"] = "no source file found; exported as an empty country, not as zero findings"
         report["countries"][country] = notes
-        if normalised:
-            write_csv(output / f"{country}.csv", normalised)
+        write_csv(output / f"{country}.csv", normalised)
         combined.extend(normalised)
 
     combined.sort(key=lambda row: row["record_id"])
@@ -303,6 +324,10 @@ def export(input_dir: Path, output: Path, countries: Sequence[str]) -> dict[str,
     report["rows"] = {"combined": len(combined),
                       "by_country": {c: report["countries"][c].get("kept", 0) for c in countries}}
     report["stage_coverage"] = stage_coverage(combined)
+    report["stage_coverage_by_country"] = {
+        country: stage_coverage([row for row in combined if row["country"] == country])
+        for country in countries
+    }
     report["sources"] = {c: report["countries"][c].get("source") for c in countries}
     write_data_dictionary(output)
     (output / "qa.json").write_text(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
