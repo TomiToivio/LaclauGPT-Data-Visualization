@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sqlite3
 import sys
@@ -40,7 +41,7 @@ from typing import Any
 SCHEMA_VERSION = "ep24-visualization-export/1.0"
 
 #: Identity candidates in priority order (mirrors the dashboard's `identity()`).
-IDENTITY_FIELDS = ("_storage_id", "video_id", "source_url", "allas_filename")
+IDENTITY_FIELDS = ("allas_filename", "video_id", "_storage_id", "source_url")
 
 #: Namespace components — a record may never join across these.
 NAMESPACE_FIELDS = ("dataset", "country", "source_type")
@@ -116,13 +117,37 @@ def clean(value: Any) -> str:
     return "" if text.lower() in {"", "none", "nan", "null", "<na>"} else text
 
 
-def row_identity(row: Mapping[str, Any]) -> str:
-    """Namespaced identity, or '' when the row carries no usable id."""
-    native = next((clean(row.get(f)) for f in IDENTITY_FIELDS if clean(row.get(f))), "")
-    if not native:
-        return ""
+def row_identity(row: Mapping[str, Any], record_unit: str = "video") -> str:
+    """Namespaced record identity: stable media or individual ingest run."""
+    if record_unit not in {"video", "ingest"}:
+        raise ValueError("record_unit must be video or ingest")
     namespace = "|".join(clean(row.get(f)).casefold() for f in NAMESPACE_FIELDS)
-    return f"{namespace}|{native}"
+    if record_unit == "ingest":
+        native = clean(row.get("_storage_id"))
+        if not native:
+            return ""
+        return f"{namespace}|ingest|{native}"
+    media = clean(row.get("allas_filename"))
+    video = clean(row.get("video_id"))
+    if media:
+        parts = (media, video)
+    elif video:
+        parts = (video, clean(row.get("source_type")),
+                 clean(row.get("source_recording")), clean(row.get("sequence_number")))
+    else:
+        return ""
+    digest = hashlib.sha256(json.dumps(parts, ensure_ascii=False).encode()).hexdigest()[:20]
+    return f"{namespace}|video|{digest}"
+
+
+def completeness_score(row: Mapping[str, Any]) -> int:
+    """Choose the most complete run without conflating output with quality."""
+    return sum(bool(clean(row.get(field))) for field in ALLOWLIST
+               if field not in IDENTITY_FIELDS and field not in NAMESPACE_FIELDS)
+
+
+def distinct_media_count(rows: Iterable[Mapping[str, Any]]) -> int:
+    return len({key for row in rows if (key := row_identity(row, "video"))})
 
 
 def read_csv_source(path: Path) -> Iterator[dict[str, Any]]:
@@ -171,26 +196,38 @@ def project(row: Mapping[str, Any]) -> dict[str, Any]:
     return {field: row.get(field, "") for field in ALLOWLIST if field not in EXCLUDED}
 
 
-def normalise(rows: Iterable[Mapping[str, Any]], country: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """One row per video: dedupe by namespaced identity, exclude and count unusable rows."""
+def normalise(rows: Iterable[Mapping[str, Any]], country: str,
+              record_unit: str = "video") -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Choose one most-complete run per media, or preserve each ingest."""
     by_identity: dict[str, dict[str, Any]] = {}
+    scores: dict[str, int] = {}
     invalid = duplicates = 0
-    for row in rows:
-        identity = row_identity(row)
+    media: set[str] = set()
+    for original in rows:
+        row = dict(original)
+        row["country"] = clean(row.get("country")) or country
+        identity = row_identity(row, record_unit)
         if not identity:
             invalid += 1
             continue
+        media_key = row_identity(row, "video")
+        if media_key:
+            media.add(media_key)
         projected = project(row)
         projected["record_id"] = identity
-        projected["country"] = clean(projected.get("country")) or country
+        projected["country"] = row["country"]
         projected["schema_version"] = SCHEMA_VERSION
+        score = completeness_score(row)
         if identity in by_identity:
             duplicates += 1
-            # Last complete row wins; the count is reported so a silent merge is impossible.
+            if score <= scores[identity]:
+                continue
         by_identity[identity] = projected
+        scores[identity] = score
     ordered = [by_identity[key] for key in sorted(by_identity)]
     return ordered, {"invalid_identity": invalid, "duplicate_rows_collapsed": duplicates,
-                     "kept": len(ordered)}
+                     "kept": len(ordered), "records": len(ordered),
+                     "distinct_media": len(media), "record_unit": record_unit}
 
 
 #: A status field exists for these stages; a non-success status is *not* coverage.
@@ -302,14 +339,14 @@ def write_data_dictionary(output: Path) -> None:
     (output / "DATA_DICTIONARY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def export(input_dir: Path, output: Path, countries: Sequence[str]) -> dict[str, Any]:
+def export(input_dir: Path, output: Path, countries: Sequence[str], record_unit: str = "video") -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
     combined: list[dict[str, Any]] = []
-    report: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "countries": {}}
+    report: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "record_unit": record_unit, "countries": {}}
 
     for country in countries:
         rows, notes = load_country(input_dir, country)
-        normalised, stats = normalise(rows, country)
+        normalised, stats = normalise(rows, country, record_unit)
         notes.update(stats)
         if not notes.get("found"):
             notes["note"] = "no source file found; exported as an empty country, not as zero findings"
@@ -320,6 +357,8 @@ def export(input_dir: Path, output: Path, countries: Sequence[str]) -> dict[str,
     combined.sort(key=lambda row: row["record_id"])
     write_csv(output / "combined.csv", combined)
     write_jsonl(output / "records.jsonl", combined)
+    report["records"] = len(combined)
+    report["distinct_media"] = sum(report["countries"][c]["distinct_media"] for c in countries)
     report["children"] = write_children(output, combined)
     report["rows"] = {"combined": len(combined),
                       "by_country": {c: report["countries"][c].get("kept", 0) for c in countries}}
@@ -329,6 +368,11 @@ def export(input_dir: Path, output: Path, countries: Sequence[str]) -> dict[str,
         for country in countries
     }
     report["sources"] = {c: report["countries"][c].get("source") for c in countries}
+    (output / "manifest.json").write_text(json.dumps({"record_unit": record_unit,
+        "records": report["records"], "distinct_media": report["distinct_media"],
+        "countries": {c: {"records": report["countries"][c]["records"],
+                         "distinct_media": report["countries"][c]["distinct_media"]}
+                      for c in countries}}, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
     write_data_dictionary(output)
     (output / "qa.json").write_text(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
                                     encoding="utf-8")
@@ -340,9 +384,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--countries", nargs="+", default=list(COUNTRY_FILES), choices=list(COUNTRY_FILES))
     parser.add_argument("--input", required=True, type=Path, help="directory holding completed EP24 results")
     parser.add_argument("--output", required=True, type=Path, help="destination directory for the export")
+    parser.add_argument("--record-unit", choices=("video", "ingest"), default="video",
+                        help="video (research default) or ingest (pipeline observability)")
     args = parser.parse_args(argv)
 
-    report = export(args.input, args.output, args.countries)
+    report = export(args.input, args.output, args.countries, args.record_unit)
     rows = report["rows"]
     print(f"exported {rows['combined']} rows from {args.input} -> {args.output}")
     for country, count in rows["by_country"].items():
