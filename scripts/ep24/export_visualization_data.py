@@ -330,8 +330,9 @@ def write_data_dictionary(output: Path) -> None:
     lines += ["", "## Dropped fields, and why", ""]
     lines += [f"- `{field}` — {reason}" for field, reason in EXCLUDED.items()]
     lines += ["", "## Identity", "",
-              ("`record_id` = namespaced `dataset|country|source_type|native id`. A row with no "
-               "native id is excluded and counted in `qa.json`; no id is ever fabricated."),
+              ("`record_id` uses dataset/country/source_type plus a media fingerprint for video "
+               "exports, or _storage_id for ingest exports. Video exports retain the most "
+               "complete ingest; neither export fabricates missing identity."),
               "", "## Stages", "",
               ("Stage coverage counts rows whose stage status reports success, plus rows "
                "carrying the required fields where a stage has no status. It is a completeness "
@@ -372,7 +373,7 @@ def export(input_dir: Path, output: Path, countries: Sequence[str], record_unit:
         "records": report["records"], "distinct_media": report["distinct_media"],
         "countries": {c: {"records": report["countries"][c]["records"],
                          "distinct_media": report["countries"][c]["distinct_media"]}
-                      for c in countries}}, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+                      for c in countries}}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     write_data_dictionary(output)
     (output / "qa.json").write_text(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
                                     encoding="utf-8")
