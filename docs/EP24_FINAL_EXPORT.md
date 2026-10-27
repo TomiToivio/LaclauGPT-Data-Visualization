@@ -30,9 +30,12 @@ to complete after the data gate.
 
 ## Run on an authorized research host
 
+This final-result QA exporter is a separate workflow from the existing `scripts/ep24/export_visualization_data.py` dashboard-compatible exporter on `main`. Use `export_final_results.py` for the nested, research-oriented bundle described here; the existing dashboard export command retains its original behavior.
+
+
 ```bash
 python -m pip install -e '.[dev]'
-python scripts/ep24/export_visualization_data.py \
+python scripts/ep24/export_final_results.py \
   --countries finland poland portugal \
   --input finland="$FI_CHECKPOINT" \
   --input poland="$PL_CHECKPOINT" \
@@ -50,7 +53,7 @@ Optional direct Mongo source, on a host with authorized database connectivity:
 
 ```bash
 python -m pip install -e '.[remote]'
-python scripts/ep24/export_visualization_data.py \
+python scripts/ep24/export_final_results.py \
   --mongo-database "$EP24_DATABASE" \
   --mongo-uri-env LACLAUGPT_MONGODB_URI \
   --output "$LACLAUGPT_PRIVATE/analysis/ep24_reprocess/visualization_exports/run-002"

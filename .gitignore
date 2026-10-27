@@ -59,3 +59,7 @@ secrets*
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+# EP24 export fixtures are synthetic, committed on purpose (issue #195).
+# The repo-wide *.csv rule above silently skipped them on the first attempt and left CI red.
+!tests/fixtures/ep24_export/*.csv

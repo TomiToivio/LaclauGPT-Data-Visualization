@@ -1,0 +1,19 @@
+[Unit]
+Description=EP24 Reprocessed Demo (FI/PL/PT), private local data
+After=network.target
+
+[Service]
+Type=simple
+User=REPLACE_ME
+WorkingDirectory=/private/path/LaclauGPT-Data-Visualization
+Environment=LACLAUGPT_VIS_ANALYSIS_DATA_DIR=/private/path/LaclauGPT-Private/analysis/ep24/demo-export
+Environment=STREAMLIT_SERVER_ADDRESS=127.0.0.1
+Environment=STREAMLIT_SERVER_PORT=18512
+ExecStart=/bin/bash scripts/ep24/run_reprocessed_demo.sh
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

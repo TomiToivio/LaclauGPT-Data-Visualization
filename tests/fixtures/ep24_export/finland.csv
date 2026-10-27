@@ -1,0 +1,4 @@
+_storage_id,allas_filename,country,dataset,dna_statements_json,dna_status,error_message,error_status,laclau_status,laclau_summary_md,language,preprocess_status,prompt,sna_edges_json,source_type,title,video_id,working_tensors
+fi-1,fi/1.mp4,,ep24,"[{""actor"": ""A"", ""concept"": ""climate"", ""stance"": 1}, {""actor"": ""B"", ""concept"": ""climate"", ""stance"": -1}]",done,,,done,Signifier chain (synthetic).,fi,done,TRANSIENT-PROMPT,"[{""source"": ""A"", ""target"": ""B"", ""weight"": 1}]",youtube,Synthetic FI one,1,TENSOR-BLOB
+fi-2,fi/2.mp4,,ep24,,,synthetic failure,failed,failed,,fi,done,,,youtube,Synthetic FI two,2,
+,,finland,ep24,,,,,,,,,,,,No identity at all,,
