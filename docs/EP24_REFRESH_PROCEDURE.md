@@ -9,20 +9,20 @@ Multimodal-Analysis outputs.
 The dashboard does not query MongoDB. It reads a **canonical export** produced by the
 Multimodal-Analysis exporter. A refresh is therefore: re-export, verify, repoint, verify again.
 
-**Data never enters this repository.** The export lives in `LaclauGPT-Private`; this repo holds
+**Data never enters this repository.** The export lives in `the private repository`; this repo holds
 the procedure and the code that reads it.
 
 ## 2. Export
 
 ```bash
-cd /mnt/workspace/LaclauGPT-Multimodal-Analysis
-set -a && . /mnt/workspace/LaclauGPT-Data-Analysis/.env && set +a
+cd <multimodal-analysis-checkout>
+set -a && . "$LACLAUGPT_PRIVATE_ENV" && set +a   # private, never in this repo
 export LACLAUGPT_MONGO_URI="$LACLAUGPT_MONGODB_URI"
 export LACLAUGPT_MONGO_DATABASE="$LACLAUGPT_MONGODB_DATABASE"
 
 python scripts/ep24/export_mongo_results.py \
   --country finland poland portugal \
-  --output /mnt/workspace/LaclauGPT-Private/analysis/ep24/mongo_export_$(date +%j)
+  --output "$LACLAUGPT_PRIVATE_ROOT"/analysis/ep24/mongo_export_$(date +%j)
 ```
 
 **Do not wrap this in a short timeout.** A 500-second cap cut a run off mid-way on 2026-10-28
@@ -61,14 +61,14 @@ LACLAUGPT_VIS_ANALYSIS_DATA_DIR=<export-dir> \
 LACLAUGPT_VIS_PROJECT_ID=ep24 \
 LACLAUGPT_VIS_PROFILE=server \
 LACLAUGPT_VIS_ALLOW_NONLOOPBACK=1 \
-STREAMLIT_SERVER_ADDRESS=100.115.95.109 \
+STREAMLIT_SERVER_ADDRESS=<dashboard-host> \
 python -m streamlit run src/laclaugpt_visualization/ep24_reprocessed_app.py --server.port 18502
 ```
 
 Then check, in order:
 
-1. `curl -o /dev/null -w "%{http_code}" http://100.115.95.109:18502/` → **200**
-2. `curl http://100.115.95.109:18502/_stcore/health` → **ok**
+1. `curl -o /dev/null -w "%{http_code}" http://<dashboard-host>:18502/` → **200**
+2. `curl http://<dashboard-host>:18502/_stcore/health` → **ok**
 3. the page renders **"4866 records in this export"** with country scope **Finland (2125),
    Poland (1781), Portugal (960)** — the numbers read off the manifest, not off memory
 
