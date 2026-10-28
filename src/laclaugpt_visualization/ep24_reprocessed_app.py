@@ -55,6 +55,17 @@ root = os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR", "data")
 st.sidebar.caption("Read-only data root configured by the server operator.")
 frame = read_records(root)
 manifest = read_manifest(root)
+if manifest:
+    st.caption("Loaded export: " + str(manifest.get("generated_at", "timestamp unknown"))
+               + " | contract: " + str(manifest.get("contract", "unknown"))
+               + " | source: " + str(manifest.get("builder_version", "unknown")))
+    absent = [country for country in ("fi", "pl", "pt")
+              if not (manifest.get("record_counts", {}).get(country, {}).get("exported", 0))]
+    if absent:
+        st.warning("Countries not represented by this export: " + ", ".join(absent)
+                   + ". No missing records are inferred.")
+else:
+    st.warning("Export provenance manifest missing. Data freshness and completeness are unverified.")
 if frame.empty:
     st.info("No local EP24 export found. Provide a private combined.csv, records.jsonl or SQLite database. No records are fabricated.")
     st.stop()
