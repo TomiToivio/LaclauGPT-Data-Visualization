@@ -83,6 +83,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--restart-unit", default=None,
                         help="systemd --user unit to restart after a successful swap")
     parser.add_argument("--verbose", action="store_true", help="print per-country detail")
+    parser.add_argument("--force", action="store_true",
+                        help="swap even when the manifests do not show staleness "
+                             "(e.g. step-level reprocessing that leaves counts unchanged)")
     parser.add_argument("--annotate", action="store_true",
                         help="count the dashboard's per-country CSVs into its MANIFEST.json first")
     args = parser.parse_args(argv)
@@ -110,8 +113,9 @@ def main(argv: list[str] | None = None) -> int:
         if report.verdict == "incomparable":
             print("refusing to swap: the source manifest is not usable", file=sys.stderr)
             return 2
-        if not report.needs_refresh:
-            print("nothing to swap: the dashboard already matches the source")
+        if not report.needs_refresh and not args.force:
+            print("nothing to swap: the dashboard already matches the source "
+                  "(use --force for step-level refreshes the manifests cannot see)")
         else:
             backup = _swap(args.dashboard, args.source)
             print(f"swapped: {args.dashboard} <- {args.source} (backup at {backup})")

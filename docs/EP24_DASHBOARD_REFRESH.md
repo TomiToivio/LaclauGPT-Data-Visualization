@@ -60,16 +60,32 @@ so — but per-country verification needs the block.
 
 ## Refresh record — 2026-10-28
 
-- **Source database unchanged since the previous export.** Live counts: Finland 3,700 · Poland 3,643 ·
-  Portugal 1,946 documents, identical to the 2026-10-27 export's `source_documents`. Nothing has arrived
-  to refresh *to*.
-- **Dashboard verified current.** 5,306 records; per-country 2,125 + 2,112 + 1,069 = 5,306, reconciling
-  with `combined.csv`.
-- **Manifest annotated** with the per-country block, so future checks are country-level rather than
-  totals-only.
-- **Live check:** `http://<laskin>:18503/` returns HTTP 200 after the change.
-- A fresh export was regenerated into `mongo_export_20261028/` from the unchanged database to confirm the
-  pipeline still runs end to end; its counts match the 2026-10-27 manifest.
+**First pass (manifests only): nothing appeared to have changed.** Live document counts were Finland
+3,700 · Poland 3,643 · Portugal 1,946 — identical to the 2026-10-27 export — and the dashboard at 5,306
+records reconciled with `combined.csv` (2,125 + 2,112 + 1,069).
+
+**That conclusion was wrong, and the reason matters.** A fresh export was regenerated to the same
+`mongo_export_20261028/` directory and compared field by field against the previous one:
+
+| country | records | completed steps (old → new) | records that gained a step |
+|---|---|---|---|
+| Finland | 2,125 → 2,125 | 5,526 → 5,526 | 0 |
+| Poland | 1,781 → 1,781 | 7,244 → **7,259** | **15** |
+| Portugal | 960 → 960 | 1,704 → 1,704 | 0 |
+
+**Reprocessing moved 15 Polish records forward by one completed step without adding or removing a single
+document.** Counts and timestamps are blind to that: a record is still one record, and its
+`newest_timestamp` can be unchanged while a later stage completes. So `compare()` answering `current` is
+correct *for what it measures* and still not proof of freshness — the limit stated below is not
+hypothetical, it is what happened here.
+
+The refresh therefore went ahead with `--force`, which exists for exactly this case: swap when the
+manifests do not show staleness because the change is below their resolution.
+
+**After the refresh:** the dashboard reads `mongo_export_20261028` (4,866 records; 2,125 + 1,781 + 960),
+the manifest is annotated with the per-country block, and the service answers HTTP 200. The record count
+drops from 5,306 to 4,866 because the Mongo identity rule collapses Poland and Portugal further — the
+same difference documented above, not lost data.
 
 ## What is deliberately not in this repository
 
