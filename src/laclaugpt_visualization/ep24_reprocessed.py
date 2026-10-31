@@ -129,14 +129,21 @@ def read_records(root: str | Path) -> pd.DataFrame:
 
 
 
-def read_dna_children(root: str | Path, parents: list[Mapping[str, Any]]
+def read_dna_children(root: str | Path, parents: list[Mapping[str, Any]],
+                      countries: Iterable[str] | None = None
                       ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Read producer DNA child CSVs without inventing parent identities."""
+    """Read producer DNA child CSVs without inventing parent identities.
+
+    ``countries`` scopes the read to the selection: without it a Poland-only view would report the
+    Finnish and Portuguese child rows as orphans of a corpus that never claimed to contain them.
+    """
     root = Path(root)
     aliases = {"fi": "finland", "pl": "poland", "pt": "portugal"}
     def country(value: Any) -> str:
         raw = text(value).lower()
         return aliases.get(raw, raw)
+    names = sorted({country(c) for c in countries}) if countries else list(aliases.values())
+
 
     # Keyed by identifier value only: a child's ``source_record_id`` *is* the parent's
     # ``_storage_id`` on the real export, so including the field name would orphan every statement.
@@ -150,7 +157,7 @@ def read_dna_children(root: str | Path, parents: list[Mapping[str, Any]]
     result: list[dict[str, Any]] = []
     counts = {"read": 0, "matched": 0, "orphan": 0, "ambiguous": 0, "duplicate": 0}
     seen: set[tuple[str, str, str]] = set()
-    for name in ("finland", "poland", "portugal"):
+    for name in names:
         source = next((folder / "children" / f"{name}_dna_statements.csv"
                        for folder in (root, root / "data")
                        if (folder / "children" / f"{name}_dna_statements.csv").is_file()), None)
@@ -283,7 +290,7 @@ def dna_evidence(records: Sequence[Mapping[str, Any]], root: str | Path) -> DNAE
     if items:
         return DNAEvidence(tuple(items), "text bundle", len({item["document"] for item in items}))
 
-    found, counts = read_dna_children(root, list(records))
+    found, counts = read_dna_children(root, list(records), countries)
     if counts.get("read"):
         return DNAEvidence(tuple(found), "children tables",
                            len({item["document"] for item in found}), counts)
