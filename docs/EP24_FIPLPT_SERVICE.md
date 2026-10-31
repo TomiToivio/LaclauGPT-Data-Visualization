@@ -162,6 +162,45 @@ short corpus that looks like a data loss.
 
 ## Not covered here
 
-TLS, DNS, authentication and any reverse-proxy exposure decisions are operational policy, not code.
-Until they are decided, the service binds loopback only and is reached through an SSH local forward.
-Those remain open on #215.
+TLS, DNS and authentication are operational policy, not code, and are **decided** below rather than left
+open. The deployed unit binds the host's private interface, not loopback — verified with `ss -ltnp`
+against the running service — so it is reachable by authorised devices on the same private network.
+
+## Access decision: private network only
+
+| Concern | Decision | Why |
+|---|---|---|
+| Bind | the host's private interface, never `0.0.0.0` | reachable only inside the encrypted private network |
+| Public DNS / TLS terminator | **none** | the export is restricted research data; no route exists to it from the internet |
+| Authentication | device identity on the private network | only enrolled machines can open the socket at all |
+| Password prompt | none | a second password over an already device-authenticated tunnel adds support burden, not security |
+
+Reaching an audience outside that network is a **new decision** requiring a proxy with authentication, a
+certificate and a written access list — recorded here so it cannot happen by quietly opening a port.
+
+## Smoke test
+
+`scripts/ep24/smoke_ep24_dashboard.py` drives the real app with Streamlit's `AppTest` against the
+deployed export and reconciles the UI with `MANIFEST.json`:
+
+```bash
+LACLAUGPT_VIS_ANALYSIS_DATA_DIR=<export dir> \
+  .venv/bin/python scripts/ep24/smoke_ep24_dashboard.py
+```
+
+A service that starts and serves an empty frame passes `/_stcore/health`; this test is what distinguishes
+"running" from "correct". Last run against `mongo_export_210` — **12 checks, 0 failures**:
+
+```
+OK: EP24 dashboard served 4866 records (finland 2125, poland 1781, portugal 960)
+```
+
+## Restart and crash evidence
+
+Measured on the host (2026-10-31) against the deployed unit:
+
+```
+restart            MainPID changed, health 200 after ~8 s
+kill -9 <MainPID>  Restart=on-failure brought it back: active, new PID, health 200
+is-enabled         enabled
+```
