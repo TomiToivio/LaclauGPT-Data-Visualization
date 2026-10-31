@@ -117,6 +117,24 @@ This is not a deployment fault and is not papered over here: wiring the DNA view
 a data-contract change tracked as its own issue. Until then, treat the DNA view as unavailable on this
 export, and read statements from the child table.
 
+## Redeploy after a merge
+
+The deployed checkout is a **detached** checkout of `origin/main`, never a development branch:
+
+```bash
+cd "$VIS_REPO"
+echo "ROLLBACK_SHA=$(git rev-parse HEAD)"        # capture before the pull
+git fetch origin main
+git switch --detach origin/main                 # fast-forward state, no local commits
+git status --porcelain | wc -l                  # must be 0
+"$VIS_REPO/.venv/bin/python" -m pip install -e . --quiet   # only needed when dependencies changed
+systemctl --user restart ep24-fiplpt.service
+curl -fsS "http://${BIND_ADDR:-127.0.0.1}:${PORT:-<port>}/_stcore/health"  # expects: ok
+```
+
+If the tree is dirty, stop: someone left work in the deployed checkout, and that is a decision, not an
+obstacle to route around.
+
 ## Data refresh (no redeploy)
 
 The app applies no `st.cache_data`/`st.cache_resource` decorators, so every rerun re-reads the export
