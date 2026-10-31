@@ -123,6 +123,62 @@ def read_records(root: str | Path) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+
+def read_dna_children(root: str | Path, parents: list[Mapping[str, Any]]
+                      ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Read producer DNA child CSVs without inventing parent identities."""
+    root = Path(root)
+    aliases = {"fi": "finland", "pl": "poland", "pt": "portugal"}
+    def country(value: Any) -> str:
+        raw = text(value).lower()
+        return aliases.get(raw, raw)
+
+    index: dict[tuple[str, str, str], set[int]] = {}
+    for number, row in enumerate(parents):
+        for key in ("_storage_id", "source_record_id"):
+            value = text(row.get(key))
+            if value:
+                index.setdefault((country(row.get("country")), key, value), set()).add(number)
+
+    result: list[dict[str, Any]] = []
+    counts = {"read": 0, "matched": 0, "orphan": 0, "ambiguous": 0, "duplicate": 0}
+    seen: set[tuple[str, str, str]] = set()
+    for name in ("finland", "poland", "portugal"):
+        source = next((folder / "children" / f"{name}_dna_statements.csv"
+                       for folder in (root, root / "data")
+                       if (folder / "children" / f"{name}_dna_statements.csv").is_file()), None)
+        if source is None:
+            continue
+        for item in pd.read_csv(source, dtype=str, keep_default_na=False).to_dict("records"):
+            counts["read"] += 1
+            matches: set[int] = set()
+            for key in ("_storage_id", "source_record_id"):
+                value = text(item.get(key))
+                if value:
+                    matches.update(index.get((name, key, value), set()))
+            if not matches:
+                counts["orphan"] += 1
+                continue
+            if len(matches) > 1:
+                counts["ambiguous"] += 1
+                continue
+            parent = parents[next(iter(matches))]
+            document = identity(parent)
+            if not document:
+                counts["orphan"] += 1
+                continue
+            statement = text(item.get("statement_id"))
+            if statement:
+                marker = (name, document, statement)
+                if marker in seen:
+                    counts["duplicate"] += 1
+                    continue
+                seen.add(marker)
+            result.append({"document": document, "country": name, **item})
+            counts["matched"] += 1
+    return result, counts
+
+
 def rdf_files(root: str | Path) -> list[Path]:
     root = Path(root).resolve()
     if not root.exists():
