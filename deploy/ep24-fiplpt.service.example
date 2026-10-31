@@ -4,19 +4,24 @@
 # committed: the data directory, bind address and log location are operational configuration.
 #
 #   ${VIS_DATA_DIR}       absolute path to the authorized FI/PL/PT export (outside this repository)
-#   ${BIND_ADDR}          bind address; use the host's private interface, not 0.0.0.0
+#   ${BIND_ADDR}          bind address; use 127.0.0.1 and reach the app through an SSH local
+#                          forward, unless a firewall decision has explicitly opened a port
 #   ${PORT}               a port chosen by inspection, never assumed to be free
 #   ${LOG_DIR}            writable log directory
 #
 # Install:
 #   cp ep24-fiplpt.service.example ~/.config/systemd/user/ep24-fiplpt.service   # then substitute
 #   systemctl --user daemon-reload
+#   sudo loginctl enable-linger "$USER"        # required: a non-lingering user unit dies with the session
 #   systemctl --user enable --now ep24-fiplpt.service
 #
 # Verify:
 #   systemctl --user is-active ep24-fiplpt.service
 #   curl -fsS "http://${BIND_ADDR}:${PORT}/_stcore/health"      # expects: ok
 #   journalctl --user -u ep24-fiplpt.service -n 50 --no-pager
+#
+# Reach it from a workstation (loopback bind):
+#   ssh -N -L ${PORT}:127.0.0.1:${PORT} <host-alias>   # then browse http://127.0.0.1:${PORT}/
 
 [Unit]
 Description=EP24 reprocessed FI/PL/PT dashboard (isolated service)

@@ -21,7 +21,9 @@ try:  # normal case: the package is importable (development, pip install -e .)
         SCHEMA_VERSION,
         STAGES,
         coverage_rows,
+        exported_counts,
         identity,
+        missing_countries,
         multilayer,
         rdf_files,
         read_manifest,
@@ -37,7 +39,9 @@ except ModuleNotFoundError:  # standalone deployment: only this module was shipp
         SCHEMA_VERSION,
         STAGES,
         coverage_rows,
+        exported_counts,
         identity,
+        missing_countries,
         multilayer,
         rdf_files,
         read_manifest,
@@ -57,10 +61,16 @@ frame = read_records(root)
 manifest = read_manifest(root)
 if manifest:
     st.caption("Loaded export: " + str(manifest.get("generated_at", "timestamp unknown"))
-               + " | contract: " + str(manifest.get("contract", "unknown"))
-               + " | source: " + str(manifest.get("builder_version", "unknown")))
-    absent = [country for country in ("fi", "pl", "pt")
-              if not (manifest.get("record_counts", {}).get(country, {}).get("exported", 0))]
+               + " | contract: " + str(manifest.get("contract") or manifest.get("schema")
+                                       or manifest.get("record_unit") or "unknown")
+               + " | source: " + str(manifest.get("builder_version")
+                                     or manifest.get("exporter_version") or "unknown"))
+    absent = missing_countries(manifest)
+    totals = exported_counts(manifest)
+    if totals:
+        st.caption("Exported records per country: "
+                   + " · ".join(f"{iso.upper()} {count:,}" for iso, count in totals.items())
+                   + f" · total {sum(totals.values()):,}")
     if absent:
         st.warning("Countries not represented by this export: " + ", ".join(absent)
                    + ". No missing records are inferred.")

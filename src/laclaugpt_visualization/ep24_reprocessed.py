@@ -32,6 +32,14 @@ STATUS_FIELDS = {1: "preprocess_status", 2: "frame_analysis_status",
 MISSING = {"", "none", "nan", "null", "<na>"}
 SCHEMA_VERSION = "ep24-reprocessed-view/0.1"
 
+# The exporter keys `record_counts` by full country name; dashboards and issues usually name the
+# country by ISO code. A mismatch between the two shapes must never be read as "country absent".
+COUNTRY_ALIASES = {
+    "fi": ("fi", "finland"),
+    "pl": ("pl", "poland"),
+    "pt": ("pt", "portugal"),
+}
+
 
 def text(value: Any) -> str:
     if value is None:
@@ -238,6 +246,36 @@ def read_manifest(root: str | Path) -> dict[str, Any]:
             except (ValueError, OSError):
                 return {}
     return {}
+
+
+def exported_counts(manifest: Mapping[str, Any]) -> dict[str, int]:
+    """Exported record count per ISO country code, tolerant of both manifest key styles.
+
+    Returns an empty mapping when the manifest carries no ``record_counts`` at all: an absent
+    count is not evidence that a country is missing from the export.
+    """
+    counts = manifest.get("record_counts") or {}
+    if not isinstance(counts, Mapping) or not counts:
+        return {}
+    totals: dict[str, int] = {}
+    for iso, aliases in COUNTRY_ALIASES.items():
+        total = 0
+        for key in aliases:
+            entry = counts.get(key)
+            if isinstance(entry, Mapping):
+                total = int(entry.get("exported") or 0)
+                break
+            if isinstance(entry, int | float):
+                total = int(entry)
+                break
+        totals[iso] = total
+    return totals
+
+
+def missing_countries(manifest: Mapping[str, Any]) -> list[str]:
+    """ISO codes the manifest positively reports as having no exported records."""
+    totals = exported_counts(manifest)
+    return [iso for iso in COUNTRY_ALIASES if iso in totals and not totals[iso]]
 
 
 def coverage_rows(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
