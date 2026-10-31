@@ -49,7 +49,61 @@ The authorized export is genuinely partial, and the dashboard is expected to say
 A dashboard that renders Poland's SNA page as an empty chart without saying why is worse than one that
 refuses to render it. The incomplete-stage indicator is a requirement, not a nicety.
 
+## Access decision: tailnet-only, no public route
+
+The service binds a **private interface address**, not `0.0.0.0`, and there is deliberately **no public
+DNS name, no TLS terminator and no password layer** in front of it. This is the decision, not an
+unfinished item:
+
+| Concern | Decision | Why |
+|---|---|---|
+| Transport encryption | WireGuard, via the tailnet | the interface is only reachable inside the encrypted mesh |
+| Authentication | device identity on the tailnet | only enrolled machines can open the socket at all |
+| Public exposure | none | the export is restricted research data; no route exists to it from the internet |
+| Password prompt | none | a second password over an already device-authenticated mesh adds support burden, not security |
+
+If the audience ever has to include someone outside the tailnet, that is a **new decision** requiring a
+reverse proxy with authentication, a certificate, and a written access list — not a port opening. Record
+it here before doing it.
+
+## Restart, crash and rollback
+
+Verified on the host (2026-10-31):
+
+```
+systemctl --user restart ep24-fiplpt.service      # pid changed, health 200 after ~8 s
+kill -9 <MainPID>                                 # Restart=on-failure brought it back
+                                                  # active, new pid, health 200
+systemctl --user is-enabled ep24-fiplpt.service   # enabled
+```
+
+Rollback of a **code** deployment is `git checkout <known-good-commit>` then
+`systemctl --user restart ep24-fiplpt.service`. Rollback of a **data** refresh is swapping the export
+directory back (see the refresh procedure) — the two are separate operations on purpose, so a bad
+export never requires a code rollback and vice versa.
+
+## Smoke test
+
+`scripts/ep24/smoke_ep24_dashboard.py` drives the real app with Streamlit's `AppTest` against the
+deployed export and reconciles what the UI shows with `MANIFEST.json`:
+
+```bash
+LACLAUGPT_VIS_ANALYSIS_DATA_DIR=<export dir> \
+  .venv/bin/python scripts/ep24/smoke_ep24_dashboard.py
+```
+
+Last run against `mongo_export_210` — **12 checks, 0 failures**:
+
+```
+OK: EP24 dashboard served 4866 records (finland 2125, poland 1781, portugal 960)
+```
+
+It asserts the title, that the manifest caption is present, that the country selector offers all three
+countries **with their manifest counts**, that the corpus total matches, and that each country scope
+renders without an exception. A dashboard that starts but silently shows an empty frame passes
+`/_stcore/health` and fails this.
+
 ## Not covered here
 
-TLS, DNS, authentication and any reverse-proxy exposure decisions are operational policy, not code. Until
-they are decided, the service binds a private interface only. Those remain open on #215.
+TLS, DNS, authentication and reverse-proxy exposure are operational policy and are decided above:
+**the service is tailnet-only**. Anything beyond that is a new decision, not a remaining task.
