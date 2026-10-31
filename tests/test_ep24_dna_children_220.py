@@ -1,5 +1,6 @@
 """Synthetic contract checks for normalized DNA child exports (issue #220)."""
 import csv
+
 from laclaugpt_visualization.ep24_reprocessed import read_dna_children
 
 
