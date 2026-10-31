@@ -13,6 +13,7 @@ Fixtures are synthetic: real research data never enters this repository.
 """
 from __future__ import annotations
 
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -73,6 +74,34 @@ class DeployedAppContractTests(unittest.TestCase):
         self.assertIn("missing_countries(manifest)", source)
         # The ISO-only inline comprehension is what produced the false warning.
         self.assertNotIn('for country in ("fi", "pl", "pt")', source)
+
+    def test_every_import_the_app_needs_is_a_declared_dependency(self) -> None:
+        """An undeclared import is invisible until the page that needs it is opened.
+
+        The deployed service crashed the "Combined multilayer" view with
+        ``ModuleNotFoundError: No module named 'networkx'`` because the import is lazy and
+        nothing in the test suite or the dependency list mentioned it.
+        """
+        import ast
+        import tomllib
+
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        declared = {
+            re.split(r"[<>=!\[; ]", requirement)[0].strip().lower()
+            for requirement in pyproject["project"]["dependencies"]
+        }
+        first_party = {"laclaugpt_visualization", "ep24_reprocessed"}
+        tree = ast.parse((ROOT / "src" / "laclaugpt_visualization"
+                          / "ep24_reprocessed_app.py").read_text(encoding="utf-8"))
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                imported.add(node.module.split(".")[0])
+        external = {name for name in imported
+                    if name not in sys.stdlib_module_names and name not in first_party}
+        self.assertEqual(external - declared, set())
 
     def test_service_template_never_binds_every_interface(self) -> None:
         template = (ROOT / "deploy" / "ep24-fiplpt.service.example").read_text(encoding="utf-8")
