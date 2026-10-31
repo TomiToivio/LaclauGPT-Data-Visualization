@@ -1,0 +1,30 @@
+# Example only: replace placeholders in a private /etc/systemd/system copy.
+# Service binds loopback; use SSH tunnel or a separately approved authenticated TLS proxy.
+[Unit]
+Description=EP24 FI/PL/PT reprocessed research dashboard (isolated)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=REPLACE_WITH_DEDICATED_UNPRIVILEGED_USER
+Group=REPLACE_WITH_DEDICATED_UNPRIVILEGED_GROUP
+WorkingDirectory=/REPLACE_WITH_CHECKOUT
+EnvironmentFile=/REPLACE_WITH_PRIVATE_CONFIG/ep24-reprocessed.env
+Environment=STREAMLIT_SERVER_ADDRESS=127.0.0.1
+Environment=STREAMLIT_SERVER_PORT=18512
+ExecStartPre=/REPLACE_WITH_CHECKOUT/.venv/bin/python /REPLACE_WITH_CHECKOUT/deploy/preflight-ep24-reprocessed.py
+ExecStart=/bin/bash /REPLACE_WITH_CHECKOUT/scripts/ep24/run_reprocessed_demo.sh
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
