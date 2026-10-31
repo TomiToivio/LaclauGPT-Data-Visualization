@@ -27,6 +27,7 @@ try:  # normal case: the package is importable (development, pip install -e .)
         multilayer,
         rdf_files,
         read_manifest,
+        read_dna_children,
         read_records,
         rows,
         status,
@@ -45,6 +46,7 @@ except ModuleNotFoundError:  # standalone deployment: only this module was shipp
         multilayer,
         rdf_files,
         read_manifest,
+        read_dna_children,
         read_records,
         rows,
         status,
@@ -218,7 +220,22 @@ elif view == "Laclaudian discourse · Step 6":
     inspect(pick_record())
 elif view == "DNA · Step 7":
     st.caption("Actor–concept positions only, never empirical actor–actor social ties.")
-    table(evidence_rows("dna_statements_json", "statements")[:2500], "dna_table")
+    child_statements, child_counts = read_dna_children(root, data)
+    if child_counts["read"]:
+        st.caption(f"DNA child records: {child_counts['read']} read, "
+                   f"{child_counts['matched']} matched to filtered source videos; "
+                   f"{child_counts['orphan']} orphan, {child_counts['ambiguous']} ambiguous, "
+                   f"{child_counts['duplicate']} duplicate.")
+        if child_counts["orphan"] or child_counts["ambiguous"]:
+            st.warning("Some child statements cannot be safely linked to a source video. "
+                       "They have been excluded; check the producer's ingest-to-video mapping.")
+        statements = child_statements
+    else:
+        statements = evidence_rows("dna_statements_json", "statements")
+        if not statements:
+            st.info("No DNA statements in the export for this selection. "
+                    "This may indicate an incomplete upstream stage.")
+    table(statements[:2500], "dna_table")
     inspect(pick_record())
 elif view == "Social network · Step 8":
     st.caption("Only edges provided with source, target, type and evidence can count as SNA ties.")
