@@ -5,10 +5,11 @@ Field names match LaclauGPT-Multimodal-Analysis/ep24_stage_contract.py
 """
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,10 @@ COUNTRY_ALIASES = {
     "pl": ("pl", "poland"),
     "pt": ("pt", "portugal"),
 }
+
+#: The EP24 exporter moves any cell longer than its text threshold out of the row CSV into
+#: ``<country>_text.jsonl.gz``, keyed by the same ``record_id`` the CSV row carries.
+BUNDLE_SUFFIX = "_text.jsonl.gz"
 
 
 def text(value: Any) -> str:
@@ -133,12 +138,14 @@ def read_dna_children(root: str | Path, parents: list[Mapping[str, Any]]
         raw = text(value).lower()
         return aliases.get(raw, raw)
 
-    index: dict[tuple[str, str, str], set[int]] = {}
+    # Keyed by identifier value only: a child's ``source_record_id`` *is* the parent's
+    # ``_storage_id`` on the real export, so including the field name would orphan every statement.
+    index: dict[tuple[str, str], set[int]] = {}
     for number, row in enumerate(parents):
         for key in ("_storage_id", "source_record_id"):
             value = text(row.get(key))
             if value:
-                index.setdefault((country(row.get("country")), key, value), set()).add(number)
+                index.setdefault((country(row.get("country")), value), set()).add(number)
 
     result: list[dict[str, Any]] = []
     counts = {"read": 0, "matched": 0, "orphan": 0, "ambiguous": 0, "duplicate": 0}
@@ -155,7 +162,7 @@ def read_dna_children(root: str | Path, parents: list[Mapping[str, Any]]
             for key in ("_storage_id", "source_record_id"):
                 value = text(item.get(key))
                 if value:
-                    matches.update(index.get((name, key, value), set()))
+                    matches.update(index.get((name, value), set()))
             if not matches:
                 counts["orphan"] += 1
                 continue
@@ -177,6 +184,114 @@ def read_dna_children(root: str | Path, parents: list[Mapping[str, Any]]
             result.append({"document": document, "country": name, **item})
             counts["matched"] += 1
     return result, counts
+
+
+def _dicts(value: Any) -> list[dict[str, Any]]:
+    """A list of dicts out of a JSON cell, a list, or a dict that holds the list."""
+    parsed = unpack(value)
+    if isinstance(parsed, dict):
+        parsed = next((part for part in parsed.values() if isinstance(part, list)), [])
+    return [item for item in parsed if isinstance(item, dict)] if isinstance(parsed, list) else []
+
+
+def record_key(row: Mapping[str, Any]) -> str:
+    """The producer's own row key when the export carries one, else our namespaced identity.
+
+    The EP24 exporter writes ``record_id`` into every index row and keys its text bundles by the same
+    value, so the bundle can be read without guessing at identity rules.
+    """
+    return text(row.get("record_id")) or identity(row)
+
+
+def _country_aliases(country: str) -> set[str]:
+    folded = country.casefold()
+    return set(next((aliases for aliases in COUNTRY_ALIASES.values() if folded in aliases), (folded,)))
+
+
+#: ``{path: (mtime_ns, size, field): {record_id: parsed value}}``. A bundle is hundreds of megabytes
+#: through gzip, so it is scanned once per process; the key carries the file's identity, which means a
+#: swapped export invalidates the entry instead of serving the previous corpus.
+_BUNDLE_MEMO: dict[tuple[str, int, int, str], dict[str, list[dict[str, Any]]]] = {}
+
+
+def bundle_files(root: str | Path) -> list[Path]:
+    """``<country>_text.jsonl.gz``: where the exporter puts cells too long for the row CSV."""
+    root = Path(root).resolve()
+    return sorted(path for folder in (root, root / "data") if folder.is_dir()
+                  for path in folder.glob(f"*{BUNDLE_SUFFIX}") if path.is_file())
+
+
+def read_bundle_field(root: str | Path, field: str,
+                      countries: Iterable[str] | None = None) -> dict[str, list[dict[str, Any]]]:
+    """``record_id`` → parsed ``field`` from the text bundles, limited to ``countries`` when given.
+
+    The exporter moves every cell longer than its 1,000-character threshold out of ``combined.csv``
+    into these bundles, so a reader that opens only the CSV cannot see a full statement list at all.
+    """
+    wanted = {alias for country in (countries or ()) for alias in _country_aliases(country)}
+    found: dict[str, list[dict[str, Any]]] = {}
+    for path in bundle_files(root):
+        if wanted and path.name[: -len(BUNDLE_SUFFIX)].casefold() not in wanted:
+            continue
+        stat = path.stat()
+        memo_key = (str(path), stat.st_mtime_ns, stat.st_size, field)
+        if memo_key not in _BUNDLE_MEMO:
+            scanned: dict[str, list[dict[str, Any]]] = {}
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        payload = json.loads(line)
+                    except ValueError:
+                        continue
+                    key = text(payload.get("record_id"))
+                    entries = _dicts(payload.get(field))
+                    if key and entries:
+                        scanned[key] = entries
+            _BUNDLE_MEMO[memo_key] = scanned
+        found.update(_BUNDLE_MEMO[memo_key])
+    return found
+
+
+@dataclass(frozen=True)
+class DNAEvidence:
+    """DNA statements for the current selection, and which export carrier supplied them."""
+
+    items: tuple[dict[str, Any], ...] = ()
+    source: str = "row cells"
+    records: int = 0
+    counts: Mapping[str, int] = field(default_factory=dict)
+
+    @property
+    def statements(self) -> int:
+        return len(self.items)
+
+
+def dna_evidence(records: Sequence[Mapping[str, Any]], root: str | Path) -> DNAEvidence:
+    """Step 7 statements for these records, from the export's own carriers, best first.
+
+    1. **text bundle** — same unit as the export (one entry per exported row) and exact: the producer
+       moved the long cells there, so this is the only carrier that sees every statement;
+    2. **child tables** — the normalized fallback, joined by :func:`read_dna_children`, which reports
+       orphans and ambiguity instead of attributing them to a listed record;
+    3. **row cells** — only what survived the producer's 1,000-character text threshold.
+    """
+    countries = {text(row.get("country")) for row in records} - {""}
+    bundle = read_bundle_field(root, "dna_statements_json", countries)
+    items = [{"document": identity(row), **statement}
+             for row in records if record_key(row) in bundle
+             for statement in bundle[record_key(row)] if identity(row)]
+    if items:
+        return DNAEvidence(tuple(items), "text bundle", len({item["document"] for item in items}))
+
+    found, counts = read_dna_children(root, list(records))
+    if counts.get("read"):
+        return DNAEvidence(tuple(found), "children tables",
+                           len({item["document"] for item in found}), counts)
+
+    cells = [{"document": identity(row), **statement}
+             for row in records for statement in _dicts(row.get("dna_statements_json"))
+             if identity(row)]
+    return DNAEvidence(tuple(cells), "row cells", len({item["document"] for item in cells}))
 
 
 def rdf_files(root: str | Path) -> list[Path]:
