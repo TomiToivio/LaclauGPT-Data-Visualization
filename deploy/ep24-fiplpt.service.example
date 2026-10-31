@@ -1,0 +1,44 @@
+# EP24 FI/PL/PT dashboard — isolated service unit template (#215).
+#
+# This is a TEMPLATE. The deployed unit lives on the host with real paths substituted and is not
+# committed: the data directory, bind address and log location are operational configuration.
+#
+#   ${VIS_DATA_DIR}       absolute path to the authorized FI/PL/PT export (outside this repository)
+#   ${BIND_ADDR}          bind address; use the host's private interface, not 0.0.0.0
+#   ${PORT}               a port chosen by inspection, never assumed to be free
+#   ${LOG_DIR}            writable log directory
+#
+# Install:
+#   cp ep24-fiplpt.service.example ~/.config/systemd/user/ep24-fiplpt.service   # then substitute
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now ep24-fiplpt.service
+#
+# Verify:
+#   systemctl --user is-active ep24-fiplpt.service
+#   curl -fsS "http://${BIND_ADDR}:${PORT}/_stcore/health"      # expects: ok
+#   journalctl --user -u ep24-fiplpt.service -n 50 --no-pager
+
+[Unit]
+Description=EP24 reprocessed FI/PL/PT dashboard (isolated service)
+Documentation=file:///opt/laclaugpt/docs/EP24_FIPLPT_SERVICE.md
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${VIS_REPO}
+Environment=LACLAUGPT_VIS_ANALYSIS_DATA_DIR=${VIS_DATA_DIR}
+Environment=LACLAUGPT_VIS_PROJECT_ID=ep24
+Environment=LACLAUGPT_VIS_PROFILE=server
+Environment=LACLAUGPT_VIS_ALLOW_NONLOOPBACK=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=${VIS_REPO}/.venv/bin/python -m streamlit run \
+    src/laclaugpt_visualization/ep24_reprocessed_app.py \
+    --server.address ${BIND_ADDR} --server.port ${PORT} \
+    --server.headless true --browser.gatherUsageStats false
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:${LOG_DIR}/ep24_fiplpt.log
+StandardError=append:${LOG_DIR}/ep24_fiplpt.log
+
+[Install]
+WantedBy=default.target
