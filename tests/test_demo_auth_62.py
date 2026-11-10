@@ -7,13 +7,12 @@ because a gate that can be bypassed by an empty string is worse than no gate: it
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from laclaugpt_visualization.demo_auth import (  # noqa: E402
+from laclaugpt_visualization.demo_auth import (
     PASSWORD_ENV,
     configured_password,
     password_matches,
