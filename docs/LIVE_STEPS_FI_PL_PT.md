@@ -100,7 +100,28 @@ tests execute the real script through `streamlit.testing.v1.AppTest`).
   research demo until access control is added.
 - Step 8 is partial (720/1 500). Nothing in the UI infers missing SNA as absent relations.
 
-## Deployment on Laskin (:8503, issue #62)
+## Deployment on the research server (`195.148.31.227:8503`, verified)
+
+| Item | Value |
+| --- | --- |
+| URL | <http://195.148.31.227:8503/> |
+| Code | a checkout of this repository on the server, `origin/main` |
+| Data | `LACLAUGPT_VIS_LIVE_STEPS_DATA` → the private artifact directory synced from `LaclauGPT-Private` |
+| Launcher | `analysis/live_steps_1_7/deploy/run.sh {start,status,stop,health,rollback}` in the private repository |
+| Process | `setsid --fork python -m streamlit run src/laclaugpt_visualization/live_steps_app.py --server.port 8503` |
+| Health | `curl -s http://195.148.31.227:8503/_stcore/health` → `ok` |
+| Log | `$HOME/.local/state/laclauGPT-live-steps/streamlit.log` |
+
+The private repository's `deploy/README.md` carries the paths, the refresh recipe, the restart policy
+and the rollback. The port previously served the EP24 reprocessed export from another directory; that
+directory is untouched and restarting its old command is the last-resort rollback.
+
+The export carries author usernames, video identifiers and transcripts, and the app has no
+authentication unless `LACLAUGPT_VIS_DEMO_PASSWORD` is set. Current posture: a read-only research demo on
+a known host, publicly reachable, with the gate available and documented. That is a decision to take
+deliberately — the gate must be set before this is treated as anything other than a demo.
+
+## Deployment on Laskin (:8503, reported by another session, not verified from here)
 
 The app is public code; the artifacts are private data. The server runs the app from a clean checkout of this
 repository and reads the artifacts through an environment variable, so nothing private is ever copied here.
@@ -138,3 +159,27 @@ systemctl --user enable --now laclaugpt-live-steps.service
 
 The legacy dashboard on :8501 is a **different unit** (`laclaugpt-visualization-ai26.service`); nothing in this
 deployment restarts it.
+
+## Compatibility with the legacy :8501 dashboard
+
+The legacy app (`ep2024_postprocess/dashboard/dashboard.py`, served on :8501, 3 500+ lines) is the
+researcher's familiar surface. This app borrows its conventions where the data supports them and
+departs where it cannot. :8501 itself is untouched.
+
+| Legacy :8501 | Here | Why |
+| --- | --- | --- |
+| sidebar filters (country, platform, political preference, search) | same filters, same names | muscle memory; the filters drive every tab |
+| KPI cards at the top | same (videos, countries, all-7-steps, with-SNA) | numbers a researcher quotes |
+| per-video browser with a tab per model | per-video browser with a **step selector 1–7** (+SNA) | the export is organised by pipeline step, not by model name |
+| Frequency / Entities / Topics / Sentiments / Languages / Statistics tabs | Overview, Aggregates, Problems | same questions, fewer, cross-filtered |
+| "Report Problems" | Problems | every record with a non-ok status, with the producer's own reason |
+| multimodal evidence side by side | one stage at a time, verbatim, with the stage's status beside it | the export has one value per stage, not per model variant |
+| — | Search over transcripts/OCR/analyses | the legacy dashboard could not full-text search the corpus |
+| — | DNA statements + actor–concept graph | steps 6–7 did not exist in EP24 |
+| — | Exports of the filtered tables | requested by #62 |
+| per-video URL parameters | Streamlit selection state, no deep links | gap: a link cannot yet address one record |
+
+**Gaps, stated plainly:** no deep-linkable record URLs; no side-by-side model comparison (the export
+carries one value per stage); the legacy dashboard's ManifestoBERTa and topic-model views have no
+counterpart because those steps are not in this export.
+

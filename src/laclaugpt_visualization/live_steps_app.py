@@ -14,14 +14,17 @@ import os
 import sys
 from pathlib import Path
 
+import networkx as nx
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
     from laclaugpt_visualization.live_steps import (
         STEPS,
+        actor_concept_graph,
         affect_rows,
         bundle_text,
         child_records,
@@ -44,6 +47,7 @@ except ModuleNotFoundError:  # standalone deployment: only this module and its h
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from live_steps import (  # type: ignore[no-redef]
         STEPS,
+        actor_concept_graph,
         affect_rows,
         bundle_text,
         child_records,
@@ -70,7 +74,10 @@ SEARCH_FIELDS = ("asr_transcript", "asr_translated", "ocr_1", "frame_analysis_1"
                  "vllm_video_analysis", "summary_analysis", "laclau_summary_md",
                  "dna_analysis_markdown", "sna_report_markdown")
 
-from laclaugpt_visualization.demo_auth import require_demo_password
+try:
+    from laclaugpt_visualization.demo_auth import require_demo_password
+except ModuleNotFoundError:  # standalone deployment
+    from demo_auth import require_demo_password  # type: ignore[no-redef]
 
 st.set_page_config(page_title="NoöPunk · FI/PL/PT live steps 1–7", layout="wide")
 # Security gate (#62): if LACLAUGPT_VIS_DEMO_PASSWORD is set, stop before loading the corpus.
@@ -112,6 +119,42 @@ def chart(series: pd.Series, title: str, x: str = "records"):
     data = series.rename(x).reset_index()
     data.columns = ["value" if column == "index" else column for column in data.columns]
     st.plotly_chart(px.bar(data, x=x, y=data.columns[0], title=title), width='stretch')
+
+
+def network_figure(nodes: pd.DataFrame, edges: pd.DataFrame, title: str):
+    """Force-directed actor–concept graph. Nodes are the producer's labels, never identifiers."""
+    if nodes.empty or edges.empty:
+        return None
+    graph = nx.Graph()
+    for row in nodes.itertuples():
+        graph.add_node(row.id, label=row.label, kind=row.kind, statements=row.statements)
+    for row in edges.itertuples():
+        graph.add_edge(row.source, row.target, weight=row.statements, stance=row.stance)
+    position = nx.spring_layout(graph, seed=7, k=0.9, iterations=120)
+    segments = []
+    for source, target in graph.edges():
+        segments.append((position[source][0], position[source][1], position[target][0],
+                         position[target][1], graph.edges[source, target]["stance"]))
+    axis = {"showgrid": False, "zeroline": False, "showticklabels": False}
+    figure = go.Figure()
+    for stance in sorted({segment[4] for segment in segments}):
+        chosen = [segment for segment in segments if segment[4] == stance]
+        xs, ys = [], []
+        for x0, y0, x1, y1, _ in chosen:
+            xs += [x0, x1, None]
+            ys += [y0, y1, None]
+        figure.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line={"width": 1, "color": "#c9ccd1"},
+                                    hoverinfo="skip", name=stance, legendgroup=stance))
+    for kind, colour, size in (("actor", "#4c78a8", 16), ("concept", "#f58518", 11)):
+        group = nodes[nodes["kind"] == kind]
+        figure.add_trace(go.Scatter(
+            x=[position[node][0] for node in group["id"]], y=[position[node][1] for node in group["id"]],
+            mode="markers+text", name=kind, text=group["label"], textposition="top center",
+            textfont={"size": 10},
+            marker={"size": [size + node[0] for node in zip(group["statements"])], "color": colour},
+            hovertemplate="%{text}<extra>" + kind + "</extra>"))
+    figure.update_layout(title=title, showlegend=True, height=560, xaxis=axis, yaxis=axis)
+    return figure
 
 
 def counts_of(frame: pd.DataFrame, column: str, limit: int = 15) -> pd.Series:
@@ -256,29 +299,36 @@ with tabs[3]:
                                      "sequence_number", "author_username", "account_type",
                                      "political_preference", "duration_minutes")}]),
                      width='stretch')
-        for step, (label, text_fields, index_fields) in STEPS.items():
-            status = clean(row.get(f"step_0{step}_status")) or "not reported"
-            with st.expander(f"Step {step} · {label} · {status}"):
-                meta = {key: clean(row.get(key)) for key in index_fields if clean(row.get(key))}
-                if meta:
-                    st.write(meta)
-                shown = False
-                for field in text_fields:
-                    value = bundle.get(field)
-                    if not value:
-                        continue
-                    shown = True
-                    if isinstance(value, list):
-                        st.markdown(f"*{field}* · {len(value)} records")
-                        st.dataframe(pd.DataFrame(value).astype(str), width='stretch')
-                    elif str(value).lstrip().startswith(("{", "[")):
-                        st.markdown(f"*{field}*")
-                        st.code(str(value)[:20000], language="json")
-                    else:
-                        st.markdown(f"*{field}*")
-                        st.write(str(value)[:20000])
-                if not shown:
-                    st.info("No output for this stage in the export (see the status above).")
+        available = [step for step, (_, text_fields, _) in STEPS.items()
+                     if any(bundle.get(field) for field in text_fields)]
+        st.markdown("**Steps**")
+        status_strip = " · ".join(f"{step} {clean(row.get(f'step_0{step}_status')) or 'not reported'}"
+                                  for step in range(1, 8))
+        st.caption(status_strip + (f" · 8 {clean(row.get('sna_status')) or 'not reported'}"
+                                   " (SNA: auxiliary, partial)"))
+        if not available:
+            st.info("No stage output in this record's bundle.")
+        else:
+            step = st.radio("Step", available, horizontal=True,
+                            format_func=lambda index: f"{index} · {STEPS[index][0]}",
+                            key="live_step_choice")
+            label, text_fields, index_fields = STEPS[step]
+            meta = {key: clean(row.get(key)) for key in index_fields if clean(row.get(key))}
+            if meta:
+                st.dataframe(pd.DataFrame([meta]), use_container_width=True)
+            for field in text_fields:
+                value = bundle.get(field)
+                if not value:
+                    st.caption(f"*{field}* — no output for this record in this stage.")
+                    continue
+                st.markdown(f"**{field}**")
+                if isinstance(value, list):
+                    st.caption(f"{len(value)} records")
+                    st.dataframe(pd.DataFrame(value).astype(str), use_container_width=True)
+                elif str(value).lstrip().startswith(("{", "[")):
+                    st.code(str(value)[:20000], language="json")
+                else:
+                    st.write(str(value)[:20000])
 
 with tabs[4]:
     st.subheader("Laclaudian discourse · step 6, and DNA · step 7")
@@ -339,6 +389,23 @@ with tabs[4]:
                   .replace("", pd.NA).dropna().value_counts(), "Network layers")
     else:
         st.info("No statements for this selection.")
+
+    st.markdown("**Observed actor–concept network**")
+    st.caption("One edge per extracted statement: the actor said something about the concept. Edge "
+               "weight is the number of statements, colour the dominant stance. Absent edges mean no "
+               "statement was extracted — not that no relation exists.")
+    scoped = st.checkbox("Only the record open in the browser", value=False)
+    open_record = clean(st.session_state.get("live_inspect"))
+    chosen = [statement for statement in statements
+              if not scoped or clean(statement.get("record_id")) == open_record]
+    nodes, graph_edges = actor_concept_graph(chosen)
+    figure = network_figure(nodes, graph_edges,
+                            f"Actor–concept graph · {len(nodes)} nodes, {len(graph_edges)} edges")
+    if figure is None:
+        st.info("No actor–concept pairs to draw. DNA did not run, or extracted no statement, for these "
+                "records.")
+    else:
+        st.plotly_chart(figure, use_container_width=True)
 
 with tabs[5]:
     st.subheader("Social network · step 8")
@@ -420,6 +487,19 @@ with tabs[7]:
               "Most frequent accounts")
 
 with tabs[8]:
+    st.subheader("Exports of the current selection")
+    st.caption("Private research data: these files carry author usernames, video ids and transcripts. "
+               "They are built from the filtered index and the bundle, and are not written anywhere "
+               "on the server.")
+    left, right = st.columns(2)
+    left.download_button("Filtered index as CSV", filtered.to_csv(index=False),
+                         file_name="live_steps_selection.csv", mime="text/csv")
+    statements = child_records(ROOT, filtered, "dna_statements_json")
+    right.download_button("DNA statements as CSV", statement_table(statements, limit=5000).to_csv(index=False),
+                          file_name="live_steps_statements.csv", mime="text/csv",
+                          disabled=not statements)
+
+    st.divider()
     st.subheader("Data quality — what this build changed, and why")
     counts = manifest.get("record_counts") or {}
     rows = [{"country": country, "read": data.get("read"), "exported": data.get("exported"),
