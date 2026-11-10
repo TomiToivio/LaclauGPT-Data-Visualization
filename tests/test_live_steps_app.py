@@ -40,6 +40,10 @@ def _load(path, name):
 
 
 builder = _load(BUILDER, "build_live_steps_artifacts_app_test")
+import sys
+
+sys.path.insert(0, str(ROOT / "src"))
+from laclaugpt_visualization import live_steps
 
 
 def row(country: str, index: int, *, platform: str = "Instagram",
@@ -81,6 +85,28 @@ def row(country: str, index: int, *, platform: str = "Instagram",
         "step_07_status": "complete" if dna_status == "ok" else "pending",
         **{f"step_0{step}_status": "complete" for step in range(1, 7)},
     }
+
+
+class GraphTests(unittest.TestCase):
+    """The actor–concept graph draws the producer's labels, and nothing it did not extract."""
+
+    def test_an_edge_exists_only_where_a_statement_does(self):
+        nodes, edges = live_steps.actor_concept_graph([
+            {"actor_name_raw": "Riikka Purra", "concept_label_raw": "maahanmuutto", "stance": "against"},
+            {"actor_name_raw": "Riikka Purra", "concept_label_raw": "maahanmuutto", "stance": "against"},
+            {"actor_name_raw": "Sanna Marin", "concept_label_raw": "ilmasto", "stance": "for"},
+            {"actor_name_raw": "", "concept_label_raw": "ilmasto", "stance": "for"},
+        ])
+        self.assertEqual(len(nodes), 4)                       # two actors, two concepts
+        self.assertEqual(len(edges), 2)                      # the actorless statement is not an edge
+        heaviest = edges.sort_values("statements", ascending=False).iloc[0]
+        self.assertEqual(heaviest["statements"], 2)
+        self.assertEqual(heaviest["stance"], "against")
+        self.assertTrue(all(not str(node).startswith("actor:") for node in nodes["label"]))
+
+    def test_an_empty_corpus_yields_no_graph(self):
+        nodes, edges = live_steps.actor_concept_graph([])
+        self.assertTrue(nodes.empty and edges.empty)
 
 
 class LiveStepsAppTests(unittest.TestCase):
@@ -189,6 +215,22 @@ class LiveStepsAppTests(unittest.TestCase):
         self.assertIn("Videos with a non-ok stage", metrics)
         text = " ".join(str(frame.value) for frame in at.dataframe)
         self.assertIn("pending", text)
+
+    def test_each_step_has_a_navigable_section(self):
+        at = self.app()
+        self.assertEqual([radio.label for radio in at.radio], ["Step"])
+        options = at.radio(key="live_step_choice").options
+        self.assertEqual(len(options), len(live_steps.STEPS))
+        self.assertTrue(options[0].startswith("1"))
+
+    def test_the_actor_concept_graph_renders_and_the_exports_are_offered(self):
+        at = self.app()
+        self.assertEqual([str(e.value) for e in at.exception], [])
+        self.assertGreaterEqual(len(at.get("plotly_chart")), 12)
+        self.assertIn("Only the record open in the browser",
+                      [checkbox.label for checkbox in at.checkbox])
+        self.assertIn("Filtered index as CSV",
+                      [button.label for button in at.get("download_button")])
 
     def test_the_data_quality_tab_keeps_the_dropped_columns_visible(self):
         at = self.app()

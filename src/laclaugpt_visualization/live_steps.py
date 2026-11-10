@@ -333,6 +333,41 @@ def search_bundle(bundle: Mapping[str, Mapping[str, Any]], query: str,
     return sorted(hits, key=lambda hit: -hit["hits"])[:limit]
 
 
+def actor_concept_graph(statements: Iterable[Mapping[str, Any]],
+                        max_actors: int = 40, max_concepts: int = 40) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The observed actor–concept network, straight from the statements.
+
+    Two node kinds, one edge kind: an actor *said something about* a concept. Edge weight is the number
+    of statements, colour is the dominant stance. Only what the producer extracted is drawn — an absent
+    edge means no statement was extracted, not that no relation exists in the world.
+    """
+    actors: Counter = Counter()
+    concepts: Counter = Counter()
+    pairs: Counter = Counter()
+    stance: dict[tuple[str, str], Counter] = {}
+    for statement in statements:
+        actor = clean(statement.get("actor_name_raw")) or clean(statement.get("actor_id"))
+        concept = clean(statement.get("concept_label_raw")) or clean(statement.get("concept"))
+        if not actor or not concept:
+            continue
+        actors[actor] += 1
+        concepts[concept] += 1
+        pairs[(actor, concept)] += 1
+        stance.setdefault((actor, concept), Counter())[clean(statement.get("stance")) or "not stated"] += 1
+
+    keep_actors = {name for name, _ in actors.most_common(max_actors)}
+    keep_concepts = {name for name, _ in concepts.most_common(max_concepts)}
+    nodes = ([{"id": f"actor:{name}", "label": name, "kind": "actor", "statements": count}
+              for name, count in actors.most_common(max_actors)]
+             + [{"id": f"concept:{name}", "label": name, "kind": "concept", "statements": count}
+                for name, count in concepts.most_common(max_concepts)])
+    edges = [{"source": f"actor:{actor}", "target": f"concept:{concept}", "statements": count,
+              "stance": stance[(actor, concept)].most_common(1)[0][0]}
+             for (actor, concept), count in pairs.items()
+             if actor in keep_actors and concept in keep_concepts]
+    return pd.DataFrame(nodes), pd.DataFrame(edges)
+
+
 def problem_rows(frame: pd.DataFrame) -> pd.DataFrame:
     """Every record whose producer said something other than ok, with the reason next to it."""
     statuses = [f"step_0{step}_status" for step in range(1, 8)] + ["sna_status"]
