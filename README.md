@@ -88,6 +88,14 @@ See the **[scientific paper](https://github.com/TomiToivio/LaclauGPT/blob/main/p
 
 It provides one researcher-facing application with Monitor, Researcher Review, and Explore modes. It does not perform collection or discourse inference itself.
 
+## Live FI/PL/PT pipeline explorer (steps 1–7)
+
+A read-only researcher view over the live Finland/Poland/Portugal exports, served at
+<http://195.148.31.227:8503/>: per-stage coverage, a per-video evidence browser (ASR, OCR, frame VLM,
+video VLM, summary, Laclau reading, DNA statements, SNA edges), corpus aggregates, the DNA/SNA
+drilldowns, and the cleaning audit. Build command, artifact contract, cleaning numbers and honest
+gaps: [`docs/LIVE_STEPS_FI_PL_PT.md`](docs/LIVE_STEPS_FI_PL_PT.md).
+
 ## Unified application
 
 - **Monitor**: near-real-time corpus status, analyzed/awaiting-analysis counts, latest source/analysis timestamps, formations, signifiers, actors and descriptive activity summaries.
