@@ -70,7 +70,11 @@ SEARCH_FIELDS = ("asr_transcript", "asr_translated", "ocr_1", "frame_analysis_1"
                  "vllm_video_analysis", "summary_analysis", "laclau_summary_md",
                  "dna_analysis_markdown", "sna_report_markdown")
 
+from laclaugpt_visualization.demo_auth import require_demo_password
+
 st.set_page_config(page_title="NoöPunk · FI/PL/PT live steps 1–7", layout="wide")
+# Security gate (#62): if LACLAUGPT_VIS_DEMO_PASSWORD is set, stop before loading the corpus.
+require_demo_password()
 
 frame, manifest = load(ROOT)
 if frame.empty:
