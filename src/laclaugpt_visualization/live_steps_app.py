@@ -148,15 +148,17 @@ def network_figure(nodes: pd.DataFrame, edges: pd.DataFrame, title: str,
         for x0, y0, x1, y1, _ in chosen:
             xs += [x0, x1, None]
             ys += [y0, y1, None]
-        figure.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line={"width": 1, "color": "#c9ccd1"},
+        figure.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line={"width": 1.2, "color": "#b6bac0"},
                                     hoverinfo="skip", name=stance, legendgroup=stance))
-    for kind, colour, size in (("actor", "#4c78a8", 16), ("concept", "#f58518", 11)):
+    for kind, colour, size in (("actor", "#2f6f9f", 12), ("concept", "#e07b39", 10)):
         group = nodes[nodes["kind"] == kind]
         figure.add_trace(go.Scatter(
             x=[position[node][0] for node in group["id"]], y=[position[node][1] for node in group["id"]],
             mode="markers+text", name=kind, text=group["label"], textposition="top center",
-            textfont={"size": 10},
-            marker={"size": [size + 2 * value for value in group[node_weight]], "color": colour},
+            textfont={"size": 9},
+            marker={"size": [size + 4 * float(value) ** 0.5 for value in group[node_weight]],
+                    "color": colour, "opacity": 0.85,
+                    "line": {"width": 1, "color": "#ffffff"}},
             hovertemplate="%{text}<extra>" + kind + "</extra>"))
     figure.update_layout(title=title, showlegend=True, height=560, xaxis=axis, yaxis=axis)
     return figure
