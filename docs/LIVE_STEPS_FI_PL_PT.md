@@ -1,7 +1,7 @@
 # FI/PL/PT live pipeline explorer — steps 1–7
 
 A researcher-facing view over the three live `*_live_steps_1_7.csv` exports (Finland, Poland,
-Portugal). Served at <http://195.148.31.227:8503/>.
+Portugal). Served on **Laskin** at <http://100.115.95.109:8503/> (Tailscale address of `laskin01`).
 
 ## What the export contains
 
@@ -99,3 +99,42 @@ tests execute the real script through `streamlit.testing.v1.AppTest`).
 - No authentication layer; the export is private and the port is public, so it must stay a read-only
   research demo until access control is added.
 - Step 8 is partial (720/1 500). Nothing in the UI infers missing SNA as absent relations.
+
+## Deployment on Laskin (:8503, issue #62)
+
+The app is public code; the artifacts are private data. The server runs the app from a clean checkout of this
+repository and reads the artifacts through an environment variable, so nothing private is ever copied here.
+
+**Live URL:** <http://100.115.95.109:8503/> — the server's Tailscale address. The process binds to that
+interface only, matching the legacy dashboard on :8501: the data includes transcripts, video ids and author
+handles and the demo has no authentication of its own, so the network boundary *is* the access control until
+an authenticated deployment is agreed.
+
+| Item | Value |
+| --- | --- |
+| Service | `laclaugpt-live-steps.service` (systemd user unit, `Restart=on-failure`) |
+| Working directory | a clean checkout of this repository on the server, at `origin/main` |
+| Launcher | `scripts/serve_live_steps.sh 8503 100.115.95.109` |
+| Data root | `LACLAUGPT_VIS_LIVE_STEPS_DATA` → the private artifact directory (`analysis/live_steps_1_7` in `LaclauGPT-Private`; its `deploy/README.md` is the source of truth for paths) |
+| Health | `curl -s http://100.115.95.109:8503/_stcore/health` → `ok` |
+| Logs | `journalctl --user -u laclaugpt-live-steps.service -n 50` |
+
+### Update
+
+```bash
+git pull --ff-only                                        # in the server's checkout of this repository
+git -C "$PRIVATE_CHECKOUT" pull --ff-only                 # refreshed artifacts, if any
+systemctl --user restart laclaugpt-live-steps.service
+curl -s http://100.115.95.109:8503/_stcore/health
+```
+
+### Rollback
+
+```bash
+systemctl --user disable --now laclaugpt-live-steps.service   # :8503 down, :8501 untouched
+git checkout <previous-sha>
+systemctl --user enable --now laclaugpt-live-steps.service
+```
+
+The legacy dashboard on :8501 is a **different unit** (`laclaugpt-visualization-ai26.service`); nothing in this
+deployment restarts it.
