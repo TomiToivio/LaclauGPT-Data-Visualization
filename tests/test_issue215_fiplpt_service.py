@@ -90,7 +90,8 @@ class DeployedAppContractTests(unittest.TestCase):
             re.split(r"[<>=!\[; ]", requirement)[0].strip().lower()
             for requirement in pyproject["project"]["dependencies"]
         }
-        first_party = {"laclaugpt_visualization", "ep24_reprocessed"}
+        first_party = {"laclaugpt_visualization", "ep24_reprocessed",
+                       "demo_auth"}  # sibling modules shipped alongside the app
         tree = ast.parse((ROOT / "src" / "laclaugpt_visualization"
                           / "ep24_reprocessed_app.py").read_text(encoding="utf-8"))
         imported: set[str] = set()
