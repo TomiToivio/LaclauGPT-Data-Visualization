@@ -94,7 +94,7 @@ def chart(series: pd.Series, title: str, x: str = "records"):
         return
     data = series.rename(x).reset_index()
     data.columns = [c if c != "index" else "value" for c in data.columns]
-    st.plotly_chart(px.bar(data, x=x, y=data.columns[0], title=title), use_container_width=True)
+    st.plotly_chart(px.bar(data, x=x, y=data.columns[0], title=title), width='stretch')
 
 
 def table(rows: list[dict], key: str, caption: str = ""):
@@ -105,7 +105,7 @@ def table(rows: list[dict], key: str, caption: str = ""):
     display = pd.DataFrame(rows).astype(str).replace({"nan": "", "None": ""})
     if caption:
         st.caption(caption)
-    event = st.dataframe(display, use_container_width=True, on_select="rerun",
+    event = st.dataframe(display, width='stretch', on_select="rerun",
                          selection_mode="single-row", key=key)
     selection = getattr(event, "selection", None)
     chosen = list(getattr(selection, "rows", []) or [])
@@ -139,22 +139,22 @@ with tabs[1]:
     if availability.empty:
         st.info("No stage coverage in the manifest.")
     else:
-        st.dataframe(availability, use_container_width=True)
+        st.dataframe(availability, width='stretch')
         st.plotly_chart(px.bar(availability, x="stage", y="pct", color="country", barmode="group",
-                               title="Per-stage coverage (%)"), use_container_width=True)
+                               title="Per-stage coverage (%)"), width='stretch')
     st.subheader("Step status per record")
     steps = step_table(filtered)
     if not steps.empty:
-        st.dataframe(steps, use_container_width=True)
+        st.dataframe(steps, width='stretch')
         st.plotly_chart(px.bar(steps, x="stage", y="pct", color="country", barmode="group",
                                title="Step completion in the current selection (%)"),
-                        use_container_width=True)
+                        width='stretch')
     with st.expander("Status vocabulary as the producer wrote it"):
         for step, (label, _, _) in STEPS.items():
             column = f"step_0{step}_status"
             if column in filtered.columns:
                 st.markdown(f"**Step {step} · {label}**")
-                st.dataframe(status_counts(filtered, column), use_container_width=True)
+                st.dataframe(status_counts(filtered, column), width='stretch')
 
 with tabs[2]:
     st.subheader("Record browser")
@@ -181,7 +181,7 @@ with tabs[2]:
                                     ("video_id", "_storage_id", "allas_filename", "source_recording",
                                      "sequence_number", "author_username", "account_type",
                                      "political_preference", "duration_minutes")}]),
-                     use_container_width=True)
+                     width='stretch')
         for step, (label, text_fields, index_fields) in STEPS.items():
             status = clean(row.get(f"step_0{step}_status")) or "not reported"
             with st.expander(f"Step {step} · {label} · {status}"):
@@ -196,7 +196,7 @@ with tabs[2]:
                     shown = True
                     if isinstance(value, list):
                         st.markdown(f"*{field}* · {len(value)} records")
-                        st.dataframe(pd.DataFrame(value).astype(str), use_container_width=True)
+                        st.dataframe(pd.DataFrame(value).astype(str), width='stretch')
                     elif str(value).lstrip().startswith(("{", "[")):
                         st.markdown(f"*{field}*")
                         st.code(str(value)[:20000], language="json")
@@ -213,20 +213,20 @@ with tabs[3]:
     left, right = st.columns(2)
     with left:
         st.markdown("**Step 6 · Laclau status**")
-        st.dataframe(status_counts(filtered, "laclau_status"), use_container_width=True)
+        st.dataframe(status_counts(filtered, "laclau_status"), width='stretch')
         st.markdown("**Formula-of-populism conditions met**")
-        st.dataframe(status_counts(filtered, "laclau_formula_conditions_met"), use_container_width=True)
+        st.dataframe(status_counts(filtered, "laclau_formula_conditions_met"), width='stretch')
         st.markdown("**Abstentions (producer)**")
         if "laclau_abstention_reason" in filtered:
             abstentions = filtered["laclau_abstention_reason"].map(clean)
             abstentions = abstentions[abstentions != ""]
             st.dataframe(abstentions.value_counts().rename_axis("reason").reset_index(name="records"),
-                         use_container_width=True)
+                         width='stretch')
         else:
             st.info("This export carries no abstention column.")
     with right:
         st.markdown("**Step 7 · DNA status**")
-        st.dataframe(status_counts(filtered, "dna_status"), use_container_width=True)
+        st.dataframe(status_counts(filtered, "dna_status"), width='stretch')
         statements = child_records(ROOT, filtered, "dna_statements_json")
         st.caption(f"{len(statements)} statements for the current selection, read from the text bundle.")
         if statements:
@@ -266,7 +266,7 @@ with tabs[4]:
             chart(edge_frame["country"].replace("", "unknown").str.casefold().value_counts(),
                   "Edges by country")
             st.markdown("**Most connected nodes**")
-            st.dataframe(node_degrees(edges), use_container_width=True)
+            st.dataframe(node_degrees(edges), width='stretch')
         st.markdown("**Edges**")
         keys = [key for key in ("source", "target", "edge_type", "confidence", "evidence_quote")
                 if key in edge_frame.columns]
@@ -286,7 +286,7 @@ with tabs[5]:
               "Top themes (summary stage)")
     with right:
         st.markdown("**Sentiment targets (producer-coded)**")
-        st.dataframe(sentiment_totals(filtered), use_container_width=True)
+        st.dataframe(sentiment_totals(filtered), width='stretch')
         chart(value_counts(filtered, "asr_language", 10).set_index("value")["records"],
               "ASR language")
         chart(value_counts(filtered, "context_evidence_role", 10).set_index("value")["records"],
@@ -300,14 +300,14 @@ with tabs[6]:
              "invalid ids removed": data.get("invalid_ids"),
              "DNA statements": data.get("dna_statement_rows")}
             for country, data in counts.items() if isinstance(data, dict)]
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    st.dataframe(pd.DataFrame(rows), width='stretch')
     st.caption(f"Duplicate rule: identity is (country, video_id); the row carrying the most stage "
                f"output wins. Source bytes {sum(v.get('source_bytes', 0) for v in (manifest.get('countries') or {}).values()) / 1e6:.0f} MB "
                f"→ index + text bundle {sum(v.get('bytes', 0) for v in (manifest.get('outputs') or [])) / 1e6:.0f} MB.")
     dropped = (manifest.get("inputs") or {}).get("finland", {}).get("dropped_reasons") or {}
     st.markdown(f"**Dropped source columns ({len(dropped)}) and why**")
     st.dataframe(pd.DataFrame([{"column": key, "reason": value} for key, value in sorted(dropped.items())]),
-                 use_container_width=True)
+                 width='stretch')
     failures = manifest.get("parse_failures") or {}
     if any(any(v.values()) for v in failures.values() if isinstance(v, dict)):
         st.warning("Unparseable JSON cells in the export: " + str(failures))
@@ -330,6 +330,6 @@ with tabs[7]:
     st.markdown("**Per-country source files**")
     st.dataframe(pd.DataFrame([{"country": country, **data}
                                for country, data in (manifest.get("countries") or {}).items()]),
-                 use_container_width=True)
+                 width='stretch')
     st.caption("Nothing here is written back to the canonical records, and no chart is a finding: "
                "the status fields prove a stage ran, not that its interpretation is right.")
