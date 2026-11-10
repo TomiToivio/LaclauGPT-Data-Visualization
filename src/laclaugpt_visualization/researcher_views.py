@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 import math
 from collections import Counter
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -90,7 +91,6 @@ def dna_network_figure(statements: list[dict]) -> go.Figure | None:
         return None
     actors = sorted({actor for actor, _, _ in links})
     concepts = sorted({concept for _, concept, _ in links})
-    nodes = [("actor", item) for item in actors] + [("concept", item) for item in concepts]
     positions = {}
     for kind, names, x in (("actor", actors, 0), ("concept", concepts, 1)):
         for i, name in enumerate(names):

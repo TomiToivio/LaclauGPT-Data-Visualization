@@ -4,7 +4,11 @@ from __future__ import annotations
 import unittest
 
 from laclaugpt_visualization.researcher_views import (
-    dna_network_figure, evidence_fields, readable_value, statement_links, status_label,
+    dna_network_figure,
+    evidence_fields,
+    readable_value,
+    statement_links,
+    status_label,
 )
 
 

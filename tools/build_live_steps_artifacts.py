@@ -6,6 +6,7 @@ The deliverable is the artifact contract this repository's reprocessed app alrea
     <country>.csv              one row per record: short scalars, statuses, counts, dates
     <country>_text.jsonl.gz    long cells keyed by record_id (transcripts, analyses, statements)
     children/<country>_dna_statements.csv   normalized DNA statements, joined on _storage_id
+    cleaned/<country>_clean.csv  the whole cleaned dataframe, every kept column, verbatim
     combined.csv               the three indexes stacked
     MANIFEST.json              per-column keep/drop decision + reason, stage coverage, audit
 
@@ -219,6 +220,8 @@ def build_country(path: Path, out: Path) -> tuple[dict, list[str]]:
     bundle_path = out / f"{country}_text.jsonl.gz"
     children_path = out / "children" / f"{country}_dna_statements.csv"
     children_path.parent.mkdir(parents=True, exist_ok=True)
+    clean_path = out / "cleaned" / f"{country}_clean.csv"
+    clean_path.parent.mkdir(parents=True, exist_ok=True)
 
     header = header_of(path)
     best: dict[str, tuple] = {}
@@ -241,6 +244,11 @@ def build_country(path: Path, out: Path) -> tuple[dict, list[str]]:
                      + ["record_date", "month", "duration_minutes", "pipeline_steps_ok", "has_sna"])
     text_fields = [name for name in TEXT_COLUMNS if name in header]
     child_fields = [name for name in CHILD_COLUMNS if name in header]
+    #: Every kept column in one frame: identity, metadata, step status, then the long cells. This is the
+    #: cleaned dataframe a researcher opens in pandas; the index + bundle above exist so the app does not
+    #: have to load it.
+    clean_columns = ([name.replace("record_id", "record_id") for name in index_columns]
+                     + [name for name in text_fields + list(child_fields) if name not in index_columns])
 
     exported = statements_total = 0
     covered = {stage: 0 for stage in STAGE_SPEC}
@@ -249,9 +257,12 @@ def build_country(path: Path, out: Path) -> tuple[dict, list[str]]:
     with index_path.open("w", newline="", encoding="utf-8") as index_file, \
             gzip.GzipFile(str(bundle_path), "wb", mtime=0) as raw_bundle, \
             io.TextIOWrapper(raw_bundle, encoding="utf-8", newline="\n") as bundle_file, \
-            children_path.open("w", newline="", encoding="utf-8") as child_file:
+            children_path.open("w", newline="", encoding="utf-8") as child_file, \
+            clean_path.open("w", newline="", encoding="utf-8") as clean_file:
         writer = csv.DictWriter(index_file, fieldnames=index_columns, extrasaction="ignore")
         writer.writeheader()
+        clean_writer = csv.DictWriter(clean_file, fieldnames=clean_columns, extrasaction="ignore")
+        clean_writer.writeheader()
         child_writer = None
         seen: set[str] = set()
         for record in records(path):
@@ -274,6 +285,7 @@ def build_country(path: Path, out: Path) -> tuple[dict, list[str]]:
                 if clean(value).lower() in OK_TOKENS)
             record["has_sna"] = bool(clean(record.get("sna_edges_json")))
             writer.writerow({name: record.get(name, "") for name in index_columns})
+            clean_writer.writerow({name: record.get(name, "") for name in clean_columns})
 
             payload: dict = {"record_id": record_id}
             for name in text_fields:
@@ -315,6 +327,8 @@ def build_country(path: Path, out: Path) -> tuple[dict, list[str]]:
         "parse_failures": parse_failures,
         "index": index_path.name,
         "bundle": bundle_path.name,
+        "cleaned": clean_path.name,
+        "cleaned_bytes": clean_path.stat().st_size,
         "children": children_path.name if statements_total else "",
         "stage_coverage": {
             stage: {"available": any(field in header for field in output_fields),
@@ -337,6 +351,20 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def stack(target: Path, sources: list[Path]) -> None:
+    """Concatenate CSVs with a union of their columns, in first-seen order."""
+    columns: list[str] = []
+    for source in sources:
+        with source.open(encoding="utf-8") as handle:
+            columns += [name for name in next(csv.reader(handle)) if name not in columns]
+    with target.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        for source in sources:
+            with source.open(newline="", encoding="utf-8") as rows:
+                writer.writerows(csv.DictReader(rows))
 
 
 def main(argv=None) -> int:
@@ -364,18 +392,14 @@ def main(argv=None) -> int:
               f"{audit['duplicate_rows']} duplicates, {audit['dna_statement_rows']} statements",
               flush=True)
 
-    combined = out / "combined.csv"
-    frame_columns: list[str] = []
+    clean_columns_seen: list[str] = []
     for country in COUNTRIES:
-        header_row = next(csv.reader((out / f"{country}.csv").open(encoding="utf-8")))
-        frame_columns += [name for name in header_row if name not in frame_columns]
-    with combined.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=frame_columns)
-        writer.writeheader()
-        for country in COUNTRIES:
-            with (out / f"{country}.csv").open(newline="", encoding="utf-8") as source:
-                for row in csv.DictReader(source):
-                    writer.writerow(row)
+        with (out / "cleaned" / f"{country}_clean.csv").open(encoding="utf-8") as handle:
+            clean_columns_seen += [name for name in next(csv.reader(handle))
+                                   if name not in clean_columns_seen]
+    stack(out / "combined.csv", [out / f"{country}.csv" for country in COUNTRIES])
+    # No cleaned/combined_clean.csv: it is exactly pandas.concat of the three per-country frames, and a
+    # 75 MB duplicate blob is not worth the convenience.
 
     manifest = {
         "contract": CONTRACT,
@@ -415,8 +439,16 @@ def main(argv=None) -> int:
         "provenance": {"source": "OneDrive live steps 1-7 exports",
                        "recording_dates_derived_from": "video_id token YYYYMMDD",
                        "note": "Counts describe the export, not the population it samples."},
-        "outputs": [{"name": path.name, "bytes": path.stat().st_size, "sha256": sha256(path)}
-                    for path in sorted(out.glob("*.csv")) + sorted(out.glob("*.jsonl.gz"))],
+        "outputs": [{"name": str(path.relative_to(out)), "bytes": path.stat().st_size,
+                     "sha256": sha256(path)}
+                    for path in sorted(out.glob("*.csv")) + sorted(out.glob("*.jsonl.gz"))
+                    + sorted(out.glob("cleaned/*.csv"))],
+    }
+    manifest["cleaned_frames"] = {
+        "what": "the cleaned dataframe per country, every kept column verbatim, one row per video",
+        "files": [f"cleaned/{country}_clean.csv" for country in COUNTRIES],
+        "columns": len(clean_columns_seen),
+        "note": "index + text bundle exist so the dashboard need not load these; both come from one build",
     }
     (out / "MANIFEST.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n",
                                        encoding="utf-8")
