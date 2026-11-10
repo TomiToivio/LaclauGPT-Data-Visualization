@@ -51,10 +51,15 @@ except ModuleNotFoundError:  # standalone deployment: only this module and its h
         value_counts,
     )
 
+try:
+    from laclaugpt_visualization.researcher_views import render_stage_explorer
+except ModuleNotFoundError:
+    from researcher_views import render_stage_explorer
+
 ROOT = (os.environ.get("LACLAUGPT_VIS_LIVE_STEPS_DATA")
         or os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR") or "data")
 
-st.set_page_config(page_title="NoöPunk · FI/PL/PT live steps 1–7", layout="wide")
+st.set_page_config(page_title="LaclauGPT · FI/PL/PT research dashboard", layout="wide")
 
 frame, manifest = load(ROOT)
 if frame.empty:
@@ -63,9 +68,9 @@ if frame.empty:
             "directory built by tools/build_live_steps_artifacts.py. No records are fabricated.")
     st.stop()
 
-st.title("FI/PL/PT live pipeline · steps 1–7")
-st.caption("Read-only multimodal evidence · Finland, Poland, Portugal · every long value is verbatim "
-           "from the producer export")
+st.title("LaclauGPT · FI/PL/PT research dashboard")
+st.caption("Read-only multimodal research evidence · Finland, Poland, Portugal · producer steps 1–7")
+st.warning("Researcher review required: model classifications and discourse interpretations are provisional, not verified findings.")
 
 # -- sidebar: one filter path ------------------------------------------------------------------- #
 st.sidebar.markdown("### Corpus")
@@ -85,7 +90,7 @@ filtered = filter_records(frame, countries=countries, platforms=platforms, polit
 st.caption(f"{len(filtered):,} of {len(frame):,} videos match the filters.")
 
 tabs = st.tabs(["Overview", "Steps & coverage", "Record browser", "Discourse · DNA",
-                "Network · SNA", "Aggregates", "Data quality", "Methods"])
+                "Network · SNA", "Aggregates", "Data quality", "Methods", "Stage explorer"])
 
 
 def chart(series: pd.Series, title: str, x: str = "records"):
@@ -246,7 +251,7 @@ with tabs[3]:
           "dna_table", caption="A statement is an interpretation of a text, never a fact about a person.")
 
 with tabs[4]:
-    st.subheader("Social network · step 8")
+    st.subheader("Auxiliary social network · step 8 (partial; outside the seven-step scope)")
     st.caption("Only edges the producer wrote with a type and an evidence quote appear here; the "
                "graph is a reading aid, the edge table is the evidence.")
     edges = child_records(ROOT, filtered, "sna_edges_json")
@@ -333,3 +338,6 @@ with tabs[7]:
                  use_container_width=True)
     st.caption("Nothing here is written back to the canonical records, and no chart is a finding: "
                "the status fields prove a stage ran, not that its interpretation is right.")
+
+with tabs[8]:
+    render_stage_explorer(ROOT, filtered)
