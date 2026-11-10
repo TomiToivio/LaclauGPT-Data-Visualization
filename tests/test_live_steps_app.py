@@ -43,7 +43,8 @@ builder = _load(BUILDER, "build_live_steps_artifacts_app_test")
 
 
 def row(country: str, index: int, *, platform: str = "Instagram",
-        preference: str = "Centre right", with_sna: bool = True) -> dict:
+        preference: str = "Centre right", with_sna: bool = True,
+        dna_status: str = "ok") -> dict:
     video = f"HEPP24-{country[:2].upper()}-RG-IG-2024060{index}-100000"
     return {
         "_storage_id": f"monday500:{country}:{index}", "country": country, "video_id": video,
@@ -53,17 +54,32 @@ def row(country: str, index: int, *, platform: str = "Instagram",
         "frame_analysis_1": "a frame", "vllm_video_analysis": "the video shows a rally",
         "summary_analysis": "summary", "summary_summary_md": "summary md",
         "postprocess_entities": '["Entity A"]', "postprocess_themes": '["grievance politics"]',
-        "laclau_status": "ok", "laclau_structured_json": "{}", "dna_status": "ok",
+        "laclau_status": "ok",
+        "laclau_structured_json": json.dumps({
+            "formula_minimum_conditions_met": index == 1,
+            "us_constructs": [{"label": "the people"}] if index == 1 else [],
+            "frontier_constructs": [{"label": "the elite"}] if index == 1 else [],
+            "chains": [{"signifier": "freedom", "equivalents": ["security"]}] if index == 1 else [],
+            "affects": [{"label": "moral_indignation", "text_span": "shameful", "confidence": 0.7,
+                         "provenance": "current_source"}] if index == 1 else [],
+            "counter_evidence": ["a counter point"] if index == 1 else [],
+            "uncertainty_notes": ["ASR uncertain"] if index == 1 else [],
+            "formula_abstention_reason": "" if index == 1 else "No articulated frontier.",
+        }),
         "dna_statements_json": json.dumps([{"statement_id": f"s{index}", "actor_name_raw": "Actor A"}]),
         "sna_status": "ok" if with_sna else "",
-        "sna_edges_json": json.dumps([{"source": "Actor A", "target": "Actor B",
-                                       "edge_type": "critique", "confidence": 0.8,
+        "sna_edges_json": json.dumps([{"source": "actor:aaa", "source_label": "Actor A",
+                                       "target": "actor:bbb", "target_label": "Actor B",
+                                       "edge_type": "critique", "network_layer": "social",
+                                       "confidence": 0.8,
                                        "evidence_quote": "after rolling back"}]) if with_sna else "",
         "positive": '["Entity A"]', "neutral": "[]", "negative": '["Entity B"]',
         "processing_status": "OK", "preprocess_status": "ok", "frame_analysis_status": "ok",
         "vllm_video_status": "ok", "summary_quality_status": "OK",
         "rag_context_json": "{}", "vllm_video_prompt": "a prompt",
-        **{f"step_0{step}_status": "complete" for step in range(1, 8)},
+        "dna_status": dna_status,
+        "step_07_status": "complete" if dna_status == "ok" else "pending",
+        **{f"step_0{step}_status": "complete" for step in range(1, 7)},
     }
 
 
@@ -79,7 +95,7 @@ class LiveStepsAppTests(unittest.TestCase):
         records = {
             "finland": [row("finland", 1), row("finland", 2, platform="Tiktok",
                                                preference="Far right", with_sna=False)],
-            "poland": [row("poland", 3)],
+            "poland": [row("poland", 3, dna_status="pending")],
             "portugal": [row("portugal", 4)],
         }
         for country, rows in records.items():
@@ -142,13 +158,47 @@ class LiveStepsAppTests(unittest.TestCase):
             os.environ["LACLAUGPT_VIS_LIVE_STEPS_DATA"] = str(self.data)
         self.assertIn("unavailable in this source", texts)
 
+    def test_step_six_structure_is_read_not_printed(self):
+        at = self.app()
+        metrics = {metric.label: metric.value for metric in at.metric}
+        self.assertIn("With a frontier", metrics)
+        self.assertIn("Min. conditions met", metrics)
+        self.assertEqual(metrics["Records"], str(self.manifest["records"]))
+        text = " ".join(str(frame.value) for frame in at.dataframe)
+        self.assertIn("moral_indignation", text)
+        self.assertIn("No articulated frontier", text)
+
+    def test_search_lists_every_hit_with_a_snippet(self):
+        at = self.app()
+        at.text_input(key="live_search").set_value("transcript").run()
+        self.assertEqual([str(e.value) for e in at.exception], [])
+        self.assertIn("field hits", " ".join(caption.value for caption in at.caption))
+
+    def test_the_network_view_names_actors_instead_of_hashes(self):
+        """The aggregate node table must read names. Raw edge records stay verbatim in the browser."""
+        connected = [frame.value for frame in self.app().dataframe
+                     if "node" in getattr(frame.value, "columns", [])]
+        self.assertTrue(connected, "the most-connected-actors table must render")
+        names = " ".join(str(value) for value in connected[0]["node"])
+        self.assertIn("Actor A", names)
+        self.assertNotIn("actor:", names)
+
+    def test_a_pending_stage_surfaces_in_the_problem_view(self):
+        at = self.app()
+        metrics = {metric.label: metric.value for metric in at.metric}
+        self.assertIn("Videos with a non-ok stage", metrics)
+        text = " ".join(str(frame.value) for frame in at.dataframe)
+        self.assertIn("pending", text)
+
     def test_the_data_quality_tab_keeps_the_dropped_columns_visible(self):
         at = self.app()
         frames = [frame.value for frame in at.dataframe]
         dropped = [frame for frame in frames
-                   if "reason" in getattr(frame, "columns", [])]
+                   if {"column", "reason"} <= set(getattr(frame, "columns", []))]
         self.assertTrue(dropped, "the dropped-column table must be rendered")
-        self.assertIn("column", dropped[0].columns)
+        columns = set(dropped[0]["column"])
+        self.assertIn("rag_context_json", columns)
+        self.assertNotIn("asr_transcript", columns)
 
 
 if __name__ == "__main__":
