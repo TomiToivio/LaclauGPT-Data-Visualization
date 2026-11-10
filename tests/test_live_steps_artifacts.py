@@ -14,6 +14,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "tools" / "build_live_steps_artifacts.py"
 
@@ -209,6 +211,19 @@ class BuildTests(unittest.TestCase):
             manifest = json.loads((out / "MANIFEST.json").read_text(encoding="utf-8"))
         self.assertFalse(manifest["stage_coverage"]["finland"]["3_video"]["available"])
         self.assertIn("3_video", manifest["inputs"]["finland"]["stage_unavailable"])
+
+    def test_the_cleaned_frame_carries_the_long_cells_and_no_dropped_column(self):
+        """The deliverable a researcher opens in pandas: one row per video, text verbatim, junk gone."""
+        out, _ = self.build([record("monday500:fi:a", "video-1", transcript="a whole transcript")])
+        frame = pd.read_csv(out / "cleaned" / "finland_clean.csv", dtype=str, keep_default_na=False)
+        self.assertEqual(len(frame), 1)
+        for column in ("asr_transcript", "ocr_1", "dna_statements_json", "step_07_status",
+                       "record_id", "month", "pipeline_steps_ok"):
+            self.assertIn(column, frame.columns)
+        for column in ("rag_context_json", "vllm_video_prompt", "metadata"):
+            self.assertNotIn(column, frame.columns)
+        self.assertEqual(frame.iloc[0]["asr_transcript"], "a whole transcript")
+        self.assertIn("cleaned/finland_clean.csv", (out / "MANIFEST.json").read_text(encoding="utf-8"))
 
     def test_an_unclassified_column_stops_the_build(self):
         header = HEADER + ["surprise_new_field"]

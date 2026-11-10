@@ -92,3 +92,30 @@ the legacy `:8501` / `:8503` on the Streamlit host, which are untouched. The app
 - Step 9 is a filesystem projection upstream, so it is reported as unavailable unless
   `graph.ttl`/`graph.nt` are exported into the data root.
 - Frequency and centrality are never presented as interpretations of hegemony.
+
+## Serving it: :8503 on Laskin
+
+The researcher dashboard is served from the deployment host (Laskin) on **:8503**, next to — and
+independent of — the AI26 dashboard on **:8501**, which is left untouched.
+
+```bash
+# from the private deployment wrapper (see LaclauGPT-Private/analysis/ep24/dashboard/deploy/)
+analysis/ep24/dashboard/deploy/run.sh          # start or restart
+analysis/ep24/dashboard/deploy/run.sh status
+curl -s http://<host>:8503/_stcore/health      # -> ok
+```
+
+| Setting | Purpose |
+| --- | --- |
+| `LACLAUGPT_VIS_ANALYSIS_DATA_DIR` | private directory holding `combined.csv` and `MANIFEST.json` |
+| `LACLAUGPT_VIS_EP24_ADDRESS` / `_PORT` | bind address and port (default `127.0.0.1:8503`) |
+| `LACLAUGPT_VIS_DEMO_PASSWORD` | optional shared secret; unset keeps the network restriction as the only gate |
+
+**Access posture.** The export contains author usernames, video identifiers and transcripts. The
+dashboard is bound to the private network interface rather than the open internet; a shared secret is
+available when that is not enough, and a reverse proxy with TLS is required before anything is exposed
+publicly. The app is read-only: it has no write endpoints, and the only export is a CSV of rows the
+researcher has already filtered.
+
+**Compatibility.** :8501 is a different application with a different data contract. Nothing in this
+dashboard reads or writes its state, and deploying here does not restart it.

@@ -102,28 +102,28 @@ tests execute the real script through `streamlit.testing.v1.AppTest`).
 
 ## Deployment on Laskin (:8503, issue #62)
 
-The app is public code; the artifacts are private data. The server runs the app from a clean checkout and
-reads the artifacts through an environment variable, so nothing private is ever copied into this repository.
+The app is public code; the artifacts are private data. The server runs the app from a clean checkout of this
+repository and reads the artifacts through an environment variable, so nothing private is ever copied here.
 
-**Live URL:** <http://100.115.95.109:8503/> — Laskin's Tailscale address. The process binds to that interface
-only, matching the legacy dashboard on :8501: the data includes transcripts, video IDs and author handles and
-the demo has no authentication of its own, so the network boundary *is* the access control until an
-authenticated deployment is agreed.
+**Live URL:** <http://100.115.95.109:8503/> — the server's Tailscale address. The process binds to that
+interface only, matching the legacy dashboard on :8501: the data includes transcripts, video ids and author
+handles and the demo has no authentication of its own, so the network boundary *is* the access control until
+an authenticated deployment is agreed.
 
 | Item | Value |
 | --- | --- |
 | Service | `laclaugpt-live-steps.service` (systemd user unit, `Restart=on-failure`) |
-| Working directory | `/mnt/workspace/VZ-live` (clean checkout at `origin/main`) |
+| Working directory | a clean checkout of this repository on the server, at `origin/main` |
 | Launcher | `scripts/serve_live_steps.sh 8503 100.115.95.109` |
-| Data root | `LACLAUGPT_VIS_LIVE_STEPS_DATA=/mnt/workspace/LP-live/analysis/live_steps_1_7` |
+| Data root | `LACLAUGPT_VIS_LIVE_STEPS_DATA` → the private artifact directory (`analysis/live_steps_1_7` in `LaclauGPT-Private`; its `deploy/README.md` is the source of truth for paths) |
 | Health | `curl -s http://100.115.95.109:8503/_stcore/health` → `ok` |
 | Logs | `journalctl --user -u laclaugpt-live-steps.service -n 50` |
 
 ### Update
 
 ```bash
-git -C /mnt/workspace/VZ-live pull --ff-only
-git -C /mnt/workspace/LP-live pull --ff-only          # refreshed artifacts, if any
+git pull --ff-only                                        # in the server's checkout of this repository
+git -C "$PRIVATE_CHECKOUT" pull --ff-only                 # refreshed artifacts, if any
 systemctl --user restart laclaugpt-live-steps.service
 curl -s http://100.115.95.109:8503/_stcore/health
 ```
@@ -132,7 +132,7 @@ curl -s http://100.115.95.109:8503/_stcore/health
 
 ```bash
 systemctl --user disable --now laclaugpt-live-steps.service   # :8503 down, :8501 untouched
-git -C /mnt/workspace/VZ-live checkout <previous-sha>
+git checkout <previous-sha>
 systemctl --user enable --now laclaugpt-live-steps.service
 ```
 

@@ -17,6 +17,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 try:  # normal case: the package is importable (development, pip install -e .)
+    from laclaugpt_visualization.demo_auth import require_demo_password
     from laclaugpt_visualization.ep24_reprocessed import (
         SCHEMA_VERSION,
         STAGES,
@@ -36,6 +37,7 @@ try:  # normal case: the package is importable (development, pip install -e .)
     )
 except ModuleNotFoundError:  # standalone deployment: only this module was shipped
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from demo_auth import require_demo_password  # type: ignore[no-redef]
     from ep24_reprocessed import (  # type: ignore[no-redef]
         SCHEMA_VERSION,
         STAGES,
@@ -55,6 +57,8 @@ except ModuleNotFoundError:  # standalone deployment: only this module was shipp
     )
 
 st.set_page_config(page_title="EP24 Reprocessed", layout="wide")
+# Security gate (#62): if LACLAUGPT_VIS_DEMO_PASSWORD is set, nothing is read until it is entered.
+require_demo_password()
 st.title("EP24 Reprocessed · research explorer")
 st.caption("Read-only multimodal pipeline evidence | Separate from AI26 | " + SCHEMA_VERSION)
 root = os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR", "data")
