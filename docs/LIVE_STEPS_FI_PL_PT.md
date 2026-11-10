@@ -197,3 +197,28 @@ departs where it cannot. :8501 itself is untouched.
 carries one value per stage); the legacy dashboard's ManifestoBERTa and topic-model views have no
 counterpart because those steps are not in this export.
 
+
+## Researcher stage explorer (PR #229; integrated without deployment)
+
+The existing authentication gate, Search, Problems, exports, current DNA co-mention
+analysis and all original dashboard tabs remain. The added **Stage explorer** offers
+one-record drilldown, verbatim evidence, per-step status, structured JSON presentation
+and an optional actor–concept diagram of producer-labelled statements.
+
+| Step | Output |
+| --- | --- |
+| 1 | ASR transcript / translation |
+| 2 | OCR / visible text |
+| 3 | Frame interpretation |
+| 4 | Video interpretation |
+| 5 | Multimodal summary / postprocessing |
+| 6 | Laclaudian discourse coding |
+| 7 | Discourse Network Analysis statements |
+
+SNA step 8 remains auxiliary and partial. Missing output is never negative evidence.
+The record-level actor–concept diagram presents reported pair labels, not verified
+concept structure or social ties. Most real-corpus concept labels are near-unique,
+so the existing aggregate co-mention view remains the appropriate exploratory graph.
+
+Synthetic regression tests: `python -m pytest tests/test_researcher_views.py tests/test_live_steps_app.py tests/test_live_steps_artifacts.py`.
+This integration did not deploy or restart any service.

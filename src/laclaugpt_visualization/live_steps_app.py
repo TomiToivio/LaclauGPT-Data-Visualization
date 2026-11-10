@@ -69,6 +69,8 @@ except ModuleNotFoundError:  # standalone deployment: only this module and its h
         value_counts,
     )
 
+from laclaugpt_visualization.researcher_views import render_stage_explorer
+
 ROOT = (os.environ.get("LACLAUGPT_VIS_LIVE_STEPS_DATA")
         or os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR") or "data")
 
@@ -205,7 +207,7 @@ filtered = filter_records(frame, countries=countries, platforms=platforms, polit
 st.caption(f"{len(filtered):,} of {len(frame):,} videos match the filters.")
 
 tabs = st.tabs(["Overview", "Steps & coverage", "Search", "Record browser", "Discourse · DNA",
-                "Network · SNA", "Problems", "Aggregates", "Data quality", "Methods"])
+                "Network · SNA", "Problems", "Aggregates", "Data quality", "Methods", "Stage explorer"])
 
 with tabs[0]:
     columns = st.columns(4)
@@ -566,3 +568,7 @@ with tabs[9]:
                  width='stretch')
     st.caption("Nothing here is written back to the canonical records, and no chart is a finding: "
                "the status fields prove a stage ran, not that its interpretation is right.")
+
+
+with tabs[10]:
+    render_stage_explorer(ROOT, filtered)
