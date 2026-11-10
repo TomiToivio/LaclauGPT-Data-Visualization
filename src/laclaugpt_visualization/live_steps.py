@@ -205,16 +205,161 @@ def child_records(root: str | Path, frame: pd.DataFrame, field: str) -> list[dic
     return output
 
 
-def node_degrees(edges: Iterable[Mapping[str, Any]], limit: int = 20) -> pd.DataFrame:
+def node_degrees(edges: Iterable[Mapping[str, Any]], nodes: Iterable[Mapping[str, Any]] = (),
+                 limit: int = 20) -> pd.DataFrame:
+    """Most connected actors, by the producer's own labels.
+
+    Edges carry ``source_label`` / ``target_label`` next to the ``actor:<hash>`` identifiers; a table of
+    hashes is unreadable, so the labels win and the node table fills in anything the edges left bare.
+    """
+    labels = {clean(node.get("node_id")): clean(node.get("label")) for node in nodes}
     counter: Counter = Counter()
     for edge in edges:
-        source, target = clean(edge.get("source")), clean(edge.get("target"))
-        if source:
-            counter[source] += 1
-        if target:
-            counter[target] += 1
+        for identifier, label_key in (("source", "source_label"), ("target", "target_label")):
+            name = clean(edge.get(label_key)) or labels.get(clean(edge.get(identifier)), "")
+            if name:
+                counter[name] += 1
     return pd.DataFrame([{"node": node, "edges": count}
                          for node, count in counter.most_common(limit)])
+
+
+def parse_json_cell(value: Any) -> dict[str, Any]:
+    """A producer JSON cell as a dict. Anything unparseable is an empty dict, never a guess."""
+    if isinstance(value, dict):
+        return value
+    raw = clean(value)
+    if not raw.startswith("{"):
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def laclau_summary(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """Aggregate the step-6 structure: how often a Us, a frontier and an affect are actually articulated.
+
+    The abstention reasons are counted, not hidden: a corpus where two thirds of the clips carry no
+    articulated frontier is a finding about the corpus, not a gap in the dashboard.
+    """
+    affects: Counter = Counter()
+    abstentions: Counter = Counter()
+    totals = {"records": 0, "parsed": 0, "conditions_met": 0, "with_us": 0, "with_frontier": 0,
+              "with_chains": 0, "with_affects": 0, "with_counter_evidence": 0, "affects": 0,
+              "chains": 0, "uncertainty_notes": 0}
+    for row in rows:
+        totals["records"] += 1
+        parsed = parse_json_cell(row.get("laclau_structured_json"))
+        if not parsed:
+            continue
+        totals["parsed"] += 1
+        if parsed.get("formula_minimum_conditions_met"):
+            totals["conditions_met"] += 1
+        totals["with_us"] += bool(as_list(parsed.get("us_constructs")))
+        totals["with_frontier"] += bool(as_list(parsed.get("frontier_constructs")))
+        totals["with_chains"] += bool(as_list(parsed.get("chains")))
+        totals["with_counter_evidence"] += bool(as_list(parsed.get("counter_evidence")))
+        totals["uncertainty_notes"] += len(as_list(parsed.get("uncertainty_notes")))
+        values = as_list(parsed.get("affects"))
+        totals["affects"] += len(values)
+        totals["with_affects"] += bool(values)
+        totals["chains"] += len(as_list(parsed.get("chains")))
+        for item in values:
+            label = clean(item.get("label") if isinstance(item, Mapping) else item)
+            if label:
+                affects[label] += 1
+        reason = clean(parsed.get("formula_abstention_reason"))
+        if reason:
+            abstentions[reason[:220]] += 1
+    totals["affect_labels"] = pd.DataFrame(
+        [{"label": label, "records": count} for label, count in affects.most_common(20)])
+    totals["abstentions"] = pd.DataFrame(
+        [{"reason": reason, "records": count} for reason, count in abstentions.most_common(15)])
+    return totals
+
+
+def affect_rows(rows: Iterable[Mapping[str, Any]], limit: int = 200) -> list[dict[str, Any]]:
+    """One row per articulated affect: the label, the span it was read from, and the confidence."""
+    output = []
+    for row in rows:
+        for item in as_list(parse_json_cell(row.get("laclau_structured_json")).get("affects")):
+            if not isinstance(item, Mapping):
+                continue
+            output.append({"record_id": clean(row.get("record_id")),
+                           "country": clean(row.get("country")),
+                           "label": clean(item.get("label")),
+                           "confidence": clean(item.get("confidence")),
+                           "text_span": clean(item.get("text_span"))[:240],
+                           "provenance": clean(item.get("provenance"))})
+    return output[:limit]
+
+
+def statement_table(statements: Iterable[Mapping[str, Any]], limit: int = 400) -> pd.DataFrame:
+    """Statements as the evidence they are: actor, concept, stance, proposition, quote."""
+    columns = ("record_id", "country", "actor_name_raw", "actor_type", "organization",
+               "concept_label_raw", "stance", "agreement", "network_layer", "confidence",
+               "proposition", "evidence_quote")
+    rows = [{column: clean(item.get(column))[:260] for column in columns}
+            for item in statements][:limit]
+    return pd.DataFrame(rows, columns=list(columns))
+
+
+def search_bundle(bundle: Mapping[str, Mapping[str, Any]], query: str,
+                  fields: Iterable[str] = (), limit: int = 60) -> list[dict[str, Any]]:
+    """Substring search over the long cells, with a snippet.
+
+    Casefolded substring matching, not a ranked index: 1,500 records of plain text are small enough that
+    a researcher wants *every* hit and an honest snippet, not the top ten of an opaque ranking.
+    """
+    needle = clean(query).casefold()
+    if not needle:
+        return []
+    fields = list(fields)
+    hits = []
+    for record_id, payload in bundle.items():
+        for field in fields:
+            value = payload.get(field)
+            if not isinstance(value, str):
+                continue
+            haystack = value.casefold()
+            position = haystack.find(needle)
+            if position < 0:
+                continue
+            hits.append({"record_id": record_id, "field": field,
+                         "hits": haystack.count(needle),
+                         "snippet": value[max(0, position - 90):position + len(needle) + 110]
+                                    .replace("\n", " ").strip()})
+    return sorted(hits, key=lambda hit: -hit["hits"])[:limit]
+
+
+def problem_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    """Every record whose producer said something other than ok, with the reason next to it."""
+    statuses = [f"step_0{step}_status" for step in range(1, 8)] + ["sna_status"]
+    reasons = ("processing_status_reason", "frame_quality_reason", "summary_quality_reason",
+               "laclau_abstention_reason", "sna_error", "dna_error", "preprocess_note")
+    rows = []
+    for _, row in frame.iterrows():
+        bad = [status for status in statuses
+               if status in frame.columns and clean(row.get(status)).lower() not in OK_TOKENS]
+        if not bad:
+            continue
+        rows.append({"record_id": clean(row.get("record_id")), "country": clean(row.get("country")),
+                     "video_id": clean(row.get("video_id")),
+                     "not_complete": ", ".join(status.replace("_status", "").replace("step_0", "step ")
+                                               for status in bad),
+                     **{reason: clean(row.get(reason))[:200] for reason in reasons
+                        if clean(row.get(reason))}})
+    return pd.DataFrame(rows)
+
+
+def monthly_by(frame: pd.DataFrame, by: str = "source_type") -> pd.DataFrame:
+    """Records per recording month, split by one column — the stacked view the 8501 dashboard leads with."""
+    if "month" not in frame.columns:
+        return pd.DataFrame()
+    split = frame[by].map(clean).replace("", "not reported") if by in frame.columns else "all"
+    return (frame.assign(_split=split)
+            .groupby(["month", "_split"]).size().reset_index(name="records"))
 
 
 def stage_availability(manifest: Mapping[str, Any]) -> pd.DataFrame:
