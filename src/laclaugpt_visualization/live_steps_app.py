@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
     from laclaugpt_visualization.live_steps import (
         STEPS,
-        actor_concept_graph,
+        actor_comention_graph,
         affect_rows,
         bundle_text,
         child_records,
@@ -38,6 +38,7 @@ try:
         search_bundle,
         sentiment_totals,
         stage_availability,
+        statement_spread,
         statement_table,
         status_counts,
         step_table,
@@ -47,7 +48,7 @@ except ModuleNotFoundError:  # standalone deployment: only this module and its h
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from live_steps import (  # type: ignore[no-redef]
         STEPS,
-        actor_concept_graph,
+        actor_comention_graph,
         affect_rows,
         bundle_text,
         child_records,
@@ -61,6 +62,7 @@ except ModuleNotFoundError:  # standalone deployment: only this module and its h
         search_bundle,
         sentiment_totals,
         stage_availability,
+        statement_spread,
         statement_table,
         status_counts,
         step_table,
@@ -121,15 +123,18 @@ def chart(series: pd.Series, title: str, x: str = "records"):
     st.plotly_chart(px.bar(data, x=x, y=data.columns[0], title=title), width='stretch')
 
 
-def network_figure(nodes: pd.DataFrame, edges: pd.DataFrame, title: str):
+def network_figure(nodes: pd.DataFrame, edges: pd.DataFrame, title: str,
+                   node_weight: str = "statements", edge_weight: str = "videos"):
     """Force-directed actor–concept graph. Nodes are the producer's labels, never identifiers."""
     if nodes.empty or edges.empty:
         return None
     graph = nx.Graph()
     for row in nodes.itertuples():
-        graph.add_node(row.id, label=row.label, kind=row.kind, statements=row.statements)
+        graph.add_node(row.id, label=row.label, kind=row.kind,
+                       weight=getattr(row, node_weight, 1))
     for row in edges.itertuples():
-        graph.add_edge(row.source, row.target, weight=row.statements, stance=row.stance)
+        graph.add_edge(row.source, row.target, weight=getattr(row, edge_weight, 1),
+                       stance=getattr(row, "stance", "co-mentioned"))
     position = nx.spring_layout(graph, seed=7, k=0.9, iterations=120)
     segments = []
     for source, target in graph.edges():
@@ -151,7 +156,7 @@ def network_figure(nodes: pd.DataFrame, edges: pd.DataFrame, title: str):
             x=[position[node][0] for node in group["id"]], y=[position[node][1] for node in group["id"]],
             mode="markers+text", name=kind, text=group["label"], textposition="top center",
             textfont={"size": 10},
-            marker={"size": [size + node[0] for node in zip(group["statements"])], "color": colour},
+            marker={"size": [size + 2 * value for value in group[node_weight]], "color": colour},
             hovertemplate="%{text}<extra>" + kind + "</extra>"))
     figure.update_layout(title=title, showlegend=True, height=560, xaxis=axis, yaxis=axis)
     return figure
@@ -390,22 +395,35 @@ with tabs[4]:
     else:
         st.info("No statements for this selection.")
 
-    st.markdown("**Observed actor–concept network**")
-    st.caption("One edge per extracted statement: the actor said something about the concept. Edge "
-               "weight is the number of statements, colour the dominant stance. Absent edges mean no "
-               "statement was extracted — not that no relation exists.")
+    spread = statement_spread(statements)
+    st.markdown("**Who is named together**")
+    st.caption(
+        f"{spread['statements']} statements · {spread['actors']} distinct actors · "
+        f"{spread['concepts']} distinct concept labels across {spread['records']} videos · "
+        f"stance coded in {spread['with_stance']} · layers: {spread['layers']} · "
+        f"actor types: {spread['actor_types']}.")
+    st.info("Read this as co-mention, not as a social network. Every statement's concept is a free-text "
+            "proposition — nearly one per statement — so an actor–concept graph would imply structure "
+            "the data does not carry. Every actor is producer-typed \"Synthetic\": a position named in "
+            "the text, not a verified person, and an edge means two names appear in the same video.")
     scoped = st.checkbox("Only the record open in the browser", value=False)
     open_record = clean(st.session_state.get("live_inspect"))
     chosen = [statement for statement in statements
               if not scoped or clean(statement.get("record_id")) == open_record]
-    nodes, graph_edges = actor_concept_graph(chosen)
+    nodes, graph_edges = actor_comention_graph(chosen)
     figure = network_figure(nodes, graph_edges,
-                            f"Actor–concept graph · {len(nodes)} nodes, {len(graph_edges)} edges")
+                            f"Actors named together · {len(nodes)} actors, {len(graph_edges)} pairs")
     if figure is None:
-        st.info("No actor–concept pairs to draw. DNA did not run, or extracted no statement, for these "
-                "records.")
+        st.info("No actor is named twice, so nothing co-occurs to draw. That is a fact about this "
+                "selection, not a bug: DNA named "
+                f"{spread['actors']} actors across {spread['statements']} statements.")
     else:
         st.plotly_chart(figure, use_container_width=True)
+        st.dataframe(graph_edges.sort_values("videos", ascending=False)
+                     .rename(columns={"source": "actor", "target": "co-mentioned with",
+                                      "videos": "shared videos"}),
+                     use_container_width=True)
+        st.caption("Every pair above, with the number of videos both names appear in.")
 
 with tabs[5]:
     st.subheader("Social network · step 8")

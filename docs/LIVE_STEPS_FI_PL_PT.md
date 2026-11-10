@@ -91,6 +91,20 @@ tests execute the real script through `streamlit.testing.v1.AppTest`).
   with the quote it was drawn from.
 - **Data quality / Methods** — the audit above, rendered from the manifest.
 
+
+## What the DNA evidence can and cannot support
+
+Measured on the delivered export: 1 353 statements, 457 distinct actors, **1 337 distinct concept
+labels**, `stance` coded in **2** of them, one `network_layer` (`discourse`), and every `actor_type`
+reported as `Synthetic`. Concepts are therefore free-text propositions, not a vocabulary.
+
+That rules out an actor–concept graph: it would draw a different concept for almost every statement and
+imply structure the data does not carry. The dashboard instead draws **co-mention** — two actors joined
+when their names appear in the same video, edge weight = shared videos (47 actors, 31 pairs on the full
+export) — and says on screen that an edge is a shared video, that an actor is a producer-typed
+*Synthetic* position rather than a verified person, and that co-mention is not a social tie. The SNA
+edges on the neighbouring tab are a different, separately labelled, partial layer.
+
 ## Honest gaps
 
 - Recording dates are derived from the media id (`…-YYYYMMDD-…`), not a producer field; the UI says so.
@@ -175,7 +189,7 @@ departs where it cannot. :8501 itself is untouched.
 | "Report Problems" | Problems | every record with a non-ok status, with the producer's own reason |
 | multimodal evidence side by side | one stage at a time, verbatim, with the stage's status beside it | the export has one value per stage, not per model variant |
 | — | Search over transcripts/OCR/analyses | the legacy dashboard could not full-text search the corpus |
-| — | DNA statements + actor–concept graph | steps 6–7 did not exist in EP24 |
+| — | DNA statements + who-is-named-together graph | steps 6–7 did not exist in EP24 (see the caveat below) |
 | — | Exports of the filtered tables | requested by #62 |
 | per-video URL parameters | Streamlit selection state, no deep links | gap: a link cannot yet address one record |
 

@@ -333,39 +333,75 @@ def search_bundle(bundle: Mapping[str, Mapping[str, Any]], query: str,
     return sorted(hits, key=lambda hit: -hit["hits"])[:limit]
 
 
-def actor_concept_graph(statements: Iterable[Mapping[str, Any]],
-                        max_actors: int = 40, max_concepts: int = 40) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """The observed actor–concept network, straight from the statements.
+def actor_comention_graph(statements: Iterable[Mapping[str, Any]], min_statements: int = 2,
+                          min_shared: int = 1, limit: int = 400,
+                          only_connected: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Actors that the corpus talks about *together*, and nothing more.
 
-    Two node kinds, one edge kind: an actor *said something about* a concept. Edge weight is the number
-    of statements, colour is the dominant stance. Only what the producer extracted is drawn — an absent
-    edge means no statement was extracted, not that no relation exists in the world.
+    Measured on the FI/PL/PT export: 1 353 statements carry 1 337 distinct concept labels, `stance` is
+    empty in 1 351 of them, and every statement sits on the single `discourse` layer. Concepts are
+    therefore free-text propositions, not a vocabulary — an actor–concept graph would draw a different
+    concept for almost every statement and imply structure that is not in the data. What the statements
+    do support is co-mention: two actors named in the same video are being discussed in one discursive
+    field. Edge weight is the number of shared videos.
+
+    Producer caveat, surfaced in the UI: every statement's `actor_type` is "Synthetic", so the actors
+    are positions named in the text, not verified persons, and co-mention is not a social tie.
     """
-    actors: Counter = Counter()
-    concepts: Counter = Counter()
-    pairs: Counter = Counter()
-    stance: dict[tuple[str, str], Counter] = {}
+    appearances: dict[str, set] = {}
+    counts: Counter = Counter()
     for statement in statements:
-        actor = clean(statement.get("actor_name_raw")) or clean(statement.get("actor_id"))
-        concept = clean(statement.get("concept_label_raw")) or clean(statement.get("concept"))
-        if not actor or not concept:
+        actor = clean(statement.get("actor_name_raw"))
+        record = clean(statement.get("record_id"))
+        if not actor:
             continue
-        actors[actor] += 1
-        concepts[concept] += 1
-        pairs[(actor, concept)] += 1
-        stance.setdefault((actor, concept), Counter())[clean(statement.get("stance")) or "not stated"] += 1
+        counts[actor] += 1
+        appearances.setdefault(actor, set()).add(record)
 
-    keep_actors = {name for name, _ in actors.most_common(max_actors)}
-    keep_concepts = {name for name, _ in concepts.most_common(max_concepts)}
-    nodes = ([{"id": f"actor:{name}", "label": name, "kind": "actor", "statements": count}
-              for name, count in actors.most_common(max_actors)]
-             + [{"id": f"concept:{name}", "label": name, "kind": "concept", "statements": count}
-                for name, count in concepts.most_common(max_concepts)])
-    edges = [{"source": f"actor:{actor}", "target": f"concept:{concept}", "statements": count,
-              "stance": stance[(actor, concept)].most_common(1)[0][0]}
-             for (actor, concept), count in pairs.items()
-             if actor in keep_actors and concept in keep_concepts]
-    return pd.DataFrame(nodes), pd.DataFrame(edges)
+    kept = [actor for actor, count in counts.most_common(limit) if count >= min_statements]
+    kept_set = set(kept)
+    shared: Counter = Counter()
+    for actor, records in appearances.items():
+        if actor not in kept_set:
+            continue
+        for other, other_records in appearances.items():
+            # count each pair once: the intersection is what matters, not the direction
+            if other == actor or other not in kept_set or actor >= other or not records & other_records:
+                continue
+            shared[(actor, other)] = len(records & other_records)
+
+    edges = pd.DataFrame([{"source": f"actor:{left}", "target": f"actor:{right}",
+                           "videos": weight, "kind": "co-mentioned"}
+                          for (left, right), weight in shared.items() if weight >= min_shared])
+    nodes = pd.DataFrame([{"id": f"actor:{actor}", "label": actor, "kind": "actor",
+                           "statements": counts[actor], "videos": len(appearances[actor])}
+                          for actor in kept])
+    if only_connected and not edges.empty:
+        connected = set(edges["source"]) | set(edges["target"])
+        nodes = nodes[nodes["id"].isin(connected)].reset_index(drop=True)
+    return nodes, edges
+
+
+def statement_spread(statements: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """The shape of the DNA evidence, so the network view cannot be read as more than it is."""
+    totals = {"statements": 0, "actors": set(), "concepts": set(), "with_actor_label": 0,
+              "with_concept_label": 0, "with_stance": 0, "layers": set(), "actor_types": set(),
+              "records": set()}
+    for statement in statements:
+        totals["statements"] += 1
+        actor = clean(statement.get("actor_name_raw"))
+        concept = clean(statement.get("concept_label_raw")) or clean(statement.get("concept"))
+        totals["with_actor_label"] += bool(actor)
+        totals["with_concept_label"] += bool(concept)
+        totals["with_stance"] += bool(clean(statement.get("stance")))
+        totals["layers"].add(clean(statement.get("network_layer")) or "not reported")
+        totals["actor_types"].add(clean(statement.get("actor_type")) or "not reported")
+        totals["records"].add(clean(statement.get("record_id")))
+        if actor:
+            totals["actors"].add(actor)
+        if concept:
+            totals["concepts"].add(concept)
+    return {key: (len(value) if isinstance(value, set) else value) for key, value in totals.items()}
 
 
 def problem_rows(frame: pd.DataFrame) -> pd.DataFrame:
