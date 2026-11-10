@@ -88,25 +88,40 @@ def row(country: str, index: int, *, platform: str = "Instagram",
 
 
 class GraphTests(unittest.TestCase):
-    """The actor–concept graph draws the producer's labels, and nothing it did not extract."""
+    """Co-mention is what the statements support; a concept graph is not, and neither is a social tie."""
 
-    def test_an_edge_exists_only_where_a_statement_does(self):
-        nodes, edges = live_steps.actor_concept_graph([
-            {"actor_name_raw": "Riikka Purra", "concept_label_raw": "maahanmuutto", "stance": "against"},
-            {"actor_name_raw": "Riikka Purra", "concept_label_raw": "maahanmuutto", "stance": "against"},
-            {"actor_name_raw": "Sanna Marin", "concept_label_raw": "ilmasto", "stance": "for"},
-            {"actor_name_raw": "", "concept_label_raw": "ilmasto", "stance": "for"},
-        ])
-        self.assertEqual(len(nodes), 4)                       # two actors, two concepts
-        self.assertEqual(len(edges), 2)                      # the actorless statement is not an edge
-        heaviest = edges.sort_values("statements", ascending=False).iloc[0]
-        self.assertEqual(heaviest["statements"], 2)
-        self.assertEqual(heaviest["stance"], "against")
-        self.assertTrue(all(not str(node).startswith("actor:") for node in nodes["label"]))
+    def test_two_actors_are_linked_only_when_they_share_a_video(self):
+        nodes, edges = live_steps.actor_comention_graph([
+            {"actor_name_raw": "Riikka Purra", "record_id": "fi/1"},
+            {"actor_name_raw": "Petteri Orpo", "record_id": "fi/1"},
+            {"actor_name_raw": "Riikka Purra", "record_id": "fi/2"},
+            {"actor_name_raw": "Petteri Orpo", "record_id": "fi/3"},
+            {"actor_name_raw": "Maria Ohisalo", "record_id": "fi/9"},
+        ], min_statements=1)
+        self.assertEqual(len(edges), 1, "only the pair that shares a video is an edge")
+        pair = edges.iloc[0]
+        self.assertEqual(pair["videos"], 1)
+        self.assertEqual({pair["source"], pair["target"]},
+                         {"actor:Riikka Purra", "actor:Petteri Orpo"})
+        self.assertNotIn("actor:Maria Ohisalo", set(nodes["id"]), "an isolate is not drawn")
 
     def test_an_empty_corpus_yields_no_graph(self):
-        nodes, edges = live_steps.actor_concept_graph([])
+        nodes, edges = live_steps.actor_comention_graph([])
         self.assertTrue(nodes.empty and edges.empty)
+
+    def test_statement_spread_names_what_the_evidence_cannot_support(self):
+        spread = live_steps.statement_spread([
+            {"actor_name_raw": "A", "concept_label_raw": "one", "record_id": "fi/1",
+             "network_layer": "discourse", "actor_type": "Synthetic"},
+            {"actor_name_raw": "A", "concept_label_raw": "two", "record_id": "fi/2",
+             "network_layer": "discourse", "actor_type": "Synthetic"},
+        ])
+        self.assertEqual(spread["statements"], 2)
+        self.assertEqual(spread["actors"], 1)
+        self.assertEqual(spread["concepts"], 2, "concepts are propositions, nearly one per statement")
+        self.assertEqual(spread["with_stance"], 0)
+        self.assertEqual(spread["layers"], 1)
+        self.assertEqual(spread["actor_types"], 1)
 
 
 class LiveStepsAppTests(unittest.TestCase):
@@ -223,12 +238,14 @@ class LiveStepsAppTests(unittest.TestCase):
         self.assertEqual(len(options), len(live_steps.STEPS))
         self.assertTrue(options[0].startswith("1"))
 
-    def test_the_actor_concept_graph_renders_and_the_exports_are_offered(self):
+    def test_the_corpus_caveat_is_on_screen_and_the_exports_are_offered(self):
         at = self.app()
         self.assertEqual([str(e.value) for e in at.exception], [])
         self.assertGreaterEqual(len(at.get("plotly_chart")), 12)
         self.assertIn("Only the record open in the browser",
                       [checkbox.label for checkbox in at.checkbox])
+        captions = " ".join(str(block.value) for block in at.info)
+        self.assertIn("co-mention", captions.lower())
         self.assertIn("Filtered index as CSV",
                       [button.label for button in at.get("download_button")])
 
