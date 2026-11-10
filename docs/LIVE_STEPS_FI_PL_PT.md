@@ -91,6 +91,42 @@ tests execute the real script through `streamlit.testing.v1.AppTest`).
   with the quote it was drawn from.
 - **Data quality / Methods** — the audit above, rendered from the manifest.
 
+## Issue #62: researcher-facing improvements (not deployed)
+
+The public application now retains the familiar legacy-style **Overview, Steps & coverage,
+Record browser, Discourse DNA, auxiliary SNA, Aggregates, Data quality and Methods**
+tabs and adds a **Stage explorer** with explicit producer steps, one-video drilldown,
+readable long evidence, per-step status and a small actor–concept DNA graph where
+recorded statements provide both endpoints. Original long evidence is not changed.
+
+**Actual producer stage mapping (not generic pipeline stage guesses):**
+
+| Step | Exported content |
+| --- | --- |
+| 1 | ASR transcript / translation |
+| 2 | OCR / on-screen text |
+| 3 | Frame interpretation |
+| 4 | Video interpretation |
+| 5 | Multimodal summary and postprocessing |
+| 6 | Laclaudian discourse coding |
+| 7 | Discourse Network Analysis statements |
+
+SNA is an **auxiliary, partial step 8**, not a substitute for DNA.
+The sidebar filters apply to the new explorer and existing charts alike.
+The graph shows *observed* actor–concept statements and avoids inferring social ties.
+Unreported statuses and absent evidence are displayed as gaps, not zero.
+
+Development checks use **synthetic fixtures**:
+`python -m pytest tests/test_researcher_views.py tests/test_live_steps_app.py tests/test_live_steps_artifacts.py`.
+The new module lives at `src/laclaugpt_visualization/researcher_views.py`.
+
+For a private checkout, see `LaclauGPT-Private/docs/LIVE_STEPS_DASHBOARD_LOCAL.md`.
+This work is **not deployed**; the public source repository contains no private corpus.
+The legacy :8501 browser rendering has not been independently verified for this PR,
+so visual compatibility is limited to preserving the established tab and filter structure.
+Authenticated access or an approved research-data exposure policy is required before
+any Internet-facing release.
+
 ## Honest gaps
 
 - Recording dates are derived from the media id (`…-YYYYMMDD-…`), not a producer field; the UI says so.
