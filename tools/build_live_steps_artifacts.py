@@ -12,11 +12,12 @@ The deliverable is the artifact contract this repository's reprocessed app alrea
 Nothing is invented: every kept column is copied verbatim, every dropped column names why, and the
 builder refuses to finish while a source column is unaccounted for.
 
-Two producer defects are repaired here, and recorded in the manifest rather than hidden:
-
-* an export whose quoting makes a whole-file CSV parse merge records (portugal) is read by splitting
-  on its own record boundary (`^monday500:`) and parsing each record block;
-* per-row duplicates are collapsed on (country, video_id) with a completeness-biased winner.
+The stdlib reader is used on purpose. DuckDB's `read_csv` mis-detects quoting on the portugal export
+(strict: `CSV Error on Line: 1`; `ignore_errors=true`: silently 3 rows for 500 videos;
+`strict_mode=false`: one row per physical line). Python's `csv` module parses all three files correctly,
+so the builder reads every row, asserts it parses to the header width, and never runs with
+error-dropping on. Per-row duplicates are collapsed on (country, video_id) with a completeness-biased
+winner.
 
 Usage:
     python tools/build_live_steps_artifacts.py --source-dir "<OneDrive>" --out analysis/live_steps_1_7
@@ -28,6 +29,7 @@ import csv
 import datetime
 import gzip
 import hashlib
+import io
 import json
 import re
 from pathlib import Path
@@ -142,33 +144,23 @@ def classify(column: str) -> tuple[str, str]:
     return "unclassified", ""
 
 
-def record_blocks(path: Path):
-    """Yield (header, fields) per record, splitting on the export's own record boundary.
-
-    A whole-file ``csv`` parse merges records in the portugal export; each record block parses
-    cleanly to the full field width, and this reader refuses a block that does not.
-    """
+def header_of(path: Path) -> list[str]:
     with path.open(newline="", encoding="utf-8") as handle:
-        header = next(csv.reader([handle.readline()]))
-        width = len(header)
-        blob, started = [], False
-        for line in handle:
-            if line.startswith("monday500:"):
-                if started:
-                    yield header, parse_block("".join(blob), width)
-                blob, started = [line], True
-            else:
-                blob.append(line)
-        if started:
-            yield header, parse_block("".join(blob), width)
+        return next(csv.reader(handle))
 
 
-def parse_block(blob: str, width: int) -> list[str]:
-    rows = list(csv.reader([blob]))
-    fields = rows[0] if rows else []
-    if len(fields) != width:
-        raise ValueError(f"record parses to {len(fields)} fields, header has {width}")
-    return fields
+def records(path: Path):
+    """Yield one dict per record. A row that does not parse to the header width fails the build."""
+    header = header_of(path)
+    width = len(header)
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle)
+        next(reader)
+        for number, fields in enumerate(reader, start=2):
+            if len(fields) != width:
+                raise ValueError(f"{path.name}: line {number} has {len(fields)} fields, "
+                                 f"header has {width}")
+            yield dict(zip(header, fields))
 
 
 def clean(value: str | None) -> str:
@@ -228,14 +220,12 @@ def build_country(path: Path, out: Path) -> tuple[dict, list[str]]:
     children_path = out / "children" / f"{country}_dna_statements.csv"
     children_path.parent.mkdir(parents=True, exist_ok=True)
 
-    header: list[str] = []
+    header = header_of(path)
     best: dict[str, tuple] = {}
     read = invalid = 0
     parse_failures = {name: 0 for name in CHILD_COLUMNS}
-    for block_header, fields in record_blocks(path):
-        header = block_header
+    for record in records(path):
         read += 1
-        record = dict(zip(header, fields))
         for name in parse_failures:
             if clean(record.get(name)) and json_value(record.get(name)) is None:
                 parse_failures[name] += 1
@@ -254,15 +244,17 @@ def build_country(path: Path, out: Path) -> tuple[dict, list[str]]:
 
     exported = statements_total = 0
     covered = {stage: 0 for stage in STAGE_SPEC}
+    # mtime=0: a gzip header carries the clock, which would make every rebuild differ byte-wise and
+    # turn the manifest's hashes into noise. The bundle must be reproducible from the same source.
     with index_path.open("w", newline="", encoding="utf-8") as index_file, \
-            gzip.open(bundle_path, "wt", encoding="utf-8") as bundle_file, \
+            gzip.GzipFile(str(bundle_path), "wb", mtime=0) as raw_bundle, \
+            io.TextIOWrapper(raw_bundle, encoding="utf-8", newline="\n") as bundle_file, \
             children_path.open("w", newline="", encoding="utf-8") as child_file:
         writer = csv.DictWriter(index_file, fieldnames=index_columns, extrasaction="ignore")
         writer.writeheader()
         child_writer = None
         seen: set[str] = set()
-        for _, fields in record_blocks(path):
-            record = dict(zip(header, fields))
+        for record in records(path):
             key = clean(record.get("video_id"))
             if not key or key in seen or completeness(record)[:2] != best[key]:
                 continue
@@ -413,6 +405,13 @@ def main(argv=None) -> int:
         "unaccounted_source_columns": {country: [] for country in COUNTRIES},
         "parse_failures": {country: audit["parse_failures"] for country, audit in audits.items()},
         "distinct_media": sum(audit["exported"] for audit in audits.values()),
+        "reader": {
+            "implementation": "python csv.reader",
+            "field_width_assertion": True,
+            "note": ("DuckDB read_csv mis-detects quoting on the portugal export (strict: CSV Error on "
+                     "Line 1; ignore_errors=true: 3 rows; strict_mode=false: one row per physical line). "
+                     "Python csv reads all three exports whole: 500 records x 182/185/190 fields."),
+        },
         "provenance": {"source": "OneDrive live steps 1-7 exports",
                        "recording_dates_derived_from": "video_id token YYYYMMDD",
                        "note": "Counts describe the export, not the population it samples."},

@@ -74,21 +74,35 @@ def write_source(directory: Path, name: str, records: list[list[str]]) -> Path:
     return path
 
 
-class RecordBlockTests(unittest.TestCase):
-    def test_a_multi_line_record_parses_to_the_full_width(self):
-        blob = 'monday500:1,finland,v,"multi\nline, with comma",Instagram\n'
-        header = ["_storage_id", "country", "video_id", "allas_filename", "source_type"]
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "x.csv"
-            path.write_text(",".join(header) + "\n" + blob, encoding="utf-8")
-            blocks = list(builder.record_blocks(path))
-        self.assertEqual(len(blocks), 1)
-        self.assertEqual(blocks[0][1][2], "v")
-        self.assertIn("multi", blocks[0][1][3])
+class ReaderTests(unittest.TestCase):
+    """The stdlib reader is the whole parse: no error-dropping, no sniffer to disagree with."""
 
-    def test_a_block_that_loses_a_field_is_refused_not_silently_accepted(self):
-        with self.assertRaises(ValueError):
-            builder.parse_block("monday500:1,only-two-fields\n", width=5)
+    def write(self, directory: str, text: str) -> Path:
+        path = Path(directory) / "finland_live_steps_1_7.csv"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_a_quoted_multi_line_cell_is_one_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write(directory, 'video_id,allas_filename,source_type\n'
+                                         'v,"multi\nline, with comma",Instagram\n')
+            rows = list(builder.records(path))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["video_id"], "v")
+        self.assertIn("multi", rows[0]["allas_filename"])
+
+    def test_a_row_that_loses_a_field_is_refused_not_silently_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write(directory, "video_id,a,b\nv,1\n")
+            with self.assertRaises(ValueError) as context:
+                list(builder.records(path))
+        self.assertIn("header has 3", str(context.exception))
+
+    def test_reader_agrees_with_a_plain_csv_parse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write(directory, "video_id,a\nv1,1\nv2,2\n")
+            with path.open(newline="", encoding="utf-8") as handle:
+                self.assertEqual(len(list(csv.DictReader(handle))), len(list(builder.records(path))))
 
     def test_a_record_date_comes_from_the_media_id(self):
         self.assertEqual(builder.recording_date("HEPP24-FI-RG-IG-20240604-1048000"), "2024-06-04")

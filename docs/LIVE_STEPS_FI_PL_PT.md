@@ -34,10 +34,13 @@ Source: three CSVs, 1.85 GB, 182–190 columns each.
 - Artifacts: index CSVs 6.5 MB, text bundles 14 MB gzipped, DNA statement tables 1.4 MB — **1.8 GB →
   28 MB**, and every long value is verbatim.
 
-**One producer defect, repaired and recorded:** the Portugal CSV cannot be parsed as a single stream
-(the producer's quoting merges records — a whole-file parse yields 3 rows for 500 videos). The builder
-splits the file on its own record boundary (`^monday500:`) and asserts every block parses to the full
-field width. No Portugal row was dropped, and the manifest says so.
+**Parsing note (measured, and the reason the builder uses the stdlib reader):** the Portugal export is
+a valid CSV — Python's `csv` module reads all three files whole (500 records × 182/185/190 fields).
+DuckDB's `read_csv` mis-detects quoting on it: strict mode fails with `CSV Error on Line: 1`,
+`ignore_errors=true` silently yields **3 rows for 500 videos**, and `strict_mode=false` gives one row
+per physical line (399 766). The builder therefore reads with `csv`, asserts every row parses to the
+header width, and never runs with error-dropping on. If you profile these files with DuckDB, do not
+trust `ignore_errors` — it will quietly delete the corpus.
 
 ## Artifact contract
 
