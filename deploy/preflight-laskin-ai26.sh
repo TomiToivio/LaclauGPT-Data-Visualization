@@ -20,6 +20,15 @@ info "visualization checkout verified"
 [[ -x "$VENV/bin/laclaugpt-visualize" ]] || fail "visualization CLI missing from configured virtualenv"
 info "visualization CLI installed"
 
+# #234: the unit drifted off origin/main three times (#176, #185, #234) while this preflight
+# stayed green, and a declared core dependency was missing from the serving venv. Assert both
+# before the service is restarted: the checkout must be origin/main, and every requirement in
+# [project].dependencies must be installed in the venv that will serve it. Deploying a branch on
+# purpose requires LACLAUGPT_VIS_ALLOW_GIT_DRIFT=1, which is logged.
+"$VENV/bin/python" "$PUBLIC_ROOT/deploy/preflight-checkout-ai26.py" \
+  --repo-root "$PUBLIC_ROOT" --pyproject "$PUBLIC_ROOT/pyproject.toml" \
+  || fail "serving checkout is not origin/main or its core dependencies are not installed (#234)"
+
 set -a
 # shellcheck disable=SC1090
 source "$PRIVATE_ENV"
