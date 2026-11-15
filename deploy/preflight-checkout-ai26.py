@@ -71,7 +71,7 @@ def conflicting_main_worktrees(root: Path) -> list[str]:
         return [f"cannot inspect git worktree ownership: {result.stderr.strip()}"]
     owner = root.resolve()
     conflicts: list[str] = []
-    for entry in result.stdout.strip().split("\\n\\n"):
+    for entry in result.stdout.strip().split(chr(10) * 2):
         lines = entry.splitlines()
         path_line = next((line[9:] for line in lines if line.startswith("worktree ")), "")
         if not path_line:
