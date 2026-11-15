@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -33,13 +34,17 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-#: The Laskin layout, documented in docs/AI26_LASKIN_DASHBOARD.md. Override with --deployment.
+#: The deployments to inspect, supplied by the host rather than baked in: ``NAME=PORT:PATH`` entries,
+#: comma separated, in ``LACLAUGPT_VIS_DEPLOYMENTS``. They live in the environment because the real
+#: paths are deployment state (docs/AI26_LASKIN_DASHBOARD.md), and this repository is public — the
+#: public-tree policy (`scripts/check_public_tree.py`) rejects host paths in tracked files.
 #: ``@detached`` marks a secondary deployment: the documented convention (#236/#237) is that the AI26
 #: checkout on :8501 owns ``main`` and every additional deployment is a detached worktree, so a
 #: detached HEAD is *correct* there rather than drift.
-DEFAULT_DEPLOYMENTS: tuple[str, ...] = (
-    "ai26-dashboard=8501:/mnt/workspace/LaclauGPT-Data-Visualization",
-    "live-steps=8503:/mnt/workspace/VZ-live@detached",
+DEPLOYMENTS_ENV = "LACLAUGPT_VIS_DEPLOYMENTS"
+
+DEFAULT_DEPLOYMENTS: tuple[str, ...] = tuple(
+    item.strip() for item in os.environ.get(DEPLOYMENTS_ENV, "").split(",") if item.strip()
 )
 
 UPSTREAM = "origin/main"
@@ -304,7 +309,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         action="append",
         default=None,
         metavar="NAME=PORT:PATH",
-        help=f"deployment to inspect; defaults are {', '.join(DEFAULT_DEPLOYMENTS)}",
+        help="deployment to inspect, NAME=PORT:PATH (repeatable); "
+        f"defaults come from {DEPLOYMENTS_ENV}",
     )
     parser.add_argument("--fetch", action="store_true", help="git fetch origin first")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
@@ -316,6 +322,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     specs = args.deployment or list(DEFAULT_DEPLOYMENTS)
+    if not specs:
+        print(
+            "ERROR: no deployments configured; pass --deployment NAME=PORT:PATH "
+            f"or set {DEPLOYMENTS_ENV}",
+            file=sys.stderr,
+        )
+        return 2
     try:
         deployments = [parse_deployment(spec) for spec in specs]
     except ValueError as exc:
