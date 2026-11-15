@@ -59,6 +59,24 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _worktree_holding(root: Path, branch: str) -> str | None:
+    """Path of the *other* worktree that has ``branch`` checked out, if any (#236).
+
+    A branch can be checked out in exactly one worktree. When a second deployment shares the
+    clone, ``main`` may belong to it, and ``git checkout main`` then refuses here — which is
+    how a routine refresh can leave the served checkout on a maintenance branch.
+    """
+    listing = _git(root, "worktree", "list", "--porcelain").stdout
+    current: str | None = None
+    for line in listing.splitlines():
+        if line.startswith("worktree "):
+            current = line[len("worktree "):].strip()
+        elif current and line.strip() == f"branch refs/heads/{branch}":
+            if Path(current).resolve() != root.resolve():
+                return current
+    return None
+
+
 def checkout_problems(
     root: Path,
     *,
@@ -75,9 +93,20 @@ def checkout_problems(
 
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     if branch != expected_branch:
-        problems.append(
-            f"serving checkout is on branch {branch!r}, not {expected_branch!r}"
-        )
+        holder = _worktree_holding(root, expected_branch)
+        if holder:
+            problems.append(
+                f"serving checkout is on branch {branch!r}, not {expected_branch!r}: "
+                f"{expected_branch!r} is checked out in another worktree ({holder}). "
+                f"Run `git checkout --ignore-other-worktrees {expected_branch}` here if this "
+                "checkout is the deployment that may own the branch, or move that other "
+                "deployment to a detached worktree (`git worktree add --detach <path> <sha>`) "
+                "so it stops claiming the branch (#236)"
+            )
+        else:
+            problems.append(
+                f"serving checkout is on branch {branch!r}, not {expected_branch!r}"
+            )
 
     if fetch and _git(root, "fetch", "-q", "--prune", "origin").returncode != 0:
         print(

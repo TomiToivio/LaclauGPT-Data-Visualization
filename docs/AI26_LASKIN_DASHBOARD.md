@@ -173,9 +173,14 @@ After start, verify that:
 
 ## Update and restart
 
+One clone may serve more than one dashboard. A git branch can be checked out in only one worktree,
+so the AI26 checkout on `:8501` owns `main`; any additional deployment must be a **detached**
+worktree so it never claims the branch (#236).
+
 ```bash
 cd "$LACLAUGPT_VIS_REPO_ROOT"
 git status --short
+git checkout main               # fails if another worktree holds main — see below
 git pull --ff-only
 .venv/bin/pip install -e '.[remote]'
 bash deploy/preflight-laskin-ai26.sh
@@ -184,6 +189,36 @@ sudo systemctl status laclaugpt-visualization-ai26.service
 ```
 
 If preflight fails, leave the known-good service in place and fix the configuration or checkout before restarting.
+
+### When `main` is held by another worktree
+
+```bash
+git -C "$LACLAUGPT_VIS_REPO_ROOT" worktree list
+# fatal: 'main' is already checked out at '<other worktree>'
+```
+
+Two documented options, in order of preference:
+
+1. **Move the other deployment off the branch** (the durable fix). A second dashboard only needs a
+   commit, not a branch:
+
+   ```bash
+   git worktree add --detach <path> <sha>
+   ```
+
+   Refresh it by checking out a new SHA, never by moving `main`.
+
+2. **Let this checkout take the branch anyway** — only when the other worktree is not itself a
+   deployment of this repository:
+
+   ```bash
+   git checkout --ignore-other-worktrees main
+   ```
+
+The preflight now names this situation explicitly instead of reporting a bare "not on main", and
+the remedy it prints is one of the two above. A `:8501` checkout left on a maintenance branch is
+exactly the drift class of #176, #185 and #234.
+
 
 ## Logs and privacy
 
