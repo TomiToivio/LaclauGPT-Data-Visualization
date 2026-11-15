@@ -235,7 +235,8 @@ while the unit stayed `active` and the port kept answering 200.
 ```
 
 For every deployment it ties the port to the checkout: the listening process's `/proc/<pid>/cwd`
-must be the configured path, the branch must be `main`, and HEAD must equal `origin/main`. It also
+must be the configured path, a `branch`-mode deployment must be on `main`, and HEAD must equal
+`origin/main` in both modes. It also
 reports a branch claimed by **two deployments**, the #236 layout defect that makes the documented
 refresh impossible to run non-interactively. A duplicate claim held only by a transient scratch
 worktree is reported as a note, not a failure.
@@ -244,9 +245,13 @@ The deployments are the documented two on Laskin and can be overridden:
 
 ```bash
 .venv/bin/python deploy/served-drift-report.py \
-  --deployment ai26-dashboard=8501:/mnt/workspace/LaclauGPT-Data-Visualization \
-  --deployment live-steps=8503:/mnt/workspace/VZ-live@detached
+  --deployment ai26-dashboard=8501:<visualization-root> \
+  --deployment live-steps=8503:<live-steps-root>@detached
 ```
+
+The layout is machine-local, so the repository ships no paths: pass `--deployment` (repeatable) or set
+`LACLAUGPT_VIS_DRIFT_DEPLOYMENTS` to the same comma-separated specs — that is what the timer unit
+below does.
 
 `@detached` marks a secondary deployment: per the convention above it must serve a commit, not a
 branch, so a detached HEAD there is correct. The same rule inverted applies — a *secondary*

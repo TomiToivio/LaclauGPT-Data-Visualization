@@ -55,23 +55,29 @@ class FakeGit:
 
 
 def test_a_deployment_spec_is_strict():
-    deployment = drift.parse_deployment("ai26-dashboard=8501:/mnt/workspace/repo")
+    deployment = drift.parse_deployment("ai26-dashboard=8501:/srv/deploy/repo")
     assert (deployment.name, deployment.port, deployment.path, deployment.mode) == (
         "ai26-dashboard",
         8501,
-        Path("/mnt/workspace/repo"),
+        Path("/srv/deploy/repo"),
         "branch",
     )
     with pytest.raises(ValueError):
-        drift.parse_deployment("8501:/mnt/workspace/repo")
+        drift.parse_deployment("8501:/srv/deploy/repo")
     with pytest.raises(ValueError):
         drift.parse_deployment("live=8503:/mnt/repo@sideways")
 
 
+def test_no_configured_deployment_is_a_failure_not_a_pass(monkeypatch: pytest.MonkeyPatch):
+    """An unconfigured host must not report "all ok" because it inspected nothing."""
+    monkeypatch.delenv(drift.DEPLOYMENTS_ENV, raising=False)
+    assert drift.main([]) == 2
+
+
 def test_a_secondary_deployment_can_be_marked_detached():
     """#236/#237: only the :8501 checkout owns main; the others serve a commit."""
-    deployment = drift.parse_deployment("live-steps=8503:/mnt/workspace/VZ-live@detached")
-    assert (deployment.mode, deployment.path) == ("detached", Path("/mnt/workspace/VZ-live"))
+    deployment = drift.parse_deployment("live-steps=8503:/srv/deploy/VZ-live@detached")
+    assert (deployment.mode, deployment.path) == ("detached", Path("/srv/deploy/VZ-live"))
 
 
 def test_porcelain_branches_are_normalised_to_short_names():
@@ -103,11 +109,11 @@ def evaluate(**overrides: Any) -> Any:
         "upstream": "8037597abc",
         "ahead": 0,
         "behind": 0,
-        "listener_cwd": "/mnt/workspace/repo",
+        "listener_cwd": "/srv/deploy/repo",
         "serving": True,
     }
     base.update(overrides)
-    deployment = drift.Deployment("ai26", 8501, Path("/mnt/workspace/repo"))
+    deployment = drift.Deployment("ai26", 8501, Path("/srv/deploy/repo"))
     return drift.evaluate(deployment, **base)
 
 
@@ -129,13 +135,13 @@ def test_a_feature_branch_is_a_problem_even_when_up_to_date():
 
 def test_a_detached_secondary_deployment_is_correct_not_drift():
     state = drift.evaluate(
-        drift.Deployment("live-steps", 8503, Path("/mnt/workspace/repo"), mode="detached"),
+        drift.Deployment("live-steps", 8503, Path("/srv/deploy/repo"), mode="detached"),
         branch="HEAD",
         head="8037597abc",
         upstream="8037597abc",
         ahead=0,
         behind=0,
-        listener_cwd="/mnt/workspace/repo",
+        listener_cwd="/srv/deploy/repo",
         serving=True,
     )
     assert state.ok
@@ -143,13 +149,13 @@ def test_a_detached_secondary_deployment_is_correct_not_drift():
 
 def test_a_secondary_deployment_that_took_a_branch_is_the_layout_defect():
     state = drift.evaluate(
-        drift.Deployment("live-steps", 8503, Path("/mnt/workspace/repo"), mode="detached"),
+        drift.Deployment("live-steps", 8503, Path("/srv/deploy/repo"), mode="detached"),
         branch="main",
         head="8037597abc",
         upstream="8037597abc",
         ahead=0,
         behind=0,
-        listener_cwd="/mnt/workspace/repo",
+        listener_cwd="/srv/deploy/repo",
         serving=True,
     )
     assert not state.ok
@@ -157,9 +163,9 @@ def test_a_secondary_deployment_that_took_a_branch_is_the_layout_defect():
 
 
 def test_the_port_must_be_served_by_the_configured_checkout():
-    state = evaluate(listener_cwd="/mnt/workspace/VZ-live")
+    state = evaluate(listener_cwd="/srv/deploy/VZ-live")
     assert not state.ok
-    assert "served from /mnt/workspace/VZ-live" in state.problems[0]
+    assert "served from /srv/deploy/VZ-live" in state.problems[0]
 
 
 def test_a_silent_port_is_reported_not_passsed():

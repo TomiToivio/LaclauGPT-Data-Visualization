@@ -1,5 +1,5 @@
 [Unit]
-Description=LaclauGPT served-drift report (which code answers on :8501 and :8503)
+Description=LaclauGPT served-drift report (which code the deployments actually answer with)
 Documentation=deploy/served-drift-report.py
 After=network-online.target
 
@@ -7,6 +7,9 @@ After=network-online.target
 Type=oneshot
 User=<service-user>
 Group=<service-group>
+# Machine-local layout: name=port:path specs, comma separated, the same shape as --deployment.
+# Mark a secondary deployment @detached (it must serve a commit, not the branch the first one owns).
+Environment=LACLAUGPT_VIS_DRIFT_DEPLOYMENTS=ai26-dashboard=<port>:<visualization-root>,live-steps=<port>:<live-steps-root>@detached
 # The report is read-only: it resolves /proc/<pid>/cwd and reads git, nothing else.
 ExecStart=<visualization-root>/.venv/bin/python <visualization-root>/deploy/served-drift-report.py --fetch
 # A non-zero exit is the signal, not a reason to retry: the log line records which deployment drifted.
