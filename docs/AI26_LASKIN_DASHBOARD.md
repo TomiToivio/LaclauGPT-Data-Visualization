@@ -93,6 +93,26 @@ It verifies AI26 selection, the active `main` branch contract, the canonical bro
 
 `profile` and `health` both expose the effective non-secret `browser_data_contract`, so an operator can verify that the running service selected `canonical` without printing credentials. Optional capability failures must be shown as unavailable/degraded rather than causing unrelated views to crash.
 
+### Deployment drift and dependency guard (#234)
+
+The same drift was shipped three times: #176 (58 commits behind), #185, and #234 (13 commits behind on a feature branch, serving 200 the whole time). The preflight therefore asserts, before anything is restarted:
+
+* the serving checkout is on `main` **and** equal to `origin/main` (it fetches first, and falls back to the local `origin/main` ref with a warning if the fetch fails);
+* every requirement in `[project].dependencies` is installed in the venv that will serve the unit, at a satisfying version. It reads `pyproject.toml`, not the installed distribution metadata, because the stale editable-install metadata was what hid the missing `networkx` in #234.
+
+Both assertions fail closed with an `ERROR:` line naming the served SHA versus `origin/main` or the missing distribution. Two explicit overrides exist:
+
+```bash
+LACLAUGPT_VIS_ALLOW_GIT_DRIFT=1 bash deploy/preflight-laskin-ai26.sh   # deploy a branch on purpose
+LACLAUGPT_VIS_GIT_FETCH=0 bash deploy/preflight-laskin-ai26.sh         # no network; compare local ref
+```
+
+The guard lives in `deploy/preflight-checkout-ai26.py` and can be run alone:
+
+```bash
+.venv/bin/python deploy/preflight-checkout-ai26.py --repo-root .
+```
+
 ## Start manually
 
 ```bash
