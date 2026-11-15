@@ -191,3 +191,24 @@ def test_main_exits_non_zero_on_drift(served_repo, tmp_path, capsys):
 
     assert exit_code == 1
     assert "behind" in capsys.readouterr().err
+
+
+def test_another_worktree_claiming_main_fails_preflight(served_repo, tmp_path):
+    _origin, work = served_repo
+    sibling = tmp_path / "live-steps"
+    _git(work, "worktree", "add", "-q", "--detach", str(sibling), "HEAD")
+    # Emulate a conflicting checkout left by --ignore-other-worktrees; no
+    # mutation of anyone else's real worktree is needed.
+    subprocess.run(
+        ["git", "-C", str(sibling), "symbolic-ref", "HEAD", "refs/heads/main"],
+        check=True,
+    )
+    problems = guard.checkout_problems(work, fetch=False)
+    assert any("another worktree owns main" in problem for problem in problems)
+
+
+def test_a_detached_live_steps_worktree_is_allowed(served_repo, tmp_path):
+    _origin, work = served_repo
+    sibling = tmp_path / "live-steps"
+    _git(work, "worktree", "add", "-q", "--detach", str(sibling), "HEAD")
+    assert guard.checkout_problems(work, fetch=False) == []
