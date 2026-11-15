@@ -271,9 +271,11 @@ worktree is reported as a note, not a failure.
 The deployments are the documented two on Laskin and can be overridden:
 
 ```bash
+# The deployment paths are host state, not repository content: name them here or in
+# LACLAUGPT_VIS_DEPLOYMENTS (comma separated, NAME=PORT:PATH).
 .venv/bin/python deploy/served-drift-report.py \
-  --deployment ai26-dashboard=8501:/mnt/workspace/LaclauGPT-Data-Visualization \
-  --deployment live-steps=8503:/mnt/workspace/VZ-live@detached
+  --deployment "ai26-dashboard=8501:$LACLAUGPT_VIS_REPO_ROOT" \
+  --deployment "live-steps=8503:$LIVE_STEPS_WORKTREE@detached"
 ```
 
 `@detached` marks a secondary deployment: per the convention above it must serve a commit, not a

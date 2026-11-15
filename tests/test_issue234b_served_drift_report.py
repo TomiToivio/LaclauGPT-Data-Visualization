@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -55,23 +56,23 @@ class FakeGit:
 
 
 def test_a_deployment_spec_is_strict():
-    deployment = drift.parse_deployment("ai26-dashboard=8501:/mnt/workspace/repo")
+    deployment = drift.parse_deployment("ai26-dashboard=8501:/srv/example/repo")
     assert (deployment.name, deployment.port, deployment.path, deployment.mode) == (
         "ai26-dashboard",
         8501,
-        Path("/mnt/workspace/repo"),
+        Path("/srv/example/repo"),
         "branch",
     )
     with pytest.raises(ValueError):
-        drift.parse_deployment("8501:/mnt/workspace/repo")
+        drift.parse_deployment("8501:/srv/example/repo")
     with pytest.raises(ValueError):
         drift.parse_deployment("live=8503:/mnt/repo@sideways")
 
 
 def test_a_secondary_deployment_can_be_marked_detached():
     """#236/#237: only the :8501 checkout owns main; the others serve a commit."""
-    deployment = drift.parse_deployment("live-steps=8503:/mnt/workspace/VZ-live@detached")
-    assert (deployment.mode, deployment.path) == ("detached", Path("/mnt/workspace/VZ-live"))
+    deployment = drift.parse_deployment("live-steps=8503:/srv/example/live-steps@detached")
+    assert (deployment.mode, deployment.path) == ("detached", Path("/srv/example/live-steps"))
 
 
 def test_porcelain_branches_are_normalised_to_short_names():
@@ -103,11 +104,11 @@ def evaluate(**overrides: Any) -> Any:
         "upstream": "8037597abc",
         "ahead": 0,
         "behind": 0,
-        "listener_cwd": "/mnt/workspace/repo",
+        "listener_cwd": "/srv/example/repo",
         "serving": True,
     }
     base.update(overrides)
-    deployment = drift.Deployment("ai26", 8501, Path("/mnt/workspace/repo"))
+    deployment = drift.Deployment("ai26", 8501, Path("/srv/example/repo"))
     return drift.evaluate(deployment, **base)
 
 
@@ -129,13 +130,13 @@ def test_a_feature_branch_is_a_problem_even_when_up_to_date():
 
 def test_a_detached_secondary_deployment_is_correct_not_drift():
     state = drift.evaluate(
-        drift.Deployment("live-steps", 8503, Path("/mnt/workspace/repo"), mode="detached"),
+        drift.Deployment("live-steps", 8503, Path("/srv/example/repo"), mode="detached"),
         branch="HEAD",
         head="8037597abc",
         upstream="8037597abc",
         ahead=0,
         behind=0,
-        listener_cwd="/mnt/workspace/repo",
+        listener_cwd="/srv/example/repo",
         serving=True,
     )
     assert state.ok
@@ -143,13 +144,13 @@ def test_a_detached_secondary_deployment_is_correct_not_drift():
 
 def test_a_secondary_deployment_that_took_a_branch_is_the_layout_defect():
     state = drift.evaluate(
-        drift.Deployment("live-steps", 8503, Path("/mnt/workspace/repo"), mode="detached"),
+        drift.Deployment("live-steps", 8503, Path("/srv/example/repo"), mode="detached"),
         branch="main",
         head="8037597abc",
         upstream="8037597abc",
         ahead=0,
         behind=0,
-        listener_cwd="/mnt/workspace/repo",
+        listener_cwd="/srv/example/repo",
         serving=True,
     )
     assert not state.ok
@@ -157,9 +158,9 @@ def test_a_secondary_deployment_that_took_a_branch_is_the_layout_defect():
 
 
 def test_the_port_must_be_served_by_the_configured_checkout():
-    state = evaluate(listener_cwd="/mnt/workspace/VZ-live")
+    state = evaluate(listener_cwd="/srv/example/live-steps")
     assert not state.ok
-    assert "served from /mnt/workspace/VZ-live" in state.problems[0]
+    assert "served from /srv/example/live-steps" in state.problems[0]
 
 
 def test_a_silent_port_is_reported_not_passsed():
@@ -253,10 +254,19 @@ def test_main_returns_drift_for_a_real_repository(tmp_path: Path, capsys: pytest
     # origin/main points at the same commit, but nothing serves the port.
     subprocess.run([*git, "update-ref", "refs/remotes/origin/main", head.stdout.strip()], check=True)
 
+    # Pick a port nothing serves. Hard-coding 8501 made this test pass only where the dashboard is
+    # absent: on the host that runs it, the assertion met the real listener and failed.
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        free_port = probe.getsockname()[1]
+
     code = drift.main(
-        ["--deployment", f"ai26=8501:{repo}", "--skip-worktree-claims", "--json"]
+        ["--deployment", f"ai26={free_port}:{repo}", "--skip-worktree-claims", "--json"]
     )
     payload = json.loads(capsys.readouterr().out)
     assert code == 1  # the port is not served: never silently "ok"
     assert payload["ok"] is False
-    assert "nothing is listening on port 8501" in payload["deployments"][0]["problems"][0]
+    assert (
+        f"nothing is listening on port {free_port}"
+        in payload["deployments"][0]["problems"][0]
+    )
