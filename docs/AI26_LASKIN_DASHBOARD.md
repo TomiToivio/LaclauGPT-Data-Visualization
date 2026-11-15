@@ -217,11 +217,14 @@ restarting. Do not start or deploy :8503 merely to fix branch ownership.
 
 ## Update and restart
 
+One clone may serve more than one dashboard. A git branch can be checked out in only one worktree,
+so the AI26 checkout on `:8501` owns `main`; any additional deployment must be a **detached**
+worktree so it never claims the branch (#236).
+
 ```bash
 cd "$LACLAUGPT_VIS_REPO_ROOT"
 git status --short
-# Stop if the tree is dirty or main belongs to another worktree.
-git switch main
+git switch main                 # stop if another worktree owns main
 git pull --ff-only origin main
 .venv/bin/pip install -e '.[remote]'
 bash deploy/preflight-laskin-ai26.sh
@@ -230,6 +233,60 @@ sudo systemctl status laclaugpt-visualization-ai26.service
 ```
 
 If preflight fails, leave the known-good service in place and fix the configuration or checkout before restarting.
+
+### When `main` is held by another worktree
+
+```bash
+git -C "$LACLAUGPT_VIS_REPO_ROOT" worktree list
+# fatal: 'main' is already checked out at '<other worktree>'
+```
+
+Do not use `--ignore-other-worktrees`, even as a temporary workaround. First preserve
+any uncommitted work in the other checkout through its owner. When clean, switch that
+checkout to its own deployment branch or a reviewed detached commit, then switch
+:8501 to `main`. The preflight refuses conflicting branch ownership rather
+than concealing it.
+
+## Continuous served-drift report (#234)
+
+`deploy/preflight-laskin-ai26.sh` guards a *deploy*: it refuses to start a checkout that is not
+`origin/main` with its declared dependencies installed (#235). It cannot see what happened **after**
+a successful start — the drift that #176, #185, #234 and #236 all were, where the checkout moved
+while the unit stayed `active` and the port kept answering 200.
+
+`deploy/served-drift-report.py` is the continuous observer. It reads what is actually being served:
+
+```bash
+.venv/bin/python deploy/served-drift-report.py            # table, exit 1 on any problem
+.venv/bin/python deploy/served-drift-report.py --fetch    # compare against a freshly fetched origin
+.venv/bin/python deploy/served-drift-report.py --json     # machine-readable
+```
+
+For every deployment it ties the port to the checkout: the listening process's `/proc/<pid>/cwd`
+must be the configured path, the branch must be `main`, and HEAD must equal `origin/main`. It also
+reports a branch claimed by **two deployments**, the #236 layout defect that makes the documented
+refresh impossible to run non-interactively. A duplicate claim held only by a transient scratch
+worktree is reported as a note, not a failure.
+
+The deployments are the documented two on Laskin and can be overridden:
+
+```bash
+.venv/bin/python deploy/served-drift-report.py \
+  --deployment ai26-dashboard=8501:/mnt/workspace/LaclauGPT-Data-Visualization \
+  --deployment live-steps=8503:/mnt/workspace/VZ-live@detached
+```
+
+`@detached` marks a secondary deployment: per the convention above it must serve a commit, not a
+branch, so a detached HEAD there is correct. The same rule inverted applies — a *secondary*
+deployment found on `main` is reported as the #236 layout defect.
+
+### Install the hourly report
+
+`deploy/laskin-served-drift.service.example` and `.timer.example` run it hourly and append to
+`<private-runtime-root>/logs/served-drift.log`; both a drift and a healthy run are recorded, and the
+exit status is preserved for a watcher. Fill in the two paths, install into
+`~/.config/systemd/user/`, then `systemctl --user enable --now laskin-served-drift.timer` — and
+`loginctl enable-linger "$USER"`, otherwise the timer dies with the login session.
 
 ## Logs and privacy
 
