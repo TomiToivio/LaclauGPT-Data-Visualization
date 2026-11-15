@@ -71,9 +71,12 @@ def _worktree_holding(root: Path, branch: str) -> str | None:
     for line in listing.splitlines():
         if line.startswith("worktree "):
             current = line[len("worktree "):].strip()
-        elif current and line.strip() == f"branch refs/heads/{branch}":
-            if Path(current).resolve() != root.resolve():
-                return current
+        elif (
+            current
+            and line.strip() == f"branch refs/heads/{branch}"
+            and Path(current).resolve() != root.resolve()
+        ):
+            return current
     return None
 
 
