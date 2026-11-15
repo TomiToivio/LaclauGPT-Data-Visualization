@@ -219,6 +219,46 @@ The preflight now names this situation explicitly instead of reporting a bare "n
 the remedy it prints is one of the two above. A `:8501` checkout left on a maintenance branch is
 exactly the drift class of #176, #185 and #234.
 
+## Continuous served-drift report (#234)
+
+`deploy/preflight-laskin-ai26.sh` guards a *deploy*: it refuses to start a checkout that is not
+`origin/main` with its declared dependencies installed (#235). It cannot see what happened **after**
+a successful start — the drift that #176, #185, #234 and #236 all were, where the checkout moved
+while the unit stayed `active` and the port kept answering 200.
+
+`deploy/served-drift-report.py` is the continuous observer. It reads what is actually being served:
+
+```bash
+.venv/bin/python deploy/served-drift-report.py            # table, exit 1 on any problem
+.venv/bin/python deploy/served-drift-report.py --fetch    # compare against a freshly fetched origin
+.venv/bin/python deploy/served-drift-report.py --json     # machine-readable
+```
+
+For every deployment it ties the port to the checkout: the listening process's `/proc/<pid>/cwd`
+must be the configured path, the branch must be `main`, and HEAD must equal `origin/main`. It also
+reports a branch claimed by **two deployments**, the #236 layout defect that makes the documented
+refresh impossible to run non-interactively. A duplicate claim held only by a transient scratch
+worktree is reported as a note, not a failure.
+
+The deployments are the documented two on Laskin and can be overridden:
+
+```bash
+.venv/bin/python deploy/served-drift-report.py \
+  --deployment ai26-dashboard=8501:/mnt/workspace/LaclauGPT-Data-Visualization \
+  --deployment live-steps=8503:/mnt/workspace/VZ-live@detached
+```
+
+`@detached` marks a secondary deployment: per the convention above it must serve a commit, not a
+branch, so a detached HEAD there is correct. The same rule inverted applies — a *secondary*
+deployment found on `main` is reported as the #236 layout defect.
+
+### Install the hourly report
+
+`deploy/laskin-served-drift.service.example` and `.timer.example` run it hourly and append to
+`<private-runtime-root>/logs/served-drift.log`; both a drift and a healthy run are recorded, and the
+exit status is preserved for a watcher. Fill in the two paths, install into
+`~/.config/systemd/user/`, then `systemctl --user enable --now laskin-served-drift.timer` — and
+`loginctl enable-linger "$USER"`, otherwise the timer dies with the login session.
 
 ## Logs and privacy
 

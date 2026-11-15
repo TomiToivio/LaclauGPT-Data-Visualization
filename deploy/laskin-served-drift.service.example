@@ -1,0 +1,17 @@
+[Unit]
+Description=LaclauGPT served-drift report (which code answers on :8501 and :8503)
+Documentation=deploy/served-drift-report.py
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=<service-user>
+Group=<service-group>
+# The report is read-only: it resolves /proc/<pid>/cwd and reads git, nothing else.
+ExecStart=<visualization-root>/.venv/bin/python <visualization-root>/deploy/served-drift-report.py --fetch
+# A non-zero exit is the signal, not a reason to retry: the log line records which deployment drifted.
+SuccessExitStatus=0 1 2
+StandardOutput=append:<private-runtime-root>/logs/served-drift.log
+StandardError=append:<private-runtime-root>/logs/served-drift.log
+NoNewPrivileges=true
+PrivateTmp=true
