@@ -171,6 +171,50 @@ After start, verify that:
 8. AI26 data does not mix with Brazil26 or any other project namespace;
 9. no visualization-side discourse inference is performed.
 
+### Distinct worktree ownership for :8501 and :8503 (#236)
+
+The canonical AI26 dashboard on :8501 owns branch `main`. A second
+worktree for a separate :8503 live-steps instance **must not claim `main`**:
+Git forbids checking the same branch out in two normal worktrees, which
+previously left the :8501 refresh on a maintenance branch. The #234 preflight
+now also fails if `git worktree list --porcelain` shows another worktree
+claiming `main`. This is a read-only assertion and will not modify either
+deployment.
+
+To inspect the host before any change:
+
+```bash
+git -C "$LACLAUGPT_VIS_REPO_ROOT" worktree list
+git -C "$LACLAUGPT_VIS_REPO_ROOT" status --short
+# Check the :8503 worktree separately (substitute its configured path):
+git -C "$LIVE_STEPS_WORKTREE" status --short
+git -C "$LIVE_STEPS_WORKTREE" branch --show-current
+```
+
+**Do not run `git worktree remove`, `git reset --hard`, `git stash`,
+`git clean` or `git switch --discard-changes` against the :8503 checkout.**
+The #236 incident documented staged edits and deletion belonging to another
+session. Preserve them exactly as found.
+
+For an **already clean** :8503 worktree, switch to a deployment-specific branch:
+
+```bash
+# Only after verifying the :8503 checkout is CLEAN, and main is at
+# the intended tested commit:
+git -C "$LIVE_STEPS_WORKTREE" switch -c deploy/live-steps
+# If that branch already exists, use "switch deploy/live-steps" instead.
+git -C "$LACLAUGPT_VIS_REPO_ROOT" switch main
+git -C "$LACLAUGPT_VIS_REPO_ROOT" pull --ff-only origin main
+```
+
+Alternatively a clean :8503 worktree may be detached at a reviewed SHA using
+`git switch --detach <reviewed-sha>`. Never detach or switch while it contains
+someone else's uncommitted work. If :8503 is dirty, **stop and coordinate with
+the owner of that work**; do not force the :8501 checkout onto main with
+`--ignore-other-worktrees`. Once :8503 no longer claims main, refresh :8501
+using the documented main-branch commands and run the preflight before
+restarting. Do not start or deploy :8503 merely to fix branch ownership.
+
 ## Update and restart
 
 One clone may serve more than one dashboard. A git branch can be checked out in only one worktree,
@@ -180,8 +224,8 @@ worktree so it never claims the branch (#236).
 ```bash
 cd "$LACLAUGPT_VIS_REPO_ROOT"
 git status --short
-git checkout main               # fails if another worktree holds main — see below
-git pull --ff-only
+git switch main                 # stop if another worktree owns main
+git pull --ff-only origin main
 .venv/bin/pip install -e '.[remote]'
 bash deploy/preflight-laskin-ai26.sh
 sudo systemctl restart laclaugpt-visualization-ai26.service
@@ -197,27 +241,11 @@ git -C "$LACLAUGPT_VIS_REPO_ROOT" worktree list
 # fatal: 'main' is already checked out at '<other worktree>'
 ```
 
-Two documented options, in order of preference:
-
-1. **Move the other deployment off the branch** (the durable fix). A second dashboard only needs a
-   commit, not a branch:
-
-   ```bash
-   git worktree add --detach <path> <sha>
-   ```
-
-   Refresh it by checking out a new SHA, never by moving `main`.
-
-2. **Let this checkout take the branch anyway** — only when the other worktree is not itself a
-   deployment of this repository:
-
-   ```bash
-   git checkout --ignore-other-worktrees main
-   ```
-
-The preflight now names this situation explicitly instead of reporting a bare "not on main", and
-the remedy it prints is one of the two above. A `:8501` checkout left on a maintenance branch is
-exactly the drift class of #176, #185 and #234.
+Do not use `--ignore-other-worktrees`, even as a temporary workaround. First preserve
+any uncommitted work in the other checkout through its owner. When clean, switch that
+checkout to its own deployment branch or a reviewed detached commit, then switch
+:8501 to `main`. The preflight refuses conflicting branch ownership rather
+than concealing it.
 
 ## Continuous served-drift report (#234)
 

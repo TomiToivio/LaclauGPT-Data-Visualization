@@ -74,20 +74,18 @@ def test_the_problem_names_the_worktree_that_holds_main(repo_with_main_taken):
 
     problems = guard.checkout_problems(served, fetch=False)
 
-    assert len(problems) == 1, problems
-    message = problems[0]
+    assert len(problems) == 2, problems
+    message = "\n".join(problems)
     assert "maintenance" in message
     assert "another worktree" in message
     assert str(second) in message, "the operator must be told which checkout is holding main"
 
 
-def test_the_problem_prints_the_remedy(repo_with_main_taken):
+def test_the_problem_prints_safe_remedy(repo_with_main_taken):
     served, _second = repo_with_main_taken
-
-    message = guard.checkout_problems(served, fetch=False)[0]
-
-    assert "--ignore-other-worktrees main" in message
-    assert "worktree add --detach" in message
+    message = "\n".join(guard.checkout_problems(served, fetch=False))
+    assert "distinct branch or detached commit" in message
+    assert "--ignore-other-worktrees" not in message
 
 
 def test_a_plain_branch_mismatch_still_reads_plainly(tmp_path: Path):
@@ -108,9 +106,7 @@ def test_a_plain_branch_mismatch_still_reads_plainly(tmp_path: Path):
 
 
 def test_a_clean_checkout_has_no_problems(repo_with_main_taken):
-    """Sanity: with main reclaimed, the guard is quiet again."""
     served, second = repo_with_main_taken
-    _git(served, "checkout", "-q", "--ignore-other-worktrees", "main")
-
+    _git(second, "switch", "-c", "deploy/live-steps")
+    _git(served, "switch", "main")
     assert guard.checkout_problems(served, fetch=False) == []
-    _git(served, "worktree", "remove", "--force", str(second))
