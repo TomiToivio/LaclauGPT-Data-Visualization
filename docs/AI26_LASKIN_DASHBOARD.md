@@ -245,8 +245,12 @@ The deployments are the documented two on Laskin and can be overridden:
 ```bash
 .venv/bin/python deploy/served-drift-report.py \
   --deployment ai26-dashboard=8501:/mnt/workspace/LaclauGPT-Data-Visualization \
-  --deployment live-steps=8503:/mnt/workspace/VZ-live
+  --deployment live-steps=8503:/mnt/workspace/VZ-live@detached
 ```
+
+`@detached` marks a secondary deployment: per the convention above it must serve a commit, not a
+branch, so a detached HEAD there is correct. The same rule inverted applies — a *secondary*
+deployment found on `main` is reported as the #236 layout defect.
 
 ### Install the hourly report
 

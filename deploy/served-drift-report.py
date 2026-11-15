@@ -34,12 +34,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 #: The Laskin layout, documented in docs/AI26_LASKIN_DASHBOARD.md. Override with --deployment.
+#: ``@detached`` marks a secondary deployment: the documented convention (#236/#237) is that the AI26
+#: checkout on :8501 owns ``main`` and every additional deployment is a detached worktree, so a
+#: detached HEAD is *correct* there rather than drift.
 DEFAULT_DEPLOYMENTS: tuple[str, ...] = (
     "ai26-dashboard=8501:/mnt/workspace/LaclauGPT-Data-Visualization",
-    "live-steps=8503:/mnt/workspace/VZ-live",
+    "live-steps=8503:/mnt/workspace/VZ-live@detached",
 )
 
 UPSTREAM = "origin/main"
+
+MODES = ("branch", "detached")
 
 
 @dataclass(frozen=True)
@@ -49,6 +54,8 @@ class Deployment:
     name: str
     port: int
     path: Path
+    #: ``branch``: this checkout owns ``main``. ``detached``: it must serve a commit, not a branch.
+    mode: str = "branch"
 
 
 @dataclass
@@ -69,14 +76,18 @@ class DeploymentState:
 
 
 def parse_deployment(spec: str) -> Deployment:
-    """``name=port:path`` -> Deployment. Kept strict: a typo must not silently scan nothing."""
-    match = re.fullmatch(r"(?P<name>[^=]+)=(?P<port>\d+):(?P<path>.+)", spec.strip())
+    """``name=port:path[@detached]`` -> Deployment. Strict: a typo must not silently scan nothing."""
+    match = re.fullmatch(
+        r"(?P<name>[^=]+)=(?P<port>\d+):(?P<path>[^@]+)(?:@(?P<mode>branch|detached))?",
+        spec.strip(),
+    )
     if not match:
-        raise ValueError(f"deployment spec must be name=port:path, got {spec!r}")
+        raise ValueError(f"deployment spec must be name=port:path[@detached], got {spec!r}")
     return Deployment(
         name=match.group("name").strip(),
         port=int(match.group("port")),
         path=Path(match.group("path").strip()),
+        mode=match.group("mode") or "branch",
     )
 
 
@@ -169,8 +180,16 @@ def evaluate(
             f"port {deployment.port} is served from {listener_cwd or '<unknown>'}, "
             f"not the configured {deployment.path}"
         )
-    if branch != "main":
-        state.problems.append(f"serving checkout is on branch {branch!r}, not 'main'")
+    if deployment.mode == "branch":
+        if branch != "main":
+            state.problems.append(f"serving checkout is on branch {branch!r}, not 'main'")
+    elif branch != "HEAD":
+        # #236/#237: a secondary deployment must be a detached worktree so it never takes `main` from
+        # the checkout that owns it. Finding it on a branch is the layout defect, not a refresh.
+        state.problems.append(
+            f"secondary deployment is on branch {branch!r}; it must be a detached worktree "
+            "so it does not claim a branch (#236)"
+        )
     if head != upstream:
         state.problems.append(
             f"serving checkout is {head[:7]}, {UPSTREAM} is {upstream[:7]} "
@@ -261,9 +280,10 @@ def render(
     lines = []
     for state in states:
         marker = "ok   " if state.ok else "DRIFT"
+        position = state.branch if state.deployment.mode == "branch" else f"detached@{(state.head or '?')[:7]}"
         lines.append(
             f"{marker} {state.deployment.name:<16} :{state.deployment.port:<5} "
-            f"{state.branch or '?':<20} {(state.head or '?')[:7]:<8} "
+            f"{position:<20} {(state.head or '?')[:7]:<8} "
             f"{state.ahead} ahead / {state.behind} behind"
         )
         for problem in state.problems:

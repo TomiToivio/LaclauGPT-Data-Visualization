@@ -56,13 +56,22 @@ class FakeGit:
 
 def test_a_deployment_spec_is_strict():
     deployment = drift.parse_deployment("ai26-dashboard=8501:/mnt/workspace/repo")
-    assert (deployment.name, deployment.port, deployment.path) == (
+    assert (deployment.name, deployment.port, deployment.path, deployment.mode) == (
         "ai26-dashboard",
         8501,
         Path("/mnt/workspace/repo"),
+        "branch",
     )
     with pytest.raises(ValueError):
         drift.parse_deployment("8501:/mnt/workspace/repo")
+    with pytest.raises(ValueError):
+        drift.parse_deployment("live=8503:/mnt/repo@sideways")
+
+
+def test_a_secondary_deployment_can_be_marked_detached():
+    """#236/#237: only the :8501 checkout owns main; the others serve a commit."""
+    deployment = drift.parse_deployment("live-steps=8503:/mnt/workspace/VZ-live@detached")
+    assert (deployment.mode, deployment.path) == ("detached", Path("/mnt/workspace/VZ-live"))
 
 
 def test_porcelain_branches_are_normalised_to_short_names():
@@ -116,6 +125,35 @@ def test_a_feature_branch_is_a_problem_even_when_up_to_date():
     state = evaluate(branch="feat/62-gate-live-steps", head="f4dc1b1fff")
     assert not state.ok
     assert any("not 'main'" in problem for problem in state.problems)
+
+
+def test_a_detached_secondary_deployment_is_correct_not_drift():
+    state = drift.evaluate(
+        drift.Deployment("live-steps", 8503, Path("/mnt/workspace/repo"), mode="detached"),
+        branch="HEAD",
+        head="8037597abc",
+        upstream="8037597abc",
+        ahead=0,
+        behind=0,
+        listener_cwd="/mnt/workspace/repo",
+        serving=True,
+    )
+    assert state.ok
+
+
+def test_a_secondary_deployment_that_took_a_branch_is_the_layout_defect():
+    state = drift.evaluate(
+        drift.Deployment("live-steps", 8503, Path("/mnt/workspace/repo"), mode="detached"),
+        branch="main",
+        head="8037597abc",
+        upstream="8037597abc",
+        ahead=0,
+        behind=0,
+        listener_cwd="/mnt/workspace/repo",
+        serving=True,
+    )
+    assert not state.ok
+    assert "#236" in state.problems[0]
 
 
 def test_the_port_must_be_served_by_the_configured_checkout():
