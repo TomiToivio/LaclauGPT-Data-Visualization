@@ -59,6 +59,33 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def conflicting_main_worktrees(root: Path) -> list[str]:
+    """Detect another registered worktree claiming main (#236), without modifying it.
+
+    A second deployment owning main makes a normal `git switch main` fail in
+    the serving checkout. Never use --ignore-other-worktrees to conceal that
+    collision; repair the other checkout's branch ownership safely instead.
+    """
+    result = _git(root, "worktree", "list", "--porcelain")
+    if result.returncode != 0:
+        return [f"cannot inspect git worktree ownership: {result.stderr.strip()}"]
+    owner = root.resolve()
+    conflicts: list[str] = []
+    for entry in result.stdout.strip().split("\\n\\n"):
+        lines = entry.splitlines()
+        path_line = next((line[9:] for line in lines if line.startswith("worktree ")), "")
+        if not path_line:
+            continue
+        branch_line = next((line[7:] for line in lines if line.startswith("branch ")), "")
+        if branch_line == "refs/heads/main" and Path(path_line).resolve() != owner:
+            conflicts.append(
+                f"another worktree owns main: {path_line}; "
+                "reserve main for the :8501 checkout and move the other "
+                "deployment to a distinct branch or detached commit (#236)"
+            )
+    return conflicts
+
+
 def checkout_problems(
     root: Path,
     *,
@@ -71,7 +98,7 @@ def checkout_problems(
     if allow_drift:
         return []
 
-    problems: list[str] = []
+    problems: list[str] = conflicting_main_worktrees(root)
 
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     if branch != expected_branch:
