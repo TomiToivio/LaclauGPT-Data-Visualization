@@ -215,7 +215,10 @@ def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) ->
             continue
         if columns == ("__child__:postprocess_entities",):
             values = _child_values(children, row, "postprocess_entities")
-            tabs[tab] = {"available": True, "content": values, "reason": ""}
+            tabs[tab] = {"available": True,
+                         "blocks": ([{"label": tab, "value": ", ".join(values)}] if values else []),
+                         "absent": [], "empty": ([] if values else [tab]),
+                         "note": "", "reason": ""}
             continue
 
         blocks: list[dict[str, str]] = []
