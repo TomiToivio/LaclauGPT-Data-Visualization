@@ -115,7 +115,8 @@ PLATFORM_DERIVATION = "Platform is represented by the exported source_type and a
 
 def label_for(column: str) -> str:
     """Human-readable label for a field already approved for display."""
-    return column.replace("_", " ").strip().capitalize()
+    names = {"asr_transcript": "Transcript (original)", "asr_translation": "Translation"}
+    return names.get(column, column.replace("_", " ").strip().capitalize())
 
 
 
@@ -207,7 +208,10 @@ def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) ->
             continue
         if columns == ("__child__:postprocess_themes",):
             values = _child_values(children, row, "postprocess_themes")
-            tabs[tab] = {"available": True, "content": values, "reason": ""}
+            tabs[tab] = {"available": True,
+                         "blocks": ([{"label": tab, "value": ", ".join(values)}] if values else []),
+                         "absent": [], "empty": ([] if values else [tab]),
+                         "note": "", "reason": ""}
             continue
         if columns == ("__child__:postprocess_entities",):
             values = _child_values(children, row, "postprocess_entities")
@@ -345,14 +349,14 @@ def scope_children(children: pd.DataFrame | None, parents: pd.DataFrame) -> pd.D
 def child_counts(children: pd.DataFrame | None, field: str, *, limit: int = 20) -> pd.DataFrame:
     """Top entities or themes across the filtered records."""
     if children is None or children.empty or not {"field", "item.label", "source_key"} <= set(children.columns):
-        return pd.DataFrame(columns=["label", "records"])
+        return pd.DataFrame(columns=["label", "videos"])
     subset = children[children["field"] == field]
     if subset.empty:
         return pd.DataFrame(columns=["label", "records"])
     counts = (subset.dropna(subset=["item.label", "source_key"])
               .drop_duplicates(["source_key", "item.label"] + (["country"] if "country" in subset else []))["item.label"]
               .astype(str).value_counts().head(limit))
-    return pd.DataFrame({"label": counts.index, "records": counts.values})
+    return pd.DataFrame({"label": counts.index, "videos": counts.values})
 
 
 def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
@@ -384,7 +388,7 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     top = merged["item.label"].astype(str).value_counts().head(limit).index
     merged = merged[merged["item.label"].astype(str).isin(top)]
     grouped = (merged.groupby([merged["month"].astype(str), merged["item.label"].astype(str)])
-               .size().reset_index(name="records"))
+               .size().reset_index(name="videos"))
     return grouped.rename(columns={"level_0": "month", "level_1": "label"})
 
 
