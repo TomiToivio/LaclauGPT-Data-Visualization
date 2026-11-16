@@ -304,7 +304,7 @@ def test_filtered_child_labels_are_scoped_and_deduplicated():
     scoped = scope_children(children, parents.iloc[:1])
     assert list(scoped["item.label"]) == ["justice", "justice"]
     result = child_counts(scoped, "postprocess_themes")
-    assert result.to_dict("records") == [{"label": "justice", "records": 1}]
+    assert result.to_dict("records") == [{"label": "justice", "videos": 1}]
 
 
 def test_ambiguous_parent_keys_never_multiply_child_counts():
@@ -332,5 +332,5 @@ def test_same_native_key_across_countries_keeps_distinct_video_counts():
                              "field": ["postprocess_themes", "postprocess_themes"],
                              "item.label": ["justice", "justice"]})
     scoped = scope_children(children, parents)
-    assert child_counts(scoped, "postprocess_themes").iloc[0]["records"] == 2
-    assert record_tabs(parents.iloc[0].to_dict(), scoped)["Themes"]["content"] == ["justice"]
+    assert child_counts(scoped, "postprocess_themes").iloc[0]["videos"] == 2
+    assert record_tabs(parents.iloc[0].to_dict(), scoped)["Themes"]["blocks"][0]["value"] == "justice"

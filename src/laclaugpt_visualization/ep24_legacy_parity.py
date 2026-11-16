@@ -341,9 +341,9 @@ def child_counts(children: pd.DataFrame | None, field: str, *, limit: int = 20) 
         return pd.DataFrame(columns=["label", "videos"])
     subset = children[children["field"] == field]
     if subset.empty:
-        return pd.DataFrame(columns=["label", "records"])
+        return pd.DataFrame(columns=["label", "videos"])
     counts = (subset.dropna(subset=["item.label", "source_key"])
-              .drop_duplicates(["source_key", "item.label"])["item.label"]
+              .drop_duplicates(["source_key", "item.label"] + (["country"] if "country" in subset else []))["item.label"]
               .astype(str).value_counts().head(limit))
     return pd.DataFrame({"label": counts.index, "videos": counts.values})
 
