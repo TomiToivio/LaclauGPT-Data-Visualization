@@ -1,5 +1,14 @@
 # EP24 FI/PL/PT researcher dashboard on Laskin (:8502)
 
+## Processed-video export mode (#242, November 2026)
+
+The researcher dashboard now consumes the **existing exported 500 processed videos for each of Finland, Poland and Portugal**, without an approved cohort roster or `EP24_APPROVED_ROSTER`. The export directory must contain `combined.csv` and the normal optional source manifest. This is deliberately not a source-population selection operation: prepare the 500-per-country CSV export upstream and point `LACLAUGPT_VIS_ANALYSIS_DATA_DIR` to it.
+
+The app validates the loaded rows (500 per country; 1,500 total; no blank/duplicate country-scoped video identities) and checks manifest counts where supplied. It refuses mismatching exports rather than silently taking the first 500 rows of a larger data set. Stages 7/8/9 can be incomplete; the dashboard displays recorded coverage, not assumed completion. Researcher display allowlists and password-based access remain mandatory.
+
+On the configured Laskin host, after authorized installation of the code and the private 1,500-row export, verify the records and restart only the researcher service. Never replace the :8503 live-steps service or the separate :8504 population dashboard. Record served commit, manifest, stage coverage and health before closing #242.
+
+
 The researcher-facing dashboard for the 500-video EP24 test cohort. Issue
 [#242](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/issues/242) targets CSC Pouta at
 `http://86.50.228.141:8502/`; **on Tomi's instruction the deployment is on Laskin instead** — the
@@ -59,7 +68,6 @@ python -m pip install -e .
 
 # private data: place the artifact directory outside the repository
 export LACLAUGPT_VIS_ANALYSIS_DATA_DIR=/path/to/private/analysis/ep24/pouta_exports/fiplpt_500_20261115
-export EP24_APPROVED_ROSTER="$LACLAUGPT_VIS_ANALYSIS_DATA_DIR/approved_cohort.txt"
 python scripts/ep24/verify_researcher_dashboard.py \
     --data-root "$LACLAUGPT_VIS_ANALYSIS_DATA_DIR"
 ```

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Serve the EP24 FI/PL/PT researcher dashboard on Laskin (issue #242, target :8502).
 #
-# The app is public code; the export is private data. Point it at the checkpoint export with
-# LACLAUGPT_VIS_ANALYSIS_DATA_DIR - never at a path inside this repository. EP24_APPROVED_ROSTER is
-# optional bookkeeping; the dashboard renders whatever the export measures.
+# The app is public code; the export is private data: 500 processed videos per country, read from
+# LACLAUGPT_VIS_ANALYSIS_DATA_DIR - never a path inside this repository. No cohort roster is needed;
+# a protected password and the actual combined.csv are.
 #
-#   LACLAUGPT_VIS_LIVE_STEPS_DATA=... scripts/ep24/serve_researcher_dashboard.sh [port] [address]
+#   LACLAUGPT_VIS_ANALYSIS_DATA_DIR=... scripts/ep24/serve_researcher_dashboard.sh [port] [address]
 #
 # Defaults: port 8502, address 127.0.0.1. Bind to the Tailscale address (100.115.95.109) for
 # researcher access; 0.0.0.0 puts unauthenticated research data on every interface, so it is refused.

@@ -16,8 +16,8 @@ from laclaugpt_visualization.ep24_cohort import is_member
 from laclaugpt_visualization.ep24_researcher import (
     EXPECTED_DATASET,
     cohort_notes,
-    cohort_warnings,
     declared_run,
+    processed_export_warnings,
 )
 
 MANIFEST = {
@@ -62,7 +62,7 @@ def test_the_manifest_names_the_cohort_by_producer_revision():
 
 
 def test_a_correct_export_passes_the_cohort_gate():
-    warnings = cohort_warnings(rows(), MANIFEST)
+    warnings = processed_export_warnings(rows(), MANIFEST)
     assert warnings == [], warnings
 
 
@@ -85,11 +85,21 @@ def test_membership_is_decided_by_the_roster_and_the_storage_key():
 
 def test_a_missing_country_is_still_a_blocking_warning():
     frame = rows().iloc[:1000]
-    warnings = cohort_warnings(frame, MANIFEST)
+    warnings = processed_export_warnings(frame, MANIFEST)
     assert any("Portugal" in warning for warning in warnings)
 
 
-def test_a_manifest_without_any_identifier_still_warns():
-    warnings = cohort_warnings(rows(), {})
-    assert any("No export manifest" in warning for warning in warnings)
-    assert any("no verifiable dataset identifier" in warning for warning in warnings)
+def test_a_missing_manifest_does_not_block_a_correct_export():
+    """The frame is validated on its own counts and identities; a manifest is provenance, not a key.
+
+    #242 asks for 500 processed videos per country. Requiring a manifest identifier as well made the
+    dashboard refuse correct data (the checkpoint exporter names the run in ``producer_revision``).
+    """
+    warnings = processed_export_warnings(rows(), {})
+    assert warnings == []
+
+
+def test_a_manifest_that_disagrees_with_the_loaded_count_is_reported():
+    manifest = {**MANIFEST, "countries": {"finland": {"exported_videos": 499}}}
+    warnings = processed_export_warnings(rows(), manifest)
+    assert any("499" in warning for warning in warnings)

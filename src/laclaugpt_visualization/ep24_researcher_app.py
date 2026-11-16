@@ -55,6 +55,7 @@ from laclaugpt_visualization.ep24_researcher import (
     declared_run,
     evidence_sections,
     friendly,
+    processed_export_warnings,
     research_children,
 )
 from laclaugpt_visualization.live_steps import (
@@ -85,7 +86,7 @@ legacy_theme.layout = go.Layout(colorway=palette, paper_bgcolor="#FFFFFF",
 pio.templates["ep2024_groovy"] = legacy_theme
 pio.templates.default = "ep2024_groovy"
 st.title("EP2024 · Finland, Poland & Portugal")
-st.caption("LaclauGPT multimodal research explorer | 500-video test cohorts | "
+st.caption("LaclauGPT multimodal research explorer | 500 processed videos per country | "
            "Interpretations are model outputs, not validated findings")
 root = Path(os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR", "data"))
 frame = read_records(root)
@@ -118,11 +119,13 @@ if "month" not in frame.columns:
 CHILDREN = load_children(root)
 CHILDREN_BY_SOURCE = {name: children_by_source(rows) for name, rows in CHILDREN.items()}
 
-# The export is what it is: show it, and state what it contains. A cohort gate used to stop the
-# dashboard here unless a roster, a checksum and a dataset identifier all agreed; on the delivered
-# 500-video export that guard rejected correct data and the dashboard never opened (issue #242,
-# Tomi 2026-11-16: "make this work with 500 processed videos for each country, ignore the cohort
-# stuff"). Counts are now reported as facts, not policed as conditions.
+# Structural validation: this dashboard presents 500 processed videos per country. It is not a
+# cohort-membership claim and needs no roster (issue #242, Tomi 2026-11-16) -- counts are checked
+# because "500 per country" is the shape of the export, not because a roster approved it.
+warnings = processed_export_warnings(frame, manifest)
+for warning in warnings:
+    st.warning(warning)
+
 COUNTRY_LABELS = {"finland": "Finland", "poland": "Poland", "portugal": "Portugal",
                   "fi": "Finland", "pl": "Poland", "pt": "Portugal"}
 if "country" in frame.columns:
@@ -134,11 +137,10 @@ if "country" in frame.columns:
         + " · ".join(f"{country} {count}" for country, count in observed.items())
         + (f" · dataset {declared_run(manifest)}" if declared_run(manifest) else "")
     )
-    short = {country: int(count) for country, count in observed.items() if int(count) != 500}
-    if short:
-        st.info("Country counts differ from 500: "
-                + ", ".join(f"{country}={count}" for country, count in short.items())
-                + ". Shown as measured; nothing is padded or dropped.")
+    if not warnings:
+        st.success("Loaded 1,500 distinct processed videos — 500 per country.")
+    st.caption("These are processed-video exports, not cohort-membership claims; later stages may be "
+               "incomplete, which the stage coverage shows.")
 for note in cohort_notes(frame, manifest):
     st.caption(note)
 
@@ -394,7 +396,7 @@ with tabs[7]:
 
 
 with tabs[8]:
-    st.subheader("The legacy dashboard's questions, on this cohort")
+    st.subheader("The legacy dashboard's questions, on these processed videos")
     st.caption("Each chart answers a question the legacy :8501 dashboard asked, from this export's "
                "columns. A field this export does not carry removes the chart instead of drawing a "
                "zero that would read as a finding.")
