@@ -325,6 +325,11 @@ def scope_children(children: pd.DataFrame | None, parents: pd.DataFrame) -> pd.D
     parent["source_key"] = parent["source_key"].astype(str)
     incoming = children.copy()
     incoming["source_key"] = incoming["source_key"].astype(str)
+    if "country" in parent and "country" not in incoming:
+        # A source key shared by countries cannot identify an unscoped child.
+        ambiguous = parent.groupby("source_key")["country"].nunique(dropna=False)
+        conflicting_keys = set(ambiguous[ambiguous > 1].index)
+        incoming = incoming.loc[~incoming["source_key"].isin(conflicting_keys)]
     if "country" in incoming and "country" in parent:
         keys = ["source_key", "country"]
         parent["country"] = parent["country"].astype(str).str.casefold()
