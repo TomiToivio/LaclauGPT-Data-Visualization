@@ -77,7 +77,6 @@ except ModuleNotFoundError:  # standalone deployment: only this module was shipp
         identity,
         manifest_counts_rows,
         manifest_provenance,
-        exported_counts,
         missing_countries,
         multilayer,
         rdf_files,
