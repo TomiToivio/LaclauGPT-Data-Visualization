@@ -35,8 +35,7 @@ from laclaugpt_visualization.ep24_researcher import (
     DISPLAY,
     DNA_FIELDS,
     SNA_FIELDS,
-    cohort_notes,
-    cohort_warnings,
+    processed_export_warnings,
     coverage,
     declared_run,
     evidence_sections,
@@ -71,7 +70,7 @@ legacy_theme.layout = go.Layout(colorway=palette, paper_bgcolor="#FFFFFF",
 pio.templates["ep2024_groovy"] = legacy_theme
 pio.templates.default = "ep2024_groovy"
 st.title("EP2024 · Finland, Poland & Portugal")
-st.caption("LaclauGPT multimodal research explorer | 500-video test cohorts | "
+st.caption("LaclauGPT multimodal research explorer | 500 processed videos per country | "
            "Interpretations are model outputs, not validated findings")
 root = Path(os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR", "data"))
 frame = read_records(root)
@@ -80,30 +79,16 @@ if frame.empty:
     st.error("No private export loaded. Configure LACLAUGPT_VIS_ANALYSIS_DATA_DIR.")
     st.stop()
 
-warnings = cohort_warnings(frame, manifest)
-roster_path = os.environ.get("EP24_APPROVED_ROSTER")
-if not roster_path:
-    warnings.append("Configure the approved roster path to verify exact cohort membership.")
-else:
-    from laclaugpt_visualization.ep24_cohort import is_member, read_roster
-    try:
-        approved, roster_manifest = read_roster(Path(roster_path))
-        if roster_manifest["sha256"] != (manifest.get("approved_cohort") or {}).get("sha256"):
-            warnings.append("Approved roster checksum differs from the export manifest.")
-        if any(not is_member(row, str(row.get("country", "")).lower(), approved)
-               for row in frame.to_dict("records")):
-            warnings.append("Export includes records outside the approved cohort.")
-    except (OSError, ValueError) as exc:
-        warnings.append("Approved roster could not be validated: " + type(exc).__name__)
+warnings = processed_export_warnings(frame, manifest)
 for warning in warnings:
     st.warning(warning)
-for note in cohort_notes(frame, manifest):
-    st.caption(note)
-if not warnings:
-    st.success("All three 500-video cohorts and the dataset identifier match the export.")
-else:
-    st.error("Invalid or incomplete Monday500 cohort. Mount a verified, approved snapshot.")
+if warnings:
+    st.error("Export validation failed. Provide 500 distinct processed videos per FI/PL/PT country.")
     st.stop()
+st.success("Loaded 500 distinct exported videos per country (1,500 total).")
+st.caption("These are processed-video exports, not cohort membership claims. "
+           "Later-stage results may be incomplete; see stage coverage.")
+
 if manifest:
     st.caption(f"Snapshot: {manifest.get('generated_at', 'not specified')} | "
                f"exporter: {manifest.get('builder_version', 'not specified')}")
@@ -328,7 +313,7 @@ with tabs[7]:
 
 
 with tabs[8]:
-    st.subheader("The legacy dashboard's questions, on this cohort")
+    st.subheader("The legacy dashboard's questions, on these processed videos")
     st.caption("Each chart answers a question the legacy :8501 dashboard asked, from this export's "
                "columns. A field this export does not carry removes the chart instead of drawing a "
                "zero that would read as a finding.")
