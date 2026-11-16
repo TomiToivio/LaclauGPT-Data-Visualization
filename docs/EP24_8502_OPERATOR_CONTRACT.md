@@ -23,6 +23,19 @@ Here `DASHBOARD_CHECKOUT` is the **verified** live checkout path, supplied by th
 
 Record: unit name; current checkout SHA; remote SHA; chosen data snapshot identifier and manifest identity; whether the service is running; and the validation outcome. Keep sensitive host details in an authorized private location.
 
+### 1.1 What a remote probe settles, and what only a shell does
+
+Two claims about this service look alike and are not:
+
+| claim | what can settle it |
+| --- | --- |
+| the service answers, and **what the page renders** | a request from outside the deployment, with no credentials |
+| which **commit** is served, under which **unit**, over which **data path** | only a shell on the host (`systemctl --user …`, `git -C … rev-parse HEAD`) |
+
+An HTTP probe therefore cannot confirm or refute the issue's served SHA. Measured 2026-11-16 from a host with no shell access to the deployment: `/_stcore/health` returned `ok` and an unauthenticated browser rendered the research view — corpus totals, per-country counts, cohort provenance and the filtered-table CSV control — with **no password prompt**. The served commit was consequently **not re-read**; it stays *unverified* rather than being repeated from the issue, which by now may describe an older revision than the one serving.
+
+State that boundary in the same sentence as the result. "The dashboard is up" from an external probe and "the deployed revision is X" are different findings, and collapsing them is how the drift in §5 stayed hidden.
+
 ## 2. Code changes are reviewed, deployments are separate
 
 The production checkout is not the editing workspace. For an explicitly authorized compatibility fix:
@@ -59,7 +72,9 @@ The dashboard's environment variable `LACLAUGPT_VIS_ANALYSIS_DATA_DIR` selects t
 
 ## 5. Owner decisions, not default agent actions
 
-Issue #258 identifies a possible difference between the observed live access configuration and the protective example deployment configuration. **No agent should change binding address, firewall, authentication, password gate, proxy, TLS or VPN settings without an explicit owner decision**. Because these exports contain sensitive research material, treat the absence of an access gate as a security concern to escalate promptly, not as proof public exposure was approved.
+Issue #258 identifies a difference between the observed live access configuration and the protective example deployment configuration. It is no longer hypothetical: **re-measured 2026-11-16, with no credentials and from outside the deployment, the service rendered the research view and offered its filtered-table CSV export behind no password prompt**, while `deploy/laclaugpt-ep24-researcher.service.example` requires a private bind address and an `EnvironmentFile` password because the export carries author usernames, video identifiers and transcripts. Either the live deployment is an intentional research-convenience exception or it is drift; only the owner can decide which, and the answer is not inferable from the host.
+
+**No agent should change binding address, firewall, authentication, password gate, proxy, TLS or VPN settings without an explicit owner decision.** Treat a missing gate as a security concern to escalate immediately — not as evidence that public exposure was approved, and not as a bug to fix quietly on the way past. If the decision is urgent and the owner is unreachable, say what is exposed and stop; do not restrict access either, because locking a running service also changes who can reach it and can interrupt research work mid-session.
 
 Likewise, the observed live-versus-`main` revision difference must not be silently resolved. Ask for explicit deployment authorization before updating the served revision.
 
@@ -71,6 +86,7 @@ Likewise, the observed live-versus-`main` revision difference must not be silent
 - [ ] An export refresh, if requested, used a new immutable snapshot with manifest/identity/hash checks and rollback retention.
 - [ ] Any approved deployment recorded previous SHA, clean checkout, the deployed SHA, localhost health, log review and rendered-panel verification.
 - [ ] No network access or authentication policy changed without explicit owner approval.
+- [ ] The access gate was **measured, not inferred**: an unauthenticated request was attempted and its rendering described, so "gated" is a finding rather than an assumption from an example unit.
 - [ ] Unknowns and blockers are reported; a successful restart, green CI and a past issue observation are **not** evidence of current operational correctness.
 
 **Related:** [issue #258](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/issues/258) is the host-observation record; [`AGENTS.md`](../AGENTS.md) remains authoritative for current repository development and privacy rules.
