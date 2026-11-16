@@ -90,7 +90,8 @@ class DeployedAppContractTests(unittest.TestCase):
             re.split(r"[<>=!\[; ]", requirement)[0].strip().lower()
             for requirement in pyproject["project"]["dependencies"]
         }
-        first_party = {"laclaugpt_visualization", "ep24_reprocessed", "ep24_legacy_parity",
+        first_party = {"laclaugpt_visualization", "ep24_reprocessed",
+                       "ep24_legacy_parity",  # #263
                        "demo_auth"}  # sibling modules shipped alongside the app
         tree = ast.parse((ROOT / "src" / "laclaugpt_visualization"
                           / "ep24_reprocessed_app.py").read_text(encoding="utf-8"))
@@ -103,6 +104,30 @@ class DeployedAppContractTests(unittest.TestCase):
         external = {name for name in imported
                     if name not in sys.stdlib_module_names and name not in first_party}
         self.assertEqual(external - declared, set())
+
+    def test_the_ship_list_includes_every_first_party_module_the_app_imports(self) -> None:
+        """A module the app imports but the deploy script does not copy is the #215 crash again.
+
+        `demo_auth.py` was missing from the ship list while the app imported it on its first line, and
+        `ep24_legacy_parity.py` would have joined it: the sync would "succeed", and the page would fail on the
+        host with ModuleNotFoundError. The list is the deployment's real dependency set, so it is checked.
+        """
+        script = (ROOT / "scripts" / "ep24" / "deploy_ep24_demo.sh").read_text(encoding="utf-8")
+        shipped = set(re.findall(r'src/laclaugpt_visualization/([A-Za-z0-9_]+\.py)', script))
+
+        import ast
+
+        tree = ast.parse((ROOT / "src" / "laclaugpt_visualization"
+                          / "ep24_reprocessed_app.py").read_text(encoding="utf-8"))
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                name = node.module.split(".")[-1] if node.module.startswith("laclaugpt_visualization") \
+                    else node.module.split(".")[0]
+                imported.add(f"{name}.py")
+        required = {name for name in imported
+                    if (ROOT / "src" / "laclaugpt_visualization" / name).is_file()}
+        self.assertEqual(required - shipped, set())
 
     def test_service_template_never_binds_every_interface(self) -> None:
         template = (ROOT / "deploy" / "ep24-fiplpt.service.example").read_text(encoding="utf-8")
