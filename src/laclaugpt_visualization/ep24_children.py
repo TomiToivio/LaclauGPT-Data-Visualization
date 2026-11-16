@@ -124,6 +124,7 @@ def network(rows_nodes: Iterable[Mapping[str, Any]], rows_edges: Iterable[Mappin
         if not (source and target):
             continue
         edges.append({
+            "document": str(row.get("source_key") or row.get("parent_record_id") or "").strip(),
             "source": source,
             "target": target,
             "relation_type": str(row.get("edge_type") or row.get("relation_type") or "").strip(),
