@@ -78,6 +78,16 @@ Issue #258 identifies a difference between the observed live access configuratio
 
 Likewise, the observed live-versus-`main` revision difference must not be silently resolved. Ask for explicit deployment authorization before updating the served revision.
 
+### Recorded owner decision, 2026-11-16
+
+The owner decided the gate **is to be closed**: the dashboard must require a password instead of rendering research data to any client that can reach the port.
+
+The mechanism is host configuration, not a code change. The app already gates on `LACLAUGPT_VIS_DEMO_PASSWORD` before it reads anything (`demo_auth.require_demo_password()` is called ahead of `read_records`), so a mode-`0600` `EnvironmentFile` referenced from a drop-in plus a restart closes the exposure on the revision that is serving today. `scripts/ep24/serve_researcher_dashboard.sh` is stricter still — it refuses to start without the password and refuses to bind `0.0.0.0` — so a unit that runs that launcher cannot regress into this state.
+
+**Bind address is a separate decision, not part of this one.** Restricting the address changes *who* can reach the service at all and can interrupt a researcher mid-session; the password reduces *what an unreachable-by-policy client can read*. Do not bundle them into one change, and do not treat "bound privately" as a substitute for the gate — the address is host/network configuration that can drift, while the app-level gate travels with the service.
+
+**Status 2026-11-16: decided, not applied.** The workspace that recorded the decision has no shell access to the deployment host (`Permission denied (publickey)`), so nothing was changed there. Until the password is in the running process's environment *and* an unauthenticated request has been re-tested, the exposure stands. Verifying it means asking the outside again, not reading the unit: `/proc/<MainPID>/environ` must contain the variable, `/_stcore/health` must still answer `ok`, and an unauthenticated client must get the password form instead of the research view.
+
 ## 6. Completion checklist
 
 - [ ] The owner-authorized host, user unit, served SHA and deployed data snapshot were verified **at the time of work**.
