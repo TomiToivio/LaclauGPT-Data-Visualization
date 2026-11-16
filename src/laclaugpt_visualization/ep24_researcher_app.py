@@ -11,6 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
 
 from laclaugpt_visualization.demo_auth import require_demo_password
@@ -24,7 +26,18 @@ from laclaugpt_visualization.ep24_researcher import (
 )
 
 st.set_page_config(page_title="EP2024 · FI/PL/PT research", layout="wide")
+if not os.environ.get("LACLAUGPT_VIS_DEMO_PASSWORD"):
+    st.error("Research access not configured. Configure the server-local password.")
+    st.stop()
 require_demo_password()
+palette = ["#6C63FF", "#00C2A8", "#FF6B8A", "#FFA94D", "#4DABF7",
+           "#B197FC", "#63E6BE", "#F783AC", "#FFD43B", "#74C0FC"]
+legacy_theme = go.layout.Template()
+legacy_theme.layout = go.Layout(colorway=palette, paper_bgcolor="#FFFFFF",
+    plot_bgcolor="#FAFBFF", font=dict(family="Inter, Segoe UI, sans-serif",
+    size=13, color="#0F172A"))
+pio.templates["ep2024_groovy"] = legacy_theme
+pio.templates.default = "ep2024_groovy"
 st.title("EP2024 · Finland, Poland & Portugal")
 st.caption("LaclauGPT multimodal research explorer | 500-video test cohorts | "
            "Interpretations are model outputs, not validated findings")
@@ -40,6 +53,9 @@ for warning in warnings:
     st.warning(warning)
 if not warnings:
     st.success("All three 500-video cohorts and the dataset identifier match the export.")
+else:
+    st.error("Invalid or incomplete Monday500 cohort. Mount a verified, approved snapshot.")
+    st.stop()
 if manifest:
     st.caption(f"Snapshot: {manifest.get('generated_at', 'not specified')} | "
                f"exporter: {manifest.get('builder_version', 'not specified')}")
@@ -205,6 +221,30 @@ with tabs[5]:
             if isinstance(edge, dict) and edge.get("evidence_quote") and edge.get("relation_type"):
                 ties.append({"document": identity(record), **edge})
     table(research_children(ties[:3000], SNA_FIELDS), "evidenced SNA ties")
+    if ties:
+        import networkx as nx
+        network = nx.DiGraph()
+        for edge in ties[:250]:
+            source = edge.get("source_actor") or edge.get("source_actor_id")
+            target = edge.get("target_actor") or edge.get("target_actor_id")
+            if source and target:
+                network.add_edge(str(source), str(target))
+        if network.number_of_edges():
+            positions = nx.spring_layout(network, seed=24)
+            xx, yy = [], []
+            for a, b in network.edges():
+                xx += [positions[a][0], positions[b][0], None]
+                yy += [positions[a][1], positions[b][1], None]
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=xx, y=yy, mode="lines",
+                line=dict(color="#8b97a7"), hoverinfo="skip"))
+            fig.add_trace(go.Scatter(
+                x=[positions[n][0] for n in network],
+                y=[positions[n][1] for n in network], text=list(network),
+                mode="markers", hoverinfo="text", marker=dict(size=10)))
+            fig.update_layout(height=560, showlegend=False,
+                xaxis=dict(visible=False), yaxis=dict(visible=False))
+            st.plotly_chart(fig, use_container_width=True)
     st.caption("Only upstream relationships carrying an evidence quotation and type appear here.")
 
 with tabs[6]:
