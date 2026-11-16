@@ -96,21 +96,69 @@ def test_parity_rows_cover_both_views_in_legacy_order():
 
 def test_record_tabs_render_content_for_available_and_reason_for_unavailable(parents, children):
     tabs = record_tabs(parents.iloc[0].to_dict(), children)
-    assert tabs["Whisper"]["available"] and tabs["Whisper"]["content"]["asr_transcript"] == "a"
-    assert tabs["Themes"]["content"] == ["elections"]
-    assert tabs["Persons"]["content"] == ["Orpo"]
+    whisper = {block["label"]: block["value"] for block in tabs["Whisper"]["blocks"]}
+    assert tabs["Whisper"]["available"] and whisper["Transcript (original)"] == "a"
+    assert "elections" in tabs["Themes"]["blocks"][0]["value"]
+    assert "Orpo" in tabs["Persons"]["blocks"][0]["value"]
 
 
 def test_record_tabs_never_raise_on_a_record_missing_every_column(children):
     tabs = record_tabs({"source_key": "unknown"}, children)
     assert tabs["Metadata"]["available"]
-    assert tabs["Themes"]["content"] == []
+    assert tabs["Themes"]["blocks"] == []
+    assert tabs["Themes"]["empty"]  # the child table was read and had nothing for this record
 
 
 def test_record_tab_content_names_only_columns_that_exist():
     """A renamed upstream column must show as absent, not as a KeyError or a silently empty tab."""
     tabs = record_tabs({"asr_transcript": "hello"})
-    assert set(tabs["Whisper"]["content"]) == {"asr_transcript"}
+    assert [block["label"] for block in tabs["Whisper"]["blocks"]] == ["Transcript (original)"]
+    assert "Translation" in tabs["Whisper"]["absent"]
+
+
+def test_absent_and_empty_are_reported_as_different_facts():
+    """`asr_translation` present-but-blank is not the same as a column this export never carries."""
+    tabs = record_tabs({"asr_transcript": "hello", "asr_translation": ""})
+    whisper = tabs["Whisper"]
+    assert [block["label"] for block in whisper["blocks"]] == ["Transcript (original)"]
+    assert whisper["empty"] == ["Translation"]
+    assert whisper["absent"] == []
+
+    renamed = record_tabs({"speech_text": "hello"})
+    assert renamed["Whisper"]["blocks"] == []
+    assert renamed["Whisper"]["absent"] == ["Transcript (original)", "Translation"]
+
+
+def test_platform_is_declared_as_a_derivation_unless_the_export_carries_it():
+    derived = record_tabs({"country": "finland"})["Metadata"]
+    labels = [block["label"] for block in derived["blocks"]]
+    assert labels[:1] == ["Platform (derived)"]
+
+    carried = record_tabs({"platform": "instagram", "country": "finland"})["Metadata"]
+    assert "Platform (derived)" not in [block["label"] for block in carried["blocks"]]
+
+
+def test_a_structured_cell_is_projected_through_the_display_allowlist():
+    """A model cell must not be able to publish producer keys just because the tab renders it."""
+    tabs = record_tabs(
+        {"formula_of_populism_analysis": '{"interpretation": "people vs elite", "prompt": "SECRET"}'}
+    )
+    rendered = " ".join(block["value"] for block in tabs["Populism"]["blocks"])
+    assert "people vs elite" in rendered
+    assert "SECRET" not in rendered
+
+
+def test_child_rows_are_matched_on_either_identifier_dialect():
+    older = pd.DataFrame(
+        {
+            "parent_record_id": ["record-9"],
+            "field": ["postprocess_themes"],
+            "item.label": ["Matched by record id"],
+        }
+    )
+    tabs = record_tabs({"record_id": "record-9"}, older)
+    assert "Matched by record id" in tabs["Themes"]["blocks"][0]["value"]
+    assert record_tabs({"record_id": "other"}, older)["Themes"]["blocks"] == []
 
 
 def test_filters_are_conjunctive_and_empty_means_unrestricted(parents):
@@ -151,7 +199,21 @@ def test_sentiment_and_language_counts_are_per_record_not_per_mention(parents):
 def test_child_counts_are_bounded_and_labelled(children):
     themes = child_counts(children, "postprocess_themes")
     assert themes.iloc[0]["label"] == "elections"
-    assert int(themes.iloc[0]["records"]) == 2
+    assert int(themes.iloc[0]["videos"]) == 2
+
+
+def test_child_counts_count_videos_not_mentions():
+    """A term said twice in one video is one video mentioning it — the child table has two rows."""
+    repeated = pd.DataFrame(
+        {
+            "source_key": ["k1", "k1", "k2"],
+            "field": ["postprocess_themes"] * 3,
+            "item.label": ["elections", "elections", "elections"],
+        }
+    )
+    counted = child_counts(repeated, "postprocess_themes")
+    assert int(counted.iloc[0]["videos"]) == 2
+    assert "records" not in counted.columns
 
 
 def test_filters_have_a_column_and_unsupported_ones_are_declared():

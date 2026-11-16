@@ -440,17 +440,24 @@ elif view == "Legacy parity · workbench":
                     if not content_of["available"]:
                         st.warning(content_of["reason"] or "No source in the reprocessed export.")
                         continue
-                    body = content_of["content"]
-                    if isinstance(body, list):
-                        st.write(", ".join(body) if body else "—")
-                    elif isinstance(body, dict):
-                        for key, value in body.items():
-                            text_value = "" if value is None else str(value)
-                            st.markdown(f"*{key}*: {text_value or '—'}")
-                    else:
-                        st.write(str(body) if body else "—")
+                    # Values are rendered as text, not markdown: these are corpus-derived strings, and a
+                    # transcript that happens to contain markdown must not be interpreted by the page.
+                    for block in content_of["blocks"]:
+                        st.markdown(f"*{block['label']}*")
+                        st.text(block["value"])
+                    if content_of["note"]:
+                        st.caption(content_of["note"])
+                    if content_of["absent"]:
+                        st.caption("Not carried by this export: " + ", ".join(content_of["absent"])
+                                   + ". Unavailable is not the same as empty.")
+                    if content_of["empty"]:
+                        st.caption("No output for this record: " + ", ".join(content_of["empty"])
+                                   + " — an absence of output, not a finding that the video has none.")
 
     with aggregate_view:
+        # A count without its denominator and identity rule is not a claim (#205).
+        st.caption(f"Denominator: {len(workbench):,} records in the filtered frame — one row per video, "
+                   "identity `source_key`. Every figure below counts videos, not mentions.")
         legacy = st.columns(2)
         with legacy[0]:
             st.markdown("**Frequency**")
@@ -462,7 +469,7 @@ elif view == "Legacy parity · workbench":
             st.markdown("**Languages**")
             st.dataframe(language_counts(workbench), hide_index=True, use_container_width=True)
 
-        st.markdown("**Entities** (top labels) and **Themes**")
+        st.markdown("**Entities** (top labels) and **Themes** — counted once per video")
         pair = st.columns(2)
         with pair[0]:
             st.dataframe(child_counts(children, "postprocess_entities"), hide_index=True,

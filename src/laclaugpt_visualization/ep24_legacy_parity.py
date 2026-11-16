@@ -27,6 +27,8 @@ from typing import Any
 
 import pandas as pd
 
+from laclaugpt_visualization.ep24_presentation import readable
+
 #: Per-record tabs of the legacy dashboard (`dashboard.py:637-760`), in legacy order.
 RECORD_TABS = (
     "Metadata",
@@ -155,13 +157,60 @@ def unsupported_tabs() -> list[str]:
     return [row["tab"] for row in parity_rows() if row["available"] == "no"]
 
 
-def _child_values(children: pd.DataFrame | None, source_key: str, field: str) -> list[str]:
-    """Entities or themes for one record, from the export's child tables."""
-    if children is None or children.empty:
+#: Human labels for the columns the workbench shows. The legacy tabs named their fields; a raw pipeline
+#: column (`asr_translation`) is the producer's vocabulary, not the researcher's.
+COLUMN_LABELS: dict[str, str] = {
+    "video_id": "Video ID",
+    "country": "Country",
+    "source_type": "Source type",
+    "account_type": "Account type",
+    "political_preference": "Political preference",
+    "author_username": "Creator",
+    "timestamp": "Timestamp",
+    "created_at": "Created",
+    "source_recording": "Recorded",
+    "video_duration_seconds": "Duration (s)",
+    "asr_transcript": "Transcript (original)",
+    "asr_translation": "Translation",
+    "ocr_1": "Text visible in frame 1",
+    "frame_analysis_1": "Frame-1 interpretation",
+    "vllm_video_analysis": "Whole-video observations",
+    "summary_analysis": "Multimodal summary",
+    "summary_summary_md": "Summary",
+    "formula_of_populism_analysis": "Formula of populism",
+    "formula_of_populism_us": "People / 'us' side",
+    "formula_of_populism_frontier": "Frontier",
+    "laclau_abstention_reason": "Discourse abstention",
+    "researcher_note": "Researcher annotation",
+}
+
+#: The legacy export carried `platform`; the reprocessed one derives it from two columns. Presenting a
+#: derivation as an observation would make a "platform" chart mean something it does not measure.
+PLATFORM_DERIVATION = "platform = source_type + account_type (derived, not an exported column)"
+
+
+def label_for(column: str) -> str:
+    return COLUMN_LABELS.get(column, column.replace("_", " ").capitalize())
+
+
+def _child_values(children: pd.DataFrame | None, row: Mapping[str, Any], field: str) -> list[str]:
+    """Entities or themes for one record, from the export's child tables.
+
+    Two identifier dialects exist: the delivered child tables key on `source_key`, the older ones on
+    `parent_record_id`. Matching only one of them renders an empty tab against a correct export.
+    """
+    if children is None or children.empty or "item.label" not in children.columns:
         return []
-    if not {"source_key", "field", "item.label"} <= set(children.columns):
+    matches = children[children["field"] == field] if "field" in children.columns else children
+    if "source_key" in children.columns:
+        key = str(row.get("source_key") or "").strip()
+        matches = matches[matches["source_key"].astype(str).str.strip() == key] if key else matches.iloc[0:0]
+    elif "parent_record_id" in children.columns:
+        identifier = str(row.get("record_id") or "").strip()
+        matches = (matches[matches["parent_record_id"].astype(str).str.strip() == identifier]
+                   if identifier else matches.iloc[0:0])
+    else:
         return []
-    matches = children[(children["source_key"] == source_key) & (children["field"] == field)]
     if matches.empty:
         return []
     ordered = matches.sort_values("index") if "index" in matches.columns else matches
@@ -169,28 +218,57 @@ def _child_values(children: pd.DataFrame | None, source_key: str, field: str) ->
 
 
 def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) -> dict[str, dict[str, Any]]:
-    """The content of each available per-record tab for one record.
+    """The content of each per-record tab for one record, as labelled text blocks.
 
-    Returns ``{tab: {"available": bool, "content": [...] or str, "reason": str}}`` so the view can render
-    tabs uniformly and say why an unavailable one is unavailable, instead of showing an empty panel.
+    Returns ``{tab: {"available", "blocks", "absent", "empty", "note", "reason"}}``. The four states stay
+    apart on purpose, because collapsing them is how a tab lies:
+
+    ``blocks``   what this record actually carries, already projected through the display allowlist;
+    ``absent``   source columns the export does not carry at all (a data defect, named);
+    ``empty``    columns the export carries but this record has no output for (an absence of output, not
+                 a finding that the video has none);
+    ``reason``   set only when the pipeline produces nothing for the tab at all.
     """
-    source_key = str(row.get("source_key") or "")
     tabs: dict[str, dict[str, Any]] = {}
     for tab in RECORD_TABS:
         columns = RECORD_SOURCES.get(tab)
         if columns is None:
-            tabs[tab] = {"available": False, "content": "", "reason": NO_SOURCE_REASON.get(tab, "")}
+            tabs[tab] = {"available": False, "blocks": [], "absent": [], "empty": [],
+                         "note": "", "reason": NO_SOURCE_REASON.get(tab, "")}
             continue
-        if columns == ("__child__:postprocess_themes",):
-            values = _child_values(children, source_key, "postprocess_themes")
-            tabs[tab] = {"available": True, "content": values, "reason": ""}
+        if columns[0].startswith("__child__:"):
+            field = columns[0].split(":", 1)[1]
+            values = _child_values(children, row, field)
+            tabs[tab] = {
+                "available": True,
+                "blocks": ([{"label": f"{tab} (child table)", "value": "\n".join(f"• {item}" for item in values)}]
+                           if values else []),
+                "absent": [] if children is not None else [f"{field} child table"],
+                "empty": [] if values else [f"{field} child rows"],
+                "note": "" if values else
+                "No assignments recorded for this record. That is an absence of output, not a "
+                "finding that the video has none.",
+                "reason": "",
+            }
             continue
-        if columns == ("__child__:postprocess_entities",):
-            values = _child_values(children, source_key, "postprocess_entities")
-            tabs[tab] = {"available": True, "content": values, "reason": ""}
-            continue
-        content = {column: row.get(column) for column in columns if column in row}
-        tabs[tab] = {"available": True, "content": content, "reason": ""}
+
+        blocks: list[dict[str, str]] = []
+        absent: list[str] = []
+        empty: list[str] = []
+        if tab == "Metadata" and "platform" not in row:
+            # Only say it once, and only when the export does not carry the legacy column.
+            blocks.append({"label": "Platform (derived)", "value": PLATFORM_DERIVATION})
+        for column in columns:
+            if column not in row:
+                absent.append(label_for(column))
+                continue
+            value = readable(row.get(column))
+            if not value:
+                empty.append(label_for(column))
+                continue
+            blocks.append({"label": label_for(column), "value": value})
+        tabs[tab] = {"available": True, "blocks": blocks, "absent": absent, "empty": empty,
+                     "note": "", "reason": ""}
     return tabs
 
 
@@ -282,20 +360,30 @@ def language_counts(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def child_counts(children: pd.DataFrame | None, field: str, *, limit: int = 20) -> pd.DataFrame:
-    """Top entities or themes across the filtered records."""
+    """Top entities or themes across the filtered records, counted **once per video**.
+
+    The child table is one row per mention, so a plain value count answers "how often was this said"
+    while the column says "records". Deduplicating on (source_key, label) is what makes the figure the
+    denominator the researcher reads: a term repeated twice in one video is one video mentioning it.
+    """
     if children is None or children.empty or not {"field", "item.label"} <= set(children.columns):
-        return pd.DataFrame(columns=["label", "records"])
+        return pd.DataFrame(columns=["label", "videos"])
     subset = children[children["field"] == field]
     if subset.empty:
-        return pd.DataFrame(columns=["label", "records"])
+        return pd.DataFrame(columns=["label", "videos"])
+    if "source_key" in subset.columns:
+        subset = subset[["source_key", "item.label"]].drop_duplicates()
     counts = subset["item.label"].astype(str).value_counts().head(limit)
-    return pd.DataFrame({"label": counts.index, "records": counts.values})
+    return pd.DataFrame({"label": counts.index, "videos": counts.values})
 
 
 def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
                            field: str, *, limit: int = 8) -> pd.DataFrame:
-    """Label counts by month, for the legacy "Themes/Persons over time" charts."""
-    empty = pd.DataFrame(columns=["month", "label", "records"])
+    """Label counts by month, for the legacy "Themes/Persons over time" charts.
+
+    Counted once per (video, label, month) for the same reason as :func:`child_counts`.
+    """
+    empty = pd.DataFrame(columns=["month", "label", "videos"])
     if children is None or children.empty or not {"source_key", "field", "item.label"} <= set(children.columns):
         return empty
     if not {"source_key", "timestamp"} <= set(parents.columns):
@@ -305,7 +393,7 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     dates = dates.dropna(subset=["month"])
     if dates.empty:
         return empty
-    subset = children[children["field"] == field][["source_key", "item.label"]]
+    subset = children[children["field"] == field][["source_key", "item.label"]].drop_duplicates()
     merged = subset.merge(dates[["source_key", "month"]], on="source_key", how="inner")
     if merged.empty:
         return empty
