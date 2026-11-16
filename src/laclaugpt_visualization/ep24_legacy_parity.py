@@ -155,7 +155,7 @@ def unsupported_tabs() -> list[str]:
     return [row["tab"] for row in parity_rows() if row["available"] == "no"]
 
 
-def _child_values(children: pd.DataFrame | None, source_key: str, field: str) -> list[str]:
+def _child_values(children: pd.DataFrame | None, source_key: str, field: str,\n                  country: str = "") -> list[str]:
     """Entities or themes for one record, from the export's child tables."""
     if children is None or children.empty:
         return []
@@ -182,11 +182,11 @@ def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) ->
             tabs[tab] = {"available": False, "content": "", "reason": NO_SOURCE_REASON.get(tab, "")}
             continue
         if columns == ("__child__:postprocess_themes",):
-            values = _child_values(children, source_key, "postprocess_themes")
+            values = _child_values(children, source_key, "postprocess_themes", str(row.get("country") or ""))
             tabs[tab] = {"available": True, "content": values, "reason": ""}
             continue
         if columns == ("__child__:postprocess_entities",):
-            values = _child_values(children, source_key, "postprocess_entities")
+            values = _child_values(children, source_key, "postprocess_entities", str(row.get("country") or ""))
             tabs[tab] = {"available": True, "content": values, "reason": ""}
             continue
         content = {column: row.get(column) for column in columns if column in row}
@@ -328,7 +328,7 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     dates = dates.dropna(subset=["month"])
     if dates.empty:
         return empty
-    subset = children[children["field"] == field][["source_key", "item.label"]].drop_duplicates()
+    subset_fields = ["source_key", "item.label"]\n    if "country" in children:\n        subset_fields.append("country")\n    subset = children[children["field"] == field][subset_fields].drop_duplicates()
     merged = subset.merge(dates[["source_key", "month"]], on="source_key", how="inner")
     if merged.empty:
         return empty
