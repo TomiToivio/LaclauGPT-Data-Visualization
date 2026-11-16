@@ -28,6 +28,8 @@ try:  # normal case: the package is importable (development, pip install -e .)
         load_children,
         parity_rows,
         record_tabs,
+        review_fields_absent,
+        review_state,
         scope_children,
         sentiment_counts,
         unsupported_tabs,
@@ -183,6 +185,17 @@ st.caption(f"{len(data)} records match current filters. All graph views are boun
 st.download_button("Download filtered video table (CSV)", data=researcher_csv(frame),
                    file_name="ep24_filtered_videos.csv", mime="text/csv",
                    help="Contains the current filtered research data; only download to an approved location.")
+
+@st.cache_data(show_spinner=False)
+def export_verification(path: str):
+    """Does this directory match the manifest that travels with it (#263 acceptance 4)?
+
+    Cached: hashing a real export is tens of megabytes, and the answer only changes when the directory does.
+    """
+    from laclaugpt_visualization.ep24_manifest_verify import verify_manifest
+
+    return verify_manifest(path)
+
 
 def table(items, key):
     """A table whose selected row becomes the inspected record (drilldown to source)."""
@@ -571,6 +584,19 @@ elif view == "Legacy parity · workbench":
         st.dataframe(frequency_by(workbench, "country"), hide_index=True, use_container_width=True)
         st.dataframe(frequency_by(workbench, "source_type"), hide_index=True, use_container_width=True)
 
+        st.markdown("**Human review in this export** — how much of the corpus a person has judged")
+        coverage = review_state(workbench)
+        if coverage.empty:
+            st.info("This export carries none of the legacy review fields.")
+        else:
+            st.dataframe(coverage, hide_index=True, use_container_width=True)
+            st.caption("A count of flags is a statement about how much of the corpus has been reviewed, not about "
+                       "the corpus: an unflagged video is not a clean video.")
+        absent = review_fields_absent([column for column in frame.columns])
+        if absent:
+            st.caption("Review fields the legacy workbench recorded but this export does not carry: "
+                       + ", ".join(absent) + ". Where new judgements are stored is the open decision in #263 §4.")
+
         over_time = st.tabs(["Themes over time", "Persons over time"])
         with over_time[0]:
             st.dataframe(child_counts_over_time(children, workbench, "postprocess_themes"),
@@ -586,6 +612,25 @@ elif view == "Legacy parity · workbench":
             st.caption("Unavailable in the reprocessed export: " + ", ".join(missing)
                        + " (see the matrix note for each).")
 elif view == "Data & methods":
+    st.subheader("Export verification")
+    verification = export_verification(str(root))
+    st.caption(verification.summary())
+    if verification.verdict == "verified":
+        st.success("Every declared file exists with its declared size, hash and row count.")
+    elif verification.verdict == "no manifest":
+        st.warning("No manifest next to the export: this directory cannot be verified, and a directory "
+                   "listing is not provenance.")
+    else:
+        st.warning(f"Export verdict: **{verification.verdict}**. The snapshot this dashboard is reading "
+                   "does not match its own manifest.")
+    if verification.mismatched:
+        st.dataframe(pd.DataFrame([{"file": result.path, "status": result.status,
+                                    "detail": result.detail}
+                                   for result in verification.mismatched]),
+                     hide_index=True, use_container_width=True)
+    if verification.undeclared:
+        st.caption("Present but not declared by the manifest (sidecars such as the cohort roster and the "
+                   "dictionary are legitimate): " + ", ".join(verification.undeclared))
     st.subheader("Export manifest and stage coverage")
     if not manifest:
         st.info("No MANIFEST.json next to the export. Coverage cannot be asserted without it.")

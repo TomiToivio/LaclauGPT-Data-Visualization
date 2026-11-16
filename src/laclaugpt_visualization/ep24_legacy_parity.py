@@ -70,7 +70,7 @@ RECORD_SOURCES: dict[str, tuple[str, ...] | None] = {
                  "formula_of_populism_frontier", "laclau_abstention_reason"),
     "Themes": ("__child__:postprocess_themes",),
     "Persons": ("__child__:postprocess_entities",),
-    "Report Problems / Researcher Notes": ("researcher_note",),
+    "Report Problems / Researcher Notes": ("needs_resplit", "researcher_note"),
 }
 
 AGGREGATE_SOURCES: dict[str, tuple[str, ...] | None] = {
@@ -133,6 +133,66 @@ class Parity:
         }
 
 
+#: The sixteen review fields the legacy workbench wrote to `spectacleScraper.ep24_dataframe`, keyed by
+#: `new_id` (dashboard backup, `add_to_mongo`). Two of them survive into the reprocessed export as read-only
+#: residue; the rest are declared absent so a reader knows the difference between "nobody flagged this" and
+#: "this dashboard cannot see the flag".
+LEGACY_REVIEW_FIELDS = (
+    "video_checked",
+    "delete_video",
+    "dubious_video",
+    "rerun_llm",
+    "rerun_ocr",
+    "rerun_whisper",
+    "cut_video",
+    "cut_at",
+    "cut_keep",
+    "split_video",
+    "split_at",
+    "new_persons",
+    "new_themes",
+    "wrong_language",
+    "researcher_note",
+    "needs_resplit",
+)
+
+#: The review fields this export actually carries, with the label the tab shows.
+REVIEW_FIELDS_PRESENT = {
+    "researcher_note": "Researcher note",
+    "needs_resplit": "Flagged for re-split",
+}
+
+
+def review_fields_absent(columns: Sequence[str] | None = None) -> list[str]:
+    """Legacy review fields this export does not carry, in registry order."""
+    carried = set(columns) if columns is not None else set(REVIEW_FIELDS_PRESENT)
+    return [field for field in LEGACY_REVIEW_FIELDS if field not in carried]
+
+
+def review_state(frame: pd.DataFrame) -> pd.DataFrame:
+    """Coverage of each review field that is present: how many records carry a judgement, and the denominator.
+
+    A review field is never reported as a bare count. "368 flagged" is not a finding about the corpus; it is a
+    statement about how much of it a human has looked at, and the denominator is what makes that readable.
+    """
+    if frame.empty:
+        return pd.DataFrame(columns=["field", "label", "records_with_a_value", "of_records", "share"])
+    output = []
+    for field, label in REVIEW_FIELDS_PRESENT.items():
+        if field not in frame.columns:
+            continue
+        values = frame[field]
+        if field == "needs_resplit":
+            marked = values.astype(str).str.strip().str.casefold().isin({"true", "1", "yes", "y"})
+        else:
+            text = values.astype(str).str.strip()
+            marked = ~text.isin({"", "nan", "none", "nat", "false", "0", "[]", "{}"})
+        count = int(marked.sum())
+        output.append({"field": field, "label": label, "records_with_a_value": count,
+                       "of_records": len(frame), "share": f"{count / len(frame):.1%}"})
+    return pd.DataFrame(output, columns=["field", "label", "records_with_a_value", "of_records", "share"])
+
+
 def parity_rows() -> list[dict[str, Any]]:
     """Every legacy tab, in legacy order, with its source and its availability."""
     rows: list[dict[str, Any]] = []
@@ -161,6 +221,7 @@ def unsupported_tabs() -> list[str]:
 
 PLATFORM_DERIVATION = "Derived from source_type and account_type; the export does not contain a platform observation."
 FIELD_LABELS = {
+    "needs_resplit": "Flagged for re-split",
     "asr_transcript": "Transcript (original)", "asr_translation": "Translation",
     "ocr_1": "Text visible in frame 1", "frame_analysis_1": "Frame 1 analysis",
     "video_duration_seconds": "Duration (seconds)",
@@ -362,13 +423,14 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     empty = pd.DataFrame(columns=["month", "label", "videos"])
     if children is None or children.empty or not {"source_key", "field", "item.label"} <= set(children.columns):
         return empty
-    if not {"source_key", "timestamp"} <= set(parents.columns):
+    date_field = next((name for name in ("created_at", "timestamp") if name in parents.columns), None)
+    if "source_key" not in parents.columns or date_field is None:
         return empty
     keys = ["source_key"]
     if "country" in parents.columns and "country" in children.columns:
         keys.append("country")
-    dates = parents[keys + ["timestamp"]].copy()
-    dates["month"] = pd.to_datetime(dates["timestamp"], errors="coerce", utc=True).dt.strftime("%Y-%m")
+    dates = parents[keys + [date_field]].copy()
+    dates["month"] = pd.to_datetime(dates[date_field], errors="coerce", utc=True).dt.strftime("%Y-%m")
     dates = dates.dropna(subset=["month"])
     dates = dates.loc[~dates.duplicated(keys, keep=False)]
     selected = children.loc[children["field"] == field, keys + ["item.label"]].dropna(subset=["item.label"])
