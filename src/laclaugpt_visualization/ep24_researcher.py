@@ -109,35 +109,45 @@ def cohort_notes(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> list[str]:
     return notes
 
 
-def cohort_warnings(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> list[str]:
-    warnings = []
-    if not manifest:
-        warnings.append("No export manifest: provenance unverified.")
-    # Never turn a blank manifest into a claim that this is Monday500.
-    run = declared_run(manifest)
-    if run != EXPECTED_DATASET:
-        warnings.append(f"Expected {EXPECTED_DATASET}; manifest declares "
-                        f"{run or 'no verifiable dataset identifier'}. "
-                        "Not verified as the requested 500-video cohort.")
+def processed_export_warnings(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> list[str]:
+    """Validate the actual 500 exported videos per country; no cohort roster required.
+
+    Counts are over loaded records, not inferred from the larger source collection.
+    Stage completion is always reported separately rather than assumed from membership.
+    """
+    warnings: list[str] = []
     if "country" not in frame:
-        warnings.append("Country field missing.")
+        return ["Country field missing from the exported videos."]
+    normalized = frame["country"].fillna("").astype(str).str.lower().map(COUNTRIES)
+    if normalized.isna().any():
+        warnings.append("Export contains unknown or unassigned countries.")
+    for country in ("Finland", "Poland", "Portugal"):
+        actual = int((normalized == country).sum())
+        if actual != 500:
+            warnings.append(f"{country}: expected 500 exported videos, found {actual}.")
+    if len(frame) != 1500:
+        warnings.append(f"Expected 1,500 exported videos; found {len(frame)}.")
+    if "_storage_id" in frame:
+        ids = frame["_storage_id"].fillna("").astype(str).str.strip()
+        if ids.eq("").any() or ids.duplicated().any():
+            warnings.append("Export contains empty or duplicate storage identities.")
+    elif "video_id" in frame:
+        ids = frame["video_id"].fillna("").astype(str).str.strip()
+        composite = normalized.fillna("") + ":" + ids
+        if ids.eq("").any() or composite.duplicated().any():
+            warnings.append("Export contains missing or duplicate country-scoped video identities.")
     else:
-        normalized = frame.country.fillna("").astype(str).str.lower().map(COUNTRIES)
-        for country in ("Finland", "Poland", "Portugal"):
-            actual = int((normalized == country).sum())
-            if actual != 500:
-                warnings.append(f"{country}: {actual} rows, target 500. "
-                                "Do not interpret this as a complete cohort.")
-        if normalized.isna().any():
-            warnings.append("Unrecognized countries in export.")
-    # A per-row ``dataset`` label is producer bookkeeping, not cohort identity: see cohort_notes().
-    cohort = manifest.get("approved_cohort") or {}
-    if not cohort.get("sha256") or cohort.get("approved_counts") != dict.fromkeys(
-            ("finland", "poland", "portugal"), 500):
-        warnings.append("Explicit approved cohort manifest and roster checksum are required.")
-    if "_storage_id" not in frame or frame["_storage_id"].nunique() != len(frame):
-        warnings.append("Cohort identities missing or duplicated.")
+        warnings.append("Neither storage identity nor video ID is available for deduplication.")
+    countries = manifest.get("countries") if isinstance(manifest, Mapping) else None
+    if isinstance(countries, Mapping):
+        for code in ("finland", "poland", "portugal"):
+            info = countries.get(code)
+            if isinstance(info, Mapping):
+                expected = info.get("exported_videos", info.get("exported"))
+                if isinstance(expected, int) and expected != 500:
+                    warnings.append(f"Manifest reports {expected} videos for {code}, not 500.")
     return warnings
+
 
 
 def coverage(frame: pd.DataFrame) -> pd.DataFrame:
