@@ -129,6 +129,29 @@ class DeployedAppContractTests(unittest.TestCase):
                     if (ROOT / "src" / "laclaugpt_visualization" / name).is_file()}
         self.assertEqual(required - shipped, set())
 
+    def test_fallback_imports_cover_manifest_helpers(self) -> None:
+        """Standalone deployment must not lose names used by the manifest banner.
+
+        When package imports fail, the app imports sibling files. The two branches
+        must expose the same helpers or the first manifest-backed page raises
+        NameError after a successful import.
+        """
+        import ast
+
+        source = (ROOT / "src" / "laclaugpt_visualization"
+                  / "ep24_reprocessed_app.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        names = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module in {
+                "laclaugpt_visualization.ep24_reprocessed", "ep24_reprocessed"
+            }:
+                names.append({alias.asname or alias.name for alias in node.names})
+        self.assertEqual(len(names), 2)
+        self.assertEqual(names[0], names[1])
+        self.assertTrue({"manifest_counts_rows", "manifest_provenance",
+                         "exported_counts"}.issubset(names[0]))
+
     def test_service_template_never_binds_every_interface(self) -> None:
         template = (ROOT / "deploy" / "ep24-fiplpt.service.example").read_text(encoding="utf-8")
         directives = [line for line in template.splitlines() if not line.lstrip().startswith("#")]
