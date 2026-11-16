@@ -28,6 +28,8 @@ try:  # normal case: the package is importable (development, pip install -e .)
         load_children,
         parity_rows,
         record_tabs,
+        review_fields_absent,
+        review_state,
         scope_children,
         sentiment_counts,
         unsupported_tabs,
@@ -502,6 +504,19 @@ elif view == "Legacy parity · workbench":
         st.markdown("**Statistics** — records by country, preference and source type")
         st.dataframe(frequency_by(workbench, "country"), hide_index=True, use_container_width=True)
         st.dataframe(frequency_by(workbench, "source_type"), hide_index=True, use_container_width=True)
+
+        st.markdown("**Human review in this export** — how much of the corpus a person has judged")
+        coverage = review_state(workbench)
+        if coverage.empty:
+            st.info("This export carries none of the legacy review fields.")
+        else:
+            st.dataframe(coverage, hide_index=True, use_container_width=True)
+            st.caption("A count of flags is a statement about how much of the corpus has been reviewed, not about "
+                       "the corpus: an unflagged video is not a clean video.")
+        absent = review_fields_absent([column for column in frame.columns])
+        if absent:
+            st.caption("Review fields the legacy workbench recorded but this export does not carry: "
+                       + ", ".join(absent) + ". Where new judgements are stored is the open decision in #263 §4.")
 
         over_time = st.tabs(["Themes over time", "Persons over time"])
         with over_time[0]:
