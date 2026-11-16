@@ -302,7 +302,7 @@ with tabs[5]:
     ties = []
     if SELECTED_CHILDREN.get("sna_edges") and not any(record.get("sna_edges_json") for record in data[:50]):
         nodes_rows, edge_rows = child_network(SELECTED_CHILDREN.get("sna_nodes", []), SELECTED_CHILDREN["sna_edges"])
-        ties = [{"document": edge.get("source", ""), "source_actor": edge["source"],
+        ties = [{"document": edge.get("document", ""), "source_actor": edge["source"],
                  "target_actor": edge["target"], "relation_type": edge["relation_type"],
                  "evidence_quote": edge["evidence_quote"]} for edge in edge_rows
                 if edge.get("evidence_quote") and edge.get("relation_type")]
