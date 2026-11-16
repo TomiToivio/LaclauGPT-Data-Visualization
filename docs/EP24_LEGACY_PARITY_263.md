@@ -43,6 +43,14 @@ Two rules, both enforced by `tests/test_ep24_legacy_parity_263.py`:
 
 Available: country, political preference, source type, language, duration, date range (the end date is a whole
 day), free-text search **within a named column** — searching every column would silently match identifiers.
+
+**Where the date comes from.** The export's `created_at` and `timestamp` are empty for all 1,500 FI/PL/PT
+records, but the video id carries the date: `HEPP24-FI-CR-IG-20240521-1027000` is study, country, preference,
+platform, then `YYYYMMDD-HHMMSSf`. `add_created_at()` fills a blank `created_at` from that stamp (2,800
+distinct values parse, covering 2024-05-20 .. 2024-06-16) and leaves a real value untouched, so a backfilled
+export takes over silently. The frame records how many it filled
+(`frame.attrs["created_at_derived"]`) and the sidebar says so, because a derived timeline must not read as a
+measured one.
 Unavailable because their source columns do not exist: ManifestoBERTa class, LDA topic, and the legacy
 model-free entity filter.
 

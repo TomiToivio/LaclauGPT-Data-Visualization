@@ -8,6 +8,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -112,6 +113,48 @@ def status(row: Mapping[str, Any], stage: int, *, rdf_available: bool = False) -
 EXPORT_COUNTRIES = ("finland", "poland", "portugal")
 
 
+#: The video id carries its own date: `HEPP24-FI-CR-IG-20240521-1027000` is
+#: <study>-<country>-<preference>-<platform>-<YYYYMMDD>-<HHMMSS + optional fraction>.
+VIDEO_ID_STAMP = re.compile(r"-(?P<day>\d{8})-(?P<clock>\d{4,9})$")
+
+
+def created_at_from_video_id(video_id: object) -> pd.Timestamp | None:
+    """The timestamp a video id carries, or ``None`` when the id does not carry a parseable one."""
+    match = VIDEO_ID_STAMP.search(str(video_id or ""))
+    if match is None:
+        return None
+    day, clock = match["day"], match["clock"]
+    fraction = clock[6:]
+    try:
+        return pd.Timestamp(
+            f"{day[:4]}-{day[4:6]}-{day[6:]} {clock[0:2]}:{clock[2:4]}:{clock[4:6]}."
+            f"{int((fraction + '000000')[:6]) if fraction else 0:06d}",
+            tz="UTC",
+        )
+    except ValueError:
+        return None
+
+
+def add_created_at(frame: pd.DataFrame, *, source: str = "video_id") -> pd.DataFrame:
+    """Fill a blank ``created_at`` from the video id, and say how many records were filled.
+
+    A real value always wins: the export's own column is only consulted first, so a backfilled export
+    silently takes over and the derivation becomes a no-op.
+    """
+    if frame.empty or source not in frame.columns:
+        return frame
+    result = frame.copy()
+    existing = (pd.to_datetime(result["created_at"], errors="coerce", utc=True)
+                if "created_at" in result.columns else pd.Series(pd.NaT, index=result.index, dtype="datetime64[ns, UTC]"))
+    derived = pd.Series([created_at_from_video_id(value) for value in result[source]], index=result.index,
+                        dtype="datetime64[ns, UTC]")
+    filled = existing.isna() & derived.notna()
+    result["created_at"] = existing.where(existing.notna(), derived)
+    result.attrs["created_at_derived"] = int(filled.sum())
+    result.attrs["created_at_source"] = f"{source} (derived)" if int(filled.sum()) else "export"
+    return result
+
+
 def read_records(root: str | Path) -> pd.DataFrame:
     """Read CSV/JSONL/SQLite exports from a private directory, without network access.
 
@@ -136,7 +179,7 @@ def read_records(root: str | Path) -> pd.DataFrame:
         if "country" not in combined.columns:
             combined.insert(0, "country", [country for country, frame in
                                            zip(EXPORT_COUNTRIES, frames) for _ in range(len(frame))])
-        return combined
+        return add_created_at(combined)
 
     for folder in (root, root / "data"):
         for filename in ("combined.csv", "finland.csv", "poland.csv", "portugal.csv",
@@ -144,8 +187,8 @@ def read_records(root: str | Path) -> pd.DataFrame:
             path = folder / filename
             if path.is_file():
                 if path.suffix == ".jsonl":
-                    return pd.read_json(path, lines=True)
-                return pd.read_csv(path, low_memory=False)
+                    return add_created_at(pd.read_json(path, lines=True))
+                return add_created_at(pd.read_csv(path, low_memory=False))
         for filename in ("ep24.sqlite3", "visualization.sqlite3"):
             path = folder / filename
             if path.is_file():

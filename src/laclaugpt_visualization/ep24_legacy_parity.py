@@ -104,7 +104,8 @@ FILTERS: dict[str, str] = {
     "Source type": "source_type",
     "Language": "asr_language",
     "Duration": "video_duration_seconds",
-    "Date": "timestamp",
+    # `created_at` is filled by the loader from the video id when the export leaves it blank (#263).
+    "Date": "created_at",
 }
 
 #: Legacy filters with no reprocessed source (the legacy workbench could filter on these).
@@ -259,8 +260,9 @@ def apply_filters(
         low, high = duration
         numeric = pd.to_numeric(data["video_duration_seconds"], errors="coerce")
         data = data[(numeric >= low) & (numeric <= high)]
-    if dates and "timestamp" in data.columns:
-        parsed = pd.to_datetime(data["timestamp"], errors="coerce", utc=True)
+    dated = next((column for column in ("created_at", "timestamp") if column in data.columns), None)
+    if dates and dated is not None:
+        parsed = pd.to_datetime(data[dated], errors="coerce", utc=True)
         start = pd.Timestamp(dates[0], tz="UTC") if dates[0] is not None else parsed.min()
         # A date input gives midnight, so a naive filter silently drops the whole end day. Build the end
         # boundary with stdlib datetime rather than pandas timedelta arithmetic, which warns on this version.

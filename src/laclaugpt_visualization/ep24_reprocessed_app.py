@@ -156,6 +156,11 @@ if "video_id" in frame:
         frame = frame[frame["video_id"].astype(str).str.contains(query, case=False, regex=False)]
 date_field = next((key for key in ("created_at", "published_at", "source_recording")
                    if key in frame.columns), None)
+if frame.attrs.get("created_at_derived"):
+    # The export left `created_at` blank; the loader read the date out of the video id (#263). Say so, so a
+    # reader does not take a derived timeline for a measured one.
+    st.sidebar.caption(f"Date derived from the video id for {frame.attrs['created_at_derived']:,} of "
+                       f"{len(frame):,} records.")
 if date_field is not None:
     dates = pd.to_datetime(frame[date_field], errors="coerce", utc=True)
     valid_dates = dates.dropna()
