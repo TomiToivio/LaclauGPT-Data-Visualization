@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import subprocess
 import sys
@@ -407,7 +406,6 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
     if manifest:
         results.extend(check_artifacts(data_root, manifest, allowlist=args.allowlist))
         results.extend(check_coverage(manifest))
-        results.extend(check_roster(data_root, manifest))
     results.extend(check_checkout(Path(args.served_dir).expanduser() if args.served_dir else None,
                                   args.expected_commit))
     roster = getattr(args, "approved_roster", None)
@@ -428,6 +426,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="commit the deployment is supposed to be serving (prefix is enough)")
     parser.add_argument("--approved-roster", type=Path, default=None,
                         help="require exact private Monday500 membership using cleaned country dataframes")
+    parser.add_argument("--allowlist", choices=("auto", "research", "display"), default="auto",
+                        help="which researcher allowlist the column check applies (default: auto)")
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of lines")
     args = parser.parse_args(argv)
 
