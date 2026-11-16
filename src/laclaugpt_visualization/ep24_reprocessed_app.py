@@ -59,7 +59,6 @@ except ModuleNotFoundError:  # standalone deployment: only this module was shipp
     )
 
 from laclaugpt_visualization.ep24_legacy_workbench import render_aggregates, render_record
-
 from laclaugpt_visualization.ep24_presentation import (
     readable,
     render_browser,
