@@ -41,12 +41,24 @@ def _item(row: Mapping[str, Any]) -> dict[str, Any]:
     return {key[len(_ITEM):]: value for key, value in row.items() if key and key.startswith(_ITEM)}
 
 
+def _children_dirs(root: Path) -> tuple[Path, ...]:
+    """Where child tables live: the 2026-11-15 export keeps them in ``children/``."""
+    return (root / "children", root)
+
+
 def load_children(root: str | Path) -> dict[str, list[dict[str, Any]]]:
-    """Every child table under ``root``, as flat records with the prefix removed."""
+    """Every child table under ``root``, as flat records with the prefix removed.
+
+    Both layouts are read: the flat one (``<root>/entities.csv``) and the delivered one
+    (``<root>/children/entities.csv``).
+    """
     base = Path(root)
+    directories = _children_dirs(base)
     loaded: dict[str, list[dict[str, Any]]] = {}
     for name, filename in CHILD_FILES.items():
-        rows = _read(base / filename)
+        path = next((directory / filename for directory in directories
+                     if (directory / filename).is_file()), directories[0] / filename)
+        rows = _read(path)
         loaded[name] = [
             {**{key: value for key, value in row.items() if key and not key.startswith(_ITEM)},
              **_item(row)}
