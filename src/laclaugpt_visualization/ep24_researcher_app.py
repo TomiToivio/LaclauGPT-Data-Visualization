@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -31,13 +32,29 @@ from laclaugpt_visualization.ep24_reprocessed import (
 )
 from laclaugpt_visualization.ep24_researcher import (
     COUNTRIES,
+    DISPLAY,
     DNA_FIELDS,
     SNA_FIELDS,
+    cohort_notes,
     cohort_warnings,
     coverage,
+    declared_run,
     evidence_sections,
     friendly,
     research_children,
+)
+from laclaugpt_visualization.live_steps import (
+    duration_by,
+    duration_seconds,
+    language_by_preference,
+    monthly_by,
+    preference_counts,
+)
+from laclaugpt_visualization.researcher_export import (
+    csv_bytes,
+    manifest_fingerprint,
+    provenance_json,
+    served_commit,
 )
 
 st.set_page_config(page_title="EP2024 · FI/PL/PT research", layout="wide")
@@ -80,6 +97,8 @@ else:
         warnings.append("Approved roster could not be validated: " + type(exc).__name__)
 for warning in warnings:
     st.warning(warning)
+for note in cohort_notes(frame, manifest):
+    st.caption(note)
 if not warnings:
     st.success("All three 500-video cohorts and the dataset identifier match the export.")
 else:
@@ -127,7 +146,8 @@ data = rows(frame)
 st.metric("Videos matching filters", f"{len(frame):,}")
 st.caption("Counts use filtered exported rows. Missing stage evidence is not a negative finding.")
 tabs = st.tabs(["Overview", "Videos & multimodal evidence", "Entities and themes",
-                "Laclau discourse", "DNA", "SNA", "Multilayer", "RDF & methods"])
+                "Laclau discourse", "DNA", "SNA", "Multilayer", "RDF & methods",
+                "Legacy analytics", "Export"])
 
 def table(df: pd.DataFrame, name: str):
     if df.empty:
@@ -305,3 +325,92 @@ with tabs[7]:
                                      "builder_version", "schema", "contract"}]), "manifest")
     st.caption("Technical paths, record hashes, raw prompts and pipeline internals "
                "are intentionally absent from the researcher interface.")
+
+
+with tabs[8]:
+    st.subheader("The legacy dashboard's questions, on this cohort")
+    st.caption("Each chart answers a question the legacy :8501 dashboard asked, from this export's "
+               "columns. A field this export does not carry removes the chart instead of drawing a "
+               "zero that would read as a finding.")
+    left, right = st.columns(2)
+    with left:
+        frequencies = preference_counts(frame)
+        if frequencies.empty:
+            st.info("No political preference field in this export.")
+        else:
+            st.plotly_chart(px.bar(frequencies, x="preference", y="records",
+                                   title="Recording frequency by political preference"),
+                            use_container_width=True)
+            st.caption(f"Denominator: {len(frame):,} videos in this selection.")
+    with right:
+        hours = duration_by(frame)
+        if hours.empty:
+            st.info("No video duration field in this export.")
+        else:
+            st.plotly_chart(px.bar(hours, x="political_preference", y="hours",
+                                   title="Total video duration by political preference (hours)"),
+                            use_container_width=True)
+            if "without_duration" in hours and int(hours["without_duration"].iloc[0]):
+                st.caption(f"{int(hours['without_duration'].iloc[0]):,} videos carry no duration and "
+                           "are excluded rather than counted as zero.")
+    timeline = monthly_by(frame, "country")
+    if timeline.empty:
+        st.info("No recording month field in this export.")
+    else:
+        st.plotly_chart(px.line(timeline, x="month", y="records", color="_split", markers=True,
+                                title="Video release timeline"), use_container_width=True)
+    durations = duration_seconds(frame)
+    if not durations.empty:
+        st.plotly_chart(px.histogram(durations, nbins=40,
+                                     title="Video duration distribution (seconds)"),
+                        use_container_width=True)
+    languages = language_by_preference(frame)
+    if not languages.empty:
+        st.plotly_chart(px.bar(languages, x="language", y="records", color="political_preference",
+                               title="Language distribution by political preference"),
+                        use_container_width=True)
+
+with tabs[9]:
+    st.subheader("Export this selection")
+    st.caption("Only the researcher display allowlist is exported. The provenance file names every "
+               "dropped column with the reason, so an export can be defended later.")
+    export_columns = [column for column in DISPLAY if column in frame.columns]
+    chosen = st.multiselect("Columns to include", export_columns, default=export_columns,
+                            key="ep24_export_columns")
+    projection = frame.loc[:, [column for column in chosen if column in frame.columns]].copy()
+    st.caption(f"{len(projection):,} rows · {len(projection.columns):,} columns")
+    st.dataframe(projection.head(200), use_container_width=True, hide_index=True)
+
+    dropped = [{"column": column,
+                "reason": "not on the researcher display allowlist"
+                          + (" (machine or producer plumbing)" if column.startswith(("_", "vllm_", "asr_"))
+                             else "")}
+               for column in frame.columns if column not in export_columns]
+    countries = (frame["country"].fillna("").astype(str).str.lower().map(COUNTRIES).value_counts()
+                 if "country" in frame.columns else pd.Series(dtype=int))
+    export_provenance = {
+        "contract": "ep24-researcher-export/1",
+        "exported_at": datetime.now(UTC).isoformat(),
+        "served_commit": served_commit(Path(__file__).resolve().parents[1]),
+        "dataset": declared_run(manifest),
+        "manifest_sha256": manifest_fingerprint(manifest),
+        "manifest_generated_at": manifest.get("generated_at") or manifest.get("exported_at"),
+        "corpus_records": len(frame),
+        "selection": {"rows": len(frame),
+                      "countries": {str(k): int(v) for k, v in countries.items()}},
+        "columns": list(projection.columns),
+        "dropped_columns": dropped,
+        "note": "Read-only projection of the EP24 checkpoint export; counts describe the loaded corpus.",
+    }
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    downloads = st.columns(2)
+    with downloads[0]:
+        st.download_button("Download CSV", data=csv_bytes(projection),
+                           file_name=f"ep24_selection_{stamp}.csv", mime="text/csv",
+                           key="ep24_export_csv")
+    with downloads[1]:
+        st.download_button("Download provenance (JSON)", data=provenance_json(export_provenance),
+                           file_name=f"ep24_selection_{stamp}.provenance.json",
+                           mime="application/json", key="ep24_export_provenance")
+    with st.expander("What the provenance records"):
+        st.json(export_provenance, expanded=False)

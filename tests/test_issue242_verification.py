@@ -7,6 +7,7 @@ not match the manifest, a producer column nobody classified, and a checkout serv
 from __future__ import annotations
 
 import csv
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -93,9 +94,10 @@ def test_a_row_count_that_differs_from_the_manifest_is_a_failure(tmp_path):
 
 
 def test_an_unclassified_producer_column_fails_the_deployment_check(tmp_path):
+    """With the live-steps allowlist selected, an unclassified column must fail the check."""
     root = build(tmp_path, columns=[*COLUMNS, "brand_new_producer_field"])
     manifest, _ = VERIFY.check_manifest(root)
-    results = VERIFY.check_artifacts(root, manifest)
+    results = VERIFY.check_artifacts(root, manifest, allowlist="research")
     assert status(results, "column allowlist") == "FAIL"
     assert "brand_new_producer_field" in next(
         item["detail"] for item in results if item["check"] == "column allowlist"
@@ -161,3 +163,50 @@ def test_a_missing_data_root_stops_early(tmp_path, check_name):
                                            "url": None, "expected_commit": None})())
     assert results[0]["check"] == "artifact directory"
     assert results[0]["status"] == "FAIL"
+
+
+def test_a_stage_that_only_reports_not_exported_counts_as_zero():
+    """The checkpoint dialect counts outcomes; 'not_exported: 500' is a missing stage, not 500 records."""
+    manifest = VERIFY.normalise_manifest({
+        "countries": {
+            "finland": {"exported_videos": 500,
+                        "stages": {"8": {"ok": 472, "error": 1, "not_exported": 27},
+                                   "9": {"not_exported": 500}}},
+        }
+    })
+    coverage = manifest["stage_coverage"]["finland"]
+    assert coverage["8"]["records"] == 472, "only produced outputs count"
+    assert coverage["9"]["records"] == 0, "a stage with no outputs must not look complete"
+
+
+def test_the_checkpoint_dialect_normalises_into_the_artifact_shape():
+    manifest = VERIFY.normalise_manifest({
+        "countries": {"finland": {"exported_videos": 500}, "poland": {"exported_videos": 500},
+                      "portugal": {"exported_videos": 500}},
+        "producer_revision": "monday500_20261031",
+    })
+    assert manifest["records"] == 1500
+    assert manifest["record_counts"]["exported_total"] == 1500
+
+
+def test_the_roster_check_requires_five_hundred_per_country(tmp_path):
+    roster = tmp_path / "approved_cohort.txt"
+    roster.write_text("\n".join(
+        f"monday500:{country}:{index:04x}"
+        for country in ("finland", "poland", "portugal") for index in range(500)
+    ) + "\n", encoding="utf-8")
+    digest = hashlib.sha256(roster.read_bytes()).hexdigest()
+    results = VERIFY.check_roster(tmp_path, {"approved_cohort": {"sha256": digest}})
+    assert all(item["status"] == "PASS" for item in results)
+    results = VERIFY.check_roster(tmp_path, {"approved_cohort": {"sha256": "0" * 64}})
+    assert any(item["status"] == "FAIL" for item in results), "a digest mismatch must fail"
+
+
+def test_auto_allowlist_falls_back_to_the_display_list_and_says_so(tmp_path):
+    """Two apps, two allowlists: the verifier must name which one it applied."""
+    root = build(tmp_path, columns=["country", "video_id", "asr_transcript"])
+    manifest, _ = VERIFY.check_manifest(root)
+    results = VERIFY.check_artifacts(root, manifest)
+    entry = next(item for item in results if item["check"] == "column allowlist")
+    assert entry["status"] == "PASS"
+    assert "display allowlist" in entry["detail"]

@@ -60,20 +60,61 @@ def view(frame: pd.DataFrame, *, full: bool = False) -> pd.DataFrame:
     return output
 
 
+
+def declared_run(manifest: Mapping[str, Any]) -> str:
+    """The cohort a manifest declares, in the spellings the real exporters use.
+
+    The checkpoint exporter (#242) writes ``producer_revision: "monday500_20261031"`` and no
+    ``dataset`` key at all, so a reader that only looks for ``dataset`` concludes "no verifiable
+    dataset identifier" about a perfectly identified export. Normalise rather than require one
+    spelling.
+    """
+    for key in ("dataset", "dataset_id", "run_id"):
+        value = str(manifest.get(key) or "").strip()
+        if value:
+            return value
+    revision = str(manifest.get("producer_revision") or "").strip()
+    if revision:
+        return revision if revision.startswith("ep24_") else f"ep24_{revision}"
+    cohort = manifest.get("approved_cohort") or {}
+    if isinstance(cohort, Mapping):
+        value = str(cohort.get("dataset") or "").strip()
+        if value:
+            return value
+    inputs = manifest.get("inputs") or {}
+    declared = {str(v.get("dataset") or v.get("dataset_id") or "").strip()
+                for v in inputs.values() if isinstance(v, dict)}
+    declared.discard("")
+    return next(iter(declared)) if len(declared) == 1 else ""
+
+
+def cohort_notes(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> list[str]:
+    """Facts a researcher should see but that must not block the dashboard.
+
+    The row-level ``dataset`` column carries the producer's *pipeline* label
+    (``ep2024_reprocess``), not the cohort name. Treating the two as the same thing made the guard
+    reject all 1 500 delivered videos. The label is reported here, as provenance.
+    """
+    notes: list[str] = []
+    if "dataset" in frame.columns:
+        labels = sorted({str(value) for value in frame["dataset"].dropna().unique() if str(value).strip()})
+        if labels:
+            notes.append(
+                "Producer pipeline label in the rows: " + ", ".join(labels)
+                + f"; the cohort is {EXPECTED_DATASET}, named by _storage_id and the export manifest."
+            )
+    cohort = manifest.get("approved_cohort") if isinstance(manifest, Mapping) else None
+    if isinstance(cohort, Mapping) and cohort.get("sha256"):
+        notes.append(f"Approved cohort roster sha256 {str(cohort['sha256'])[:16]}…")
+    return notes
+
+
 def cohort_warnings(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> list[str]:
     warnings = []
     if not manifest:
         warnings.append("No export manifest: provenance unverified.")
     # Never turn a blank manifest into a claim that this is Monday500.
-    run = str(manifest.get("dataset") or manifest.get("dataset_id")
-              or manifest.get("run_id") or (manifest.get("approved_cohort") or {}).get("dataset") or "").strip()
-    if not run:
-        inputs = manifest.get("inputs") or {}
-        declared = {str(v.get("dataset") or v.get("dataset_id") or "").strip()
-                    for v in inputs.values() if isinstance(v, dict)}
-        declared.discard("")
-        if len(declared) == 1:
-            run = next(iter(declared))
+    run = declared_run(manifest)
     if run != EXPECTED_DATASET:
         warnings.append(f"Expected {EXPECTED_DATASET}; manifest declares "
                         f"{run or 'no verifiable dataset identifier'}. "
@@ -89,10 +130,7 @@ def cohort_warnings(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> list[st
                                 "Do not interpret this as a complete cohort.")
         if normalized.isna().any():
             warnings.append("Unrecognized countries in export.")
-    if "dataset" in frame:
-        other = frame["dataset"].dropna().astype(str)
-        if not other.empty and not other.eq(EXPECTED_DATASET).all():
-            warnings.append("Some exported rows belong to another dataset.")
+    # A per-row ``dataset`` label is producer bookkeeping, not cohort identity: see cohort_notes().
     cohort = manifest.get("approved_cohort") or {}
     if not cohort.get("sha256") or cohort.get("approved_counts") != dict.fromkeys(
             ("finland", "poland", "portugal"), 500):

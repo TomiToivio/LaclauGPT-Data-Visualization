@@ -35,11 +35,20 @@ def test_monday500_verified_only_with_manifest_and_counts():
     assert any("Portugal: 0" in item for item in warnings)
     assert any("manifest" in item.lower() for item in cohort_warnings(frame, {}))
 
-def test_unknown_dataset_rejected_even_if_row_count_matches():
-    frame = pd.DataFrame([{"country": country, "dataset": "other"}
+def test_a_manifest_naming_another_cohort_is_rejected_even_if_row_count_matches():
+    """Cohort identity is declared by the manifest; the per-row label is pipeline provenance.
+
+    #242's real export carries ``dataset: ep2024_reprocess`` in every row because that column is the
+    producer's pipeline label, while the cohort is named by ``_storage_id`` and the manifest. So the
+    rejection has to fire on the manifest, not on the row label — otherwise the guard blocks the
+    correct export and still cannot tell one cohort from another.
+    """
+    frame = pd.DataFrame([{"country": country, "dataset": "ep2024_reprocess"}
                           for country in ("FI", "PL", "PT") for _ in range(500)])
-    assert any("another dataset" in item for item in
-               cohort_warnings(frame, {"dataset": EXPECTED_DATASET}))
+    assert not any("another dataset" in item for item in
+                   cohort_warnings(frame, {"dataset": EXPECTED_DATASET}))
+    assert any("requested 500-video cohort" in item for item in
+               cohort_warnings(frame, {"dataset": "some_other_run"}))
 
 def test_stage_coverage_denominators_and_no_fabricated_success():
     results = coverage(pd.DataFrame([{"video_id": "x"}, {"video_id": "y"}]))

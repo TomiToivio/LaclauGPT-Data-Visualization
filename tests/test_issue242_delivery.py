@@ -56,7 +56,9 @@ def test_roster_rejects_wrong_country_dataset_and_unapproved_rows(tmp_path):
     row = {"_storage_id": "monday500:finland:synthetic-0", "country": "Finland"}
     assert is_member(row, "finland", approved)
     assert not is_member(row, "poland", approved)
-    assert not is_member({**row, "dataset": "other"}, "finland", approved)
+    # The per-row dataset label is the producer's pipeline label, not cohort identity (#242):
+    # membership is the roster + storage key + country.
+    assert is_member({**row, "dataset": "ep2024_reprocess"}, "finland", approved)
     assert not is_member({**row, "_storage_id": "full-corpus"}, "finland", approved)
     (tmp_path / "roster.txt").write_text("monday500:finland:synthetic-0\n")
     with pytest.raises(ValueError, match="exactly 500"):
@@ -151,5 +153,9 @@ def test_authenticated_researcher_entrypoint_with_verified_roster(tmp_path, monk
     app.run(timeout=30)
     assert not app.exception
     assert not app.error
-    assert len(app.tabs) == 8
-    assert not app.json
+    labels = [tab.label for tab in app.tabs]
+    assert labels[:8] == ["Overview", "Videos & multimodal evidence", "Entities and themes",
+                          "Laclau discourse", "DNA", "SNA", "Multilayer", "RDF & methods"]
+    assert "Legacy analytics" in labels and "Export" in labels, "the merged tabs must be present"
+    assert any("match the export" in str(message.value) for message in app.success), \
+        "a verified roster must report success, not merely avoid errors"
