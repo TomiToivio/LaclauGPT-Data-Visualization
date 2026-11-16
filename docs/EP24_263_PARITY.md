@@ -19,13 +19,13 @@ The legacy :8501 service is the reference. The reprocessed :8502 service is a se
 | Legacy corpus tab | :8502 read-only view | Caveat |
 | --- | --- | --- |
 | Frequency | Legacy corpus aggregates / Frequency | Preference counts; sum of numeric duration only |
-| Entities | Legacy corpus aggregates / Entities | Number of videos with row-level exported entities, **not top-entity ranking** |
+| Entities | Legacy corpus aggregates / Entities | Top normalized entity labels counted per distinct matched video; fallback row-level coverage if child table unavailable |
 | Topics | **Unavailable** | No LDA topic source |
 | Sentiments | Legacy corpus aggregates / Sentiments | Availability of score fields, **not classified sentiment distribution** |
 | Languages | Legacy corpus aggregates / Languages | Exported source language, not automatically Whisper-detected language |
 | ManifestoBERTa | **Unavailable** | No predicted class source |
 | Statistics | Legacy corpus aggregates / Statistics | Country, source type, account type, preference; country × preference table |
-| Themes | Legacy corpus aggregates / Themes | Row-level label coverage, child labels per record; **not theme-over-time frequencies** |
+| Themes | Legacy corpus aggregates / Themes | Top normalized theme labels counted per distinct matched video; **not theme-over-time frequencies** |
 | Persons | Legacy corpus aggregates / Persons | Entity coverage only; **not person-over-time frequencies** |
 
 **Partial surfaces are deliberately described as partial.** Full aggregate parity needs validated normalized child label semantics, event-level dates, source-specific Whisper language and sentiment class codebooks. No model-based labels are synthesized by the UI. An absent producer must never become a zero.
