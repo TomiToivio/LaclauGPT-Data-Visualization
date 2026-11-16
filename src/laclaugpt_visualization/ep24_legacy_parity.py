@@ -157,59 +157,62 @@ def unsupported_tabs() -> list[str]:
     return [row["tab"] for row in parity_rows() if row["available"] == "no"]
 
 
-def _child_values(children: pd.DataFrame | None, source_key: str, field: str,
-                  country: str = "") -> list[str]:
-    """Entities or themes for one record, from the export's child tables."""
-    if children is None or children.empty:
+PLATFORM_DERIVATION = "Derived from source_type and account_type; the export does not contain a platform observation."
+FIELD_LABELS = {
+    "asr_transcript": "Transcript (original)", "asr_translation": "Translation",
+    "ocr_1": "Text visible in frame 1", "frame_analysis_1": "Frame 1 analysis",
+    "video_duration_seconds": "Duration (seconds)",
+}
+
+def label_for(column: str) -> str:
+    """Researcher-facing label for an exported column."""
+    return FIELD_LABELS.get(column, column.replace("_", " ").capitalize())
+
+
+def _child_values(children: pd.DataFrame | None, row: Mapping[str, Any], field: str) -> list[str]:
+    """Find child labels by an unambiguous parent key, respecting country when present."""
+    if children is None or children.empty or "item.label" not in children.columns:
         return []
-    matches = children[children["field"] == field] if "field" in children.columns else children
-    if "source_key" in children.columns:
-        key = str(row.get("source_key") or "").strip()
-        matches = matches[matches["source_key"].astype(str).str.strip() == key] if key else matches.iloc[0:0]
-    elif "parent_record_id" in children.columns:
-        identifier = str(row.get("record_id") or "").strip()
-        matches = (matches[matches["parent_record_id"].astype(str).str.strip() == identifier]
-                   if identifier else matches.iloc[0:0])
+    matches = children
+    if "field" in matches.columns:
+        matches = matches[matches["field"] == field]
+    if "source_key" in matches.columns and str(row.get("source_key") or "").strip():
+        key = str(row["source_key"]).strip()
+        matches = matches[matches["source_key"].astype(str).str.strip() == key]
+    elif "parent_record_id" in matches.columns and str(row.get("record_id") or "").strip():
+        key = str(row["record_id"]).strip()
+        matches = matches[matches["parent_record_id"].astype(str).str.strip() == key]
     else:
         return []
-    if matches.empty:
-        return []
-    ordered = matches.sort_values("index") if "index" in matches.columns else matches
-    return [str(value) for value in ordered["item.label"].dropna()]
+    if "country" in matches.columns and str(row.get("country") or "").strip():
+        matches = matches[matches["country"].astype(str).str.casefold() ==
+                          str(row["country"]).strip().casefold()]
+    if "index" in matches.columns:
+        matches = matches.sort_values("index")
+    return matches["item.label"].dropna().astype(str).drop_duplicates().tolist()
 
 
 def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) -> dict[str, dict[str, Any]]:
-    """The content of each per-record tab for one record, as labelled text blocks.
-
-    Returns ``{tab: {"available", "blocks", "absent", "empty", "note", "reason"}}``. The four states stay
-    apart on purpose, because collapsing them is how a tab lies:
-
-    ``blocks``   what this record actually carries, already projected through the display allowlist;
-    ``absent``   source columns the export does not carry at all (a data defect, named);
-    ``empty``    columns the export carries but this record has no output for (an absence of output, not
-                 a finding that the video has none);
-    ``reason``   set only when the pipeline produces nothing for the tab at all.
-    """
+    """Build the nine legacy record panels with explicit absent/empty states."""
     tabs: dict[str, dict[str, Any]] = {}
     for tab in RECORD_TABS:
         columns = RECORD_SOURCES.get(tab)
         if columns is None:
-            tabs[tab] = {"available": False, "content": "", "reason": NO_SOURCE_REASON.get(tab, "")}
+            tabs[tab] = {"available": False, "blocks": [], "absent": [], "empty": [],
+                         "note": "", "reason": NO_SOURCE_REASON.get(tab, "No source")}
             continue
-        if columns == ("__child__:postprocess_themes",):
-            values = _child_values(children, source_key, "postprocess_themes", str(row.get("country") or ""))
-            tabs[tab] = {"available": True, "content": values, "reason": ""}
+        if tab in ("Themes", "Persons"):
+            field = "postprocess_themes" if tab == "Themes" else "postprocess_entities"
+            values = _child_values(children, row, field)
+            tabs[tab] = {"available": True,
+                         "blocks": [{"label": tab, "value": "\n".join(values)}] if values else [],
+                         "absent": [], "empty": [] if values else [tab],
+                         "note": "", "reason": ""}
             continue
-        if columns == ("__child__:postprocess_entities",):
-            values = _child_values(children, source_key, "postprocess_entities", str(row.get("country") or ""))
-            tabs[tab] = {"available": True, "content": values, "reason": ""}
-            continue
-
         blocks: list[dict[str, str]] = []
         absent: list[str] = []
         empty: list[str] = []
         if tab == "Metadata" and "platform" not in row:
-            # Only say it once, and only when the export does not carry the legacy column.
             blocks.append({"label": "Platform (derived)", "value": PLATFORM_DERIVATION})
         for column in columns:
             if column not in row:
@@ -218,12 +221,11 @@ def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) ->
             value = readable(row.get(column))
             if not value:
                 empty.append(label_for(column))
-                continue
-            blocks.append({"label": label_for(column), "value": value})
-        tabs[tab] = {"available": True, "blocks": blocks, "absent": absent, "empty": empty,
-                     "note": "", "reason": ""}
+            else:
+                blocks.append({"label": label_for(column), "value": value})
+        tabs[tab] = {"available": True, "blocks": blocks, "absent": absent,
+                     "empty": empty, "note": "", "reason": ""}
     return tabs
-
 
 def apply_filters(
     frame: pd.DataFrame,
@@ -336,42 +338,40 @@ def scope_children(children: pd.DataFrame | None, parents: pd.DataFrame) -> pd.D
 def child_counts(children: pd.DataFrame | None, field: str, *, limit: int = 20) -> pd.DataFrame:
     """Top entities or themes across the filtered records."""
     if children is None or children.empty or not {"field", "item.label", "source_key"} <= set(children.columns):
-        return pd.DataFrame(columns=["label", "records"])
+        return pd.DataFrame(columns=["label", "videos"])
     subset = children[children["field"] == field]
     if subset.empty:
         return pd.DataFrame(columns=["label", "records"])
     counts = (subset.dropna(subset=["item.label", "source_key"])
               .drop_duplicates(["source_key", "item.label"])["item.label"]
               .astype(str).value_counts().head(limit))
-    return pd.DataFrame({"label": counts.index, "records": counts.values})
+    return pd.DataFrame({"label": counts.index, "videos": counts.values})
 
 
 def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
                            field: str, *, limit: int = 8) -> pd.DataFrame:
-    """Label counts by month, for the legacy "Themes/Persons over time" charts.
-
-    Counted once per (video, label, month) for the same reason as :func:`child_counts`.
-    """
+    """Monthly video counts of themes/persons, scoped to selected parents."""
     empty = pd.DataFrame(columns=["month", "label", "videos"])
     if children is None or children.empty or not {"source_key", "field", "item.label"} <= set(children.columns):
         return empty
     if not {"source_key", "timestamp"} <= set(parents.columns):
         return empty
-    dates = parents[["source_key", "timestamp"]].copy()
-    dates["month"] = pd.to_datetime(dates["timestamp"], errors="coerce", utc=True).dt.tz_localize(None).dt.to_period("M")
+    keys = ["source_key"]
+    if "country" in parents.columns and "country" in children.columns:
+        keys.append("country")
+    dates = parents[keys + ["timestamp"]].copy()
+    dates["month"] = pd.to_datetime(dates["timestamp"], errors="coerce", utc=True).dt.strftime("%Y-%m")
     dates = dates.dropna(subset=["month"])
-    if dates.empty:
-        return empty
-    subset_fields = ["source_key", "item.label"]\n    if "country" in children:\n        subset_fields.append("country")\n    subset = children[children["field"] == field][subset_fields].drop_duplicates()
-    merged = subset.merge(dates[["source_key", "month"]], on="source_key", how="inner")
+    dates = dates.loc[~dates.duplicated(keys, keep=False)]
+    selected = children.loc[children["field"] == field, keys + ["item.label"]].dropna(subset=["item.label"])
+    selected = selected.drop_duplicates(keys + ["item.label"])
+    merged = selected.merge(dates[keys + ["month"]], on=keys, how="inner", validate="many_to_one")
     if merged.empty:
         return empty
     top = merged["item.label"].astype(str).value_counts().head(limit).index
     merged = merged[merged["item.label"].astype(str).isin(top)]
-    grouped = (merged.groupby([merged["month"].astype(str), merged["item.label"].astype(str)])
-               .size().reset_index(name="records"))
-    return grouped.rename(columns={"level_0": "month", "level_1": "label"})
-
+    return (merged.groupby(["month", "item.label"]).size().reset_index(name="videos")
+            .rename(columns={"item.label": "label"}))
 
 def load_children(root: str | Any, parents: pd.DataFrame) -> pd.DataFrame:
     """Read the export's child tables (entities, themes) as one frame, or an empty frame.
