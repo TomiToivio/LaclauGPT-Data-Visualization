@@ -157,12 +157,18 @@ def unsupported_tabs() -> list[str]:
 
 def _child_values(children: pd.DataFrame | None, source_key: str, field: str,
                   country: str = "") -> list[str]:
-    """Entities or themes for one record, from the export's child tables."""
+    """Entities or themes for one record, from the export's child tables.
+
+    Scoped by `country` when both sides carry it: `source_key` alone is not unique across countries (#268),
+    so a Finland record and a Poland record sharing a key would otherwise show each other's themes.
+    """
     if children is None or children.empty:
         return []
     if not {"source_key", "field", "item.label"} <= set(children.columns):
         return []
     matches = children[(children["source_key"] == source_key) & (children["field"] == field)]
+    if country and "country" in children.columns:
+        matches = matches[matches["country"].astype(str).str.casefold() == country.casefold()]
     if matches.empty:
         return []
     ordered = matches.sort_values("index") if "index" in matches.columns else matches
@@ -283,6 +289,15 @@ def language_counts(data: pd.DataFrame) -> pd.DataFrame:
 
 
 
+def record_identity_columns(frame: pd.DataFrame) -> list[str]:
+    """The columns that identify one record in this export (#268).
+
+    `source_key` alone is not unique across countries in the exported corpus, so a count keyed on it merges
+    two different videos into one. When the frame carries `country`, that pair is the identity.
+    """
+    return ["source_key", "country"] if "country" in frame.columns else ["source_key"]
+
+
 def scope_children(children: pd.DataFrame | None, parents: pd.DataFrame) -> pd.DataFrame:
     """Join children only to uniquely identified filtered parents."""
     if children is None or children.empty or "source_key" not in children:
@@ -310,8 +325,9 @@ def child_counts(children: pd.DataFrame | None, field: str, *, limit: int = 20) 
     subset = children[children["field"] == field]
     if subset.empty:
         return pd.DataFrame(columns=["label", "records"])
+    identity = record_identity_columns(subset)
     counts = (subset.dropna(subset=["item.label", "source_key"])
-              .drop_duplicates(["source_key", "item.label"])["item.label"]
+              .drop_duplicates(identity + ["item.label"])["item.label"]
               .astype(str).value_counts().head(limit))
     return pd.DataFrame({"label": counts.index, "records": counts.values})
 
@@ -324,13 +340,18 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
         return empty
     if not {"source_key", "timestamp"} <= set(parents.columns):
         return empty
-    dates = parents[["source_key", "timestamp"]].copy()
+    date_columns = ["source_key", "timestamp"] + (["country"] if "country" in parents.columns else [])
+    dates = parents[date_columns].copy()
     dates["month"] = pd.to_datetime(dates["timestamp"], errors="coerce", utc=True).dt.tz_localize(None).dt.to_period("M")
     dates = dates.dropna(subset=["month"])
     if dates.empty:
         return empty
-    subset_fields = ["source_key", "item.label"]\n    if "country" in children:\n        subset_fields.append("country")\n    subset = children[children["field"] == field][subset_fields].drop_duplicates()
-    merged = subset.merge(dates[["source_key", "month"]], on="source_key", how="inner")
+    subset_fields = ["source_key", "item.label"]
+    if "country" in children.columns:
+        subset_fields.append("country")
+    subset = children[children["field"] == field][subset_fields].drop_duplicates()
+    identity = [column for column in record_identity_columns(subset) if column in dates.columns]
+    merged = subset.merge(dates[identity + ["month"]], on=identity, how="inner")
     if merged.empty:
         return empty
     top = merged["item.label"].astype(str).value_counts().head(limit).index
