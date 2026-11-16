@@ -126,3 +126,11 @@ path), append-only review events in the private repository, or no write path in 
 
 This increment is the third option: the reading half is delivered, and nothing invents a second place where
 research decisions live. See #263 §4.
+
+## The data the dashboard reads
+
+The workbench reads the released export in place, not a rebuild: `fiplpt_500_20261115_release` on the host,
+verified against its `manifest.json` by `scripts/ep24/verify_served_export.py` (28 files, zero
+disagreements). See `docs/EP24_SERVED_EXPORT_VERIFICATION.md` — before that check existed the host served a
+flat `combined.csv` build that matched no committed file, and the manifest was three sidecars short of its own
+tree.
