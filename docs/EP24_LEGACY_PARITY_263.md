@@ -46,11 +46,15 @@ day), free-text search **within a named column** — searching every column woul
 
 **Where the date comes from.** The export's `created_at` and `timestamp` are empty for all 1,500 FI/PL/PT
 records, but the video id carries the date: `HEPP24-FI-CR-IG-20240521-1027000` is study, country, preference,
-platform, then `YYYYMMDD-HHMMSSf`. `add_created_at()` fills a blank `created_at` from that stamp (2,800
-distinct values parse, covering 2024-05-20 .. 2024-06-16) and leaves a real value untouched, so a backfilled
-export takes over silently. The frame records how many it filled
-(`frame.attrs["created_at_derived"]`) and the sidebar says so, because a derived timeline must not read as a
-measured one.
+platform, `YYYYMMDD`, then a sequence. `add_created_at()` fills a blank `created_at` from the date part (all
+1,500 parse, covering 2024-05-20 .. 2024-06-16) and leaves a real value untouched, so a backfilled export
+takes over silently.
+
+Precision is **one day**, deliberately. The trailing field is not a clock: it takes 180 distinct values from
+`1010000` to `4080000` and 366 of them cannot be any `HHMMSS` (minute 90, second 95), so it behaves like a
+per-session sequence. Deriving a time of day would fabricate one. The frame records how many values it filled
+(`frame.attrs["created_at_derived"]`) and the sidebar says so, because a derived timeline must not be read as
+a measured one.
 Unavailable because their source columns do not exist: ManifestoBERTa class, LDA topic, and the legacy
 model-free entity filter.
 

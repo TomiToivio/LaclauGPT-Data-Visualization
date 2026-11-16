@@ -114,23 +114,25 @@ EXPORT_COUNTRIES = ("finland", "poland", "portugal")
 
 
 #: The video id carries its own date: `HEPP24-FI-CR-IG-20240521-1027000` is
-#: <study>-<country>-<preference>-<platform>-<YYYYMMDD>-<HHMMSS + optional fraction>.
-VIDEO_ID_STAMP = re.compile(r"-(?P<day>\d{8})-(?P<clock>\d{4,9})$")
+#: <study>-<country>-<preference>-<platform>-<YYYYMMDD>-<sequence>. Only the date is read: the trailing field
+#: is not a consistent clock. Across the delivered export it takes 180 distinct values from `1010000` to
+#: `4080000`, and 366 of them cannot be any HHMMSS (minute 90, second 95). It behaves like a per-session
+#: sequence, so deriving a time of day from it would fabricate one.
+VIDEO_ID_STAMP = re.compile(r"-(?P<day>\d{8})-\d+$")
 
 
 def created_at_from_video_id(video_id: object) -> pd.Timestamp | None:
-    """The timestamp a video id carries, or ``None`` when the id does not carry a parseable one."""
+    """The date a video id carries at midnight UTC, or ``None`` when the id carries no usable date.
+
+    Day precision is deliberate: the id's trailing field is a sequence, not a clock time (see
+    ``VIDEO_ID_STAMP``), and a filter over days does not need a time of day that cannot be trusted.
+    """
     match = VIDEO_ID_STAMP.search(str(video_id or ""))
     if match is None:
         return None
-    day, clock = match["day"], match["clock"]
-    fraction = clock[6:]
+    day = match["day"]
     try:
-        return pd.Timestamp(
-            f"{day[:4]}-{day[4:6]}-{day[6:]} {clock[0:2]}:{clock[2:4]}:{clock[4:6]}."
-            f"{int((fraction + '000000')[:6]) if fraction else 0:06d}",
-            tz="UTC",
-        )
+        return pd.Timestamp(f"{day[:4]}-{day[4:6]}-{day[6:]}T00:00:00Z")
     except ValueError:
         return None
 
