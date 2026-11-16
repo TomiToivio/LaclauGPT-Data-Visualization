@@ -46,6 +46,32 @@ day), free-text search **within a named column** — searching every column woul
 Unavailable because their source columns do not exist: ManifestoBERTa class, LDA topic, and the legacy
 model-free entity filter.
 
+## How a record tab tells the truth
+
+Three states are kept apart, because collapsing them is how a tab lies:
+
+| state | meaning | what the tab says |
+| --- | --- | --- |
+| carried | this record has output for the field | the value, as text |
+| absent | **the export does not carry the column at all** | the fields it looked for, by name |
+| empty | the column exists, this record has no output | "no output for this record — an absence of output, not a finding that the video has none" |
+
+Consequences worth naming:
+
+- **Cell values are rendered as text, not markdown.** They are transcriptions and model output derived from
+  corpus content; a transcript containing markdown must not be interpreted by the page, and a structured
+  cell is projected through `ep24_presentation.readable()` so producer keys cannot be published just
+  because a tab displays the field.
+- **`platform` is presented as a derivation** (`source_type` + `account_type`) when the export has no
+  `platform` column, rather than as an observation.
+- **Child rows are matched on either identifier dialect** — `source_key` in the delivered export,
+  `parent_record_id` in the older one. A loader that knows only one of them renders Themes and Persons
+  empty against a correct export.
+- **Counts are per video, not per mention.** The child tables hold one row per mention, so a plain value
+  count answers "how often was this said" while the column claims records. Every entity/theme figure is
+  deduplicated on `(source_key, label)` and labelled `videos`, with the filtered frame as its denominator
+  and `source_key` as its identity rule.
+
 ## Not implemented on purpose: the write path
 
 The legacy workbench records review decisions — `video_checked`, `delete_video`, `dubious_video`, `rerun_llm`,

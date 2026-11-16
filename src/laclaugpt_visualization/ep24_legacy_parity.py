@@ -27,6 +27,8 @@ from typing import Any
 
 import pandas as pd
 
+from laclaugpt_visualization.ep24_presentation import readable
+
 #: Per-record tabs of the legacy dashboard (`dashboard.py:637-760`), in legacy order.
 RECORD_TABS = (
     "Metadata",
@@ -160,9 +162,16 @@ def _child_values(children: pd.DataFrame | None, source_key: str, field: str,
     """Entities or themes for one record, from the export's child tables."""
     if children is None or children.empty:
         return []
-    if not {"source_key", "field", "item.label"} <= set(children.columns):
+    matches = children[children["field"] == field] if "field" in children.columns else children
+    if "source_key" in children.columns:
+        key = str(row.get("source_key") or "").strip()
+        matches = matches[matches["source_key"].astype(str).str.strip() == key] if key else matches.iloc[0:0]
+    elif "parent_record_id" in children.columns:
+        identifier = str(row.get("record_id") or "").strip()
+        matches = (matches[matches["parent_record_id"].astype(str).str.strip() == identifier]
+                   if identifier else matches.iloc[0:0])
+    else:
         return []
-    matches = children[(children["source_key"] == source_key) & (children["field"] == field)]
     if matches.empty:
         return []
     ordered = matches.sort_values("index") if "index" in matches.columns else matches
@@ -170,12 +179,17 @@ def _child_values(children: pd.DataFrame | None, source_key: str, field: str,
 
 
 def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) -> dict[str, dict[str, Any]]:
-    """The content of each available per-record tab for one record.
+    """The content of each per-record tab for one record, as labelled text blocks.
 
-    Returns ``{tab: {"available": bool, "content": [...] or str, "reason": str}}`` so the view can render
-    tabs uniformly and say why an unavailable one is unavailable, instead of showing an empty panel.
+    Returns ``{tab: {"available", "blocks", "absent", "empty", "note", "reason"}}``. The four states stay
+    apart on purpose, because collapsing them is how a tab lies:
+
+    ``blocks``   what this record actually carries, already projected through the display allowlist;
+    ``absent``   source columns the export does not carry at all (a data defect, named);
+    ``empty``    columns the export carries but this record has no output for (an absence of output, not
+                 a finding that the video has none);
+    ``reason``   set only when the pipeline produces nothing for the tab at all.
     """
-    source_key = str(row.get("source_key") or "")
     tabs: dict[str, dict[str, Any]] = {}
     for tab in RECORD_TABS:
         columns = RECORD_SOURCES.get(tab)
@@ -190,8 +204,24 @@ def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) ->
             values = _child_values(children, source_key, "postprocess_entities", str(row.get("country") or ""))
             tabs[tab] = {"available": True, "content": values, "reason": ""}
             continue
-        content = {column: row.get(column) for column in columns if column in row}
-        tabs[tab] = {"available": True, "content": content, "reason": ""}
+
+        blocks: list[dict[str, str]] = []
+        absent: list[str] = []
+        empty: list[str] = []
+        if tab == "Metadata" and "platform" not in row:
+            # Only say it once, and only when the export does not carry the legacy column.
+            blocks.append({"label": "Platform (derived)", "value": PLATFORM_DERIVATION})
+        for column in columns:
+            if column not in row:
+                absent.append(label_for(column))
+                continue
+            value = readable(row.get(column))
+            if not value:
+                empty.append(label_for(column))
+                continue
+            blocks.append({"label": label_for(column), "value": value})
+        tabs[tab] = {"available": True, "blocks": blocks, "absent": absent, "empty": empty,
+                     "note": "", "reason": ""}
     return tabs
 
 
@@ -318,8 +348,11 @@ def child_counts(children: pd.DataFrame | None, field: str, *, limit: int = 20) 
 
 def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
                            field: str, *, limit: int = 8) -> pd.DataFrame:
-    """Label counts by month, for the legacy "Themes/Persons over time" charts."""
-    empty = pd.DataFrame(columns=["month", "label", "records"])
+    """Label counts by month, for the legacy "Themes/Persons over time" charts.
+
+    Counted once per (video, label, month) for the same reason as :func:`child_counts`.
+    """
+    empty = pd.DataFrame(columns=["month", "label", "videos"])
     if children is None or children.empty or not {"source_key", "field", "item.label"} <= set(children.columns):
         return empty
     if not {"source_key", "timestamp"} <= set(parents.columns):
