@@ -97,6 +97,58 @@ def child_labels(root: str | Path, row: dict, kind: str) -> list[str]:
     return sorted(labels)
 
 
+
+def child_frequencies(root: str | Path, frame: pd.DataFrame, kind: str
+                      ) -> pd.DataFrame:
+    """Count distinct matched videos by exported child label, without guessing IDs.
+
+    The count unit is a video, not a child row. Cross-country source IDs are
+    namespaced and ambiguous parent IDs are excluded rather than attributed.
+    """
+    root = Path(root)
+    aliases = {"fi": "finland", "pl": "poland", "pt": "portugal"}
+    parents: dict[tuple[str, str], set[int]] = {}
+    for index, row in enumerate(frame.to_dict("records")):
+        country = aliases.get(text(row.get("country")).casefold(),
+                              text(row.get("country")).casefold())
+        for field in ("_storage_id", "source_record_id"):
+            source = text(row.get(field))
+            if source:
+                parents.setdefault((country, source), set()).add(index)
+
+    counts: dict[str, set[int]] = {}
+    for country in sorted({name for name, _ in parents}):
+        paths = (root / country / "children" / f"{kind}.csv",
+                 root / country / "children" / f"{country}_{kind}.csv",
+                 root / "children" / f"{country}_{kind}.csv")
+        path = next((p for p in paths if p.is_file()), None)
+        if path is None:
+            continue
+        try:
+            children = pd.read_csv(path, dtype=str, keep_default_na=False)
+        except (OSError, ValueError, pd.errors.ParserError):
+            continue
+        field = next((k for k in ("name", "label", "entity", "theme", "person", "value")
+                      if k in children.columns), None)
+        if field is None:
+            continue
+        for child in children.to_dict("records"):
+            matches: set[int] = set()
+            for key in ("source_record_id", "_storage_id"):
+                identifier = text(child.get(key))
+                if identifier:
+                    matches.update(parents.get((country, identifier), set()))
+            label = text(child.get(field)).strip()
+            if label and len(matches) == 1:
+                counts.setdefault(label, set()).update(matches)
+    return pd.DataFrame(
+        [{"label": label, "videos": len(indices)}
+         for label, indices in counts.items()]
+    ).sort_values(["videos", "label"], ascending=[False, True]).reset_index(
+        drop=True
+    ) if counts else pd.DataFrame(columns=["label", "videos"])
+
+
 def render_record(root: str | Path, row: dict) -> None:
     """All nine legacy per-record surfaces, without pretending edits are saved."""
     import streamlit as st
@@ -186,6 +238,14 @@ def render_aggregates(root: str | Path, frame: pd.DataFrame) -> None:
                 st.caption("Availability counts, not sentiment class predictions; "
                            "scores are not converted into classes.")
             else:
+                kind = "themes" if name == "Themes" else "entities"
+                frequencies = child_frequencies(root, frame, kind)
+                if not frequencies.empty:
+                    st.caption(f"Normalized {kind}: each label counts distinct matched videos; "
+                               f"denominator {len(frame)} filtered video rows. "
+                               "Ambiguous and orphan child records are excluded.")
+                    st.dataframe(frequencies.head(100), use_container_width=True)
+                    st.bar_chart(frequencies.head(30).set_index("label")["videos"])
                 field = "postprocess_themes" if name == "Themes" else "postprocess_entities"
                 if field in frame:
                     present = frame[field].map(lambda v: bool(text(v)))
