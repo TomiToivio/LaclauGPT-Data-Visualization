@@ -328,7 +328,11 @@ with tabs[5]:
             if source and target:
                 network.add_edge(str(source), str(target))
         if network.number_of_edges():
-            positions = nx.spring_layout(network, seed=24)
+            # Spring layout reaches for scipy on large graphs, and scipy is not a dependency of this
+            # deployment; `node_layout` keeps the spring layout and falls back to a numpy force pass.
+            from laclaugpt_visualization.live_steps import node_layout
+
+            positions = node_layout(network)
             xx, yy = [], []
             for a, b in network.edges():
                 xx += [positions[a][0], positions[b][0], None]

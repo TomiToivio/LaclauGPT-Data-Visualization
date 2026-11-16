@@ -182,6 +182,50 @@ def _classify_for(header: list[str], allowlist: str) -> tuple[list[str], list[di
     return keep, dropped, "display"
 
 
+#: The approved cohort's shape: the roster the export was built against (#248/#249).
+ROSTER_FILE = "approved_cohort.txt"
+ROSTER_COUNTS = {"finland": 500, "poland": 500, "portugal": 500}
+
+
+def check_roster(data_root: Path, manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    """The export's own approval record: a digest that matches, and 500 identities per country.
+
+    A dashboard that cannot prove its rows are the approved cohort is displaying *some* cohort. The
+    manifest carries the digest the export was built with; the roster beside the export must hash to
+    it, or the two files describe different cohorts.
+    """
+    roster = Path(data_root) / ROSTER_FILE
+    record = manifest.get("approved_cohort") or {}
+    declared = str(record.get("sha256") or "")
+    if not roster.is_file():
+        return [check("approved cohort roster", False, f"missing {roster}")]
+    digest = hashlib.sha256(roster.read_bytes()).hexdigest()
+    results = [
+        check("approved cohort roster", True, f"{roster.name} · {roster.stat().st_size} bytes"),
+        check("approved cohort digest", bool(declared) and digest == declared,
+              declared[:12] + (" · matches" if digest == declared else " · mismatch") if declared
+              else "the manifest carries no approved_cohort.sha256"),
+    ]
+    counts: dict[str, int] = {}
+    duplicates = 0
+    seen: set[str] = set()
+    for line in roster.read_text(encoding="utf-8").splitlines():
+        identity = line.strip()
+        if not identity:
+            continue
+        if identity in seen:
+            duplicates += 1
+        seen.add(identity)
+        parts = identity.split(":")
+        if len(parts) == 3:
+            counts[parts[1]] = counts.get(parts[1], 0) + 1
+    results.append(check("approved cohort size", len(seen) == sum(ROSTER_COUNTS.values()),
+                         f"{len(seen)} identities, {duplicates} duplicates"))
+    results.append(check("approved cohort by country", counts == ROSTER_COUNTS,
+                         ", ".join(f"{name}={value}" for name, value in sorted(counts.items()))))
+    return results
+
+
 def check_artifacts(data_root: Path, manifest: dict[str, Any], *, allowlist: str = "auto"
                     ) -> list[dict[str, Any]]:
     """The CSVs the app reads exist, and their headers classify without drift."""
@@ -404,7 +448,10 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
     manifest, manifest_results = check_manifest(data_root)
     results.extend(manifest_results)
     if manifest:
-        results.extend(check_artifacts(data_root, manifest, allowlist=args.allowlist))
+        # The parser carries `--approved-roster`, not `--allowlist`; the allowlist is chosen
+        # automatically from the export, so the argument is only read when a caller supplies one.
+        results.extend(check_artifacts(data_root, manifest,
+                                       allowlist=getattr(args, "allowlist", "auto")))
         results.extend(check_coverage(manifest))
     results.extend(check_checkout(Path(args.served_dir).expanduser() if args.served_dir else None,
                                   args.expected_commit))
@@ -424,6 +471,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--url", default=None, help="dashboard base URL, e.g. http://100.115.95.109:8502")
     parser.add_argument("--expected-commit", default=None,
                         help="commit the deployment is supposed to be serving (prefix is enough)")
+    parser.add_argument("--allowlist", default="auto",
+                        help="allowlist to classify against: auto (default) or a named version")
     parser.add_argument("--approved-roster", type=Path, default=None,
                         help="require exact private Monday500 membership using cleaned country dataframes")
     parser.add_argument("--allowlist", choices=("auto", "research", "display"), default="auto",
