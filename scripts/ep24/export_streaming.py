@@ -592,7 +592,8 @@ def iter_source(source: Path) -> Iterator[tuple[int, dict[str, str]]]:
 def select_primary_rows(source: Path, country: str, profile: str, limit: int | None,
                         filter_value: str | None,
                         require_video_id: bool = False,
-                        unit: str = DEFAULT_RECORD_UNIT) -> tuple[dict[str, int], CountryStats]:
+                        unit: str = DEFAULT_RECORD_UNIT,
+                        approved: set[str] | None = None) -> tuple[dict[str, int], CountryStats]:
     """Pass 1: choose one *most complete* row per identity, and count what was seen.
 
     Keeping the first occurrence would export a video's early, partly-filled row and understate stage
@@ -608,6 +609,10 @@ def select_primary_rows(source: Path, country: str, profile: str, limit: int | N
         if filter_value is not None and cell(row, "country").lower() != filter_value.lower():
             continue
         stats.rows_read += 1
+        if approved is not None:
+            from laclaugpt_visualization.ep24_cohort import is_member
+            if not is_member(row, country, approved):
+                continue
         media = cell(row, "allas_filename") or cell(row, "_storage_id")
         if media:
             media_seen.add(media)
@@ -632,12 +637,14 @@ def export_country(country: str, source: Path, output: Path, limit: int | None,
                    manifest_inputs: dict[str, Any], *, profile: str = "reprocessed",
                    filter_value: str | None = None,
                    require_video_id: bool = False,
-                   unit: str = DEFAULT_RECORD_UNIT) -> CountryStats:
+                   unit: str = DEFAULT_RECORD_UNIT,
+                   approved: set[str] | None = None,
+                   append_children: bool = False) -> CountryStats:
     stats = CountryStats(country=country, source_path=str(source),
                          source_bytes=source.stat().st_size, source_sha256=sha256_file(source))
 
     winners, pre_stats = select_primary_rows(source, country, profile, limit, filter_value,
-                                             require_video_id, unit)
+                                             require_video_id, unit, approved)
     stats.distinct_media = pre_stats.distinct_media
     stats.rows_read = pre_stats.rows_read
     stats.duplicates = pre_stats.duplicates
@@ -665,17 +672,17 @@ def export_country(country: str, source: Path, output: Path, limit: int | None,
         tables = ("entities", "discourse_claims", "dna_statements", "sna_nodes", "sna_edges")
         writers: dict[str, tuple[Any, csv.DictWriter]] = {}
         for table in tables:
-            handle_t = (output / f"{table}.csv").open("w", encoding="utf-8", newline="")
+            handle_t = (output / f"{table}.csv").open("a" if append_children else "w", encoding="utf-8", newline="")
             writer = csv.DictWriter(handle_t, fieldnames=("record_key", "item_index", "kind",
                                                           "label", "role", "evidence", "detail"))
-            if country == COUNTRIES[0]:
+            if not append_children:
                 writer.writeheader()
             writers[table] = (handle_t, writer)
 
-        rdf_handle = (output / "rdf_resources.csv").open("w", encoding="utf-8", newline="")
+        rdf_handle = (output / "rdf_resources.csv").open("a" if append_children else "w", encoding="utf-8", newline="")
         rdf_writer = csv.DictWriter(rdf_handle, fieldnames=("record_key", "rdf_status", "resource",
                                                             "triples", "note"))
-        if country == COUNTRIES[0]:
+        if not append_children:
             rdf_writer.writeheader()
 
         index_name = f"{country}.csv"
@@ -983,8 +990,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fail-on-unaccounted", action="store_true", default=True,
                         help="fail when a producer column is neither kept nor dropped (default)")
     parser.add_argument("--allow-unaccounted", dest="fail_on_unaccounted", action="store_false")
+    parser.add_argument("--approved-cohort", type=Path,
+                        help="Explicit 1,500-ID Monday500 roster; filters before deduplication")
     args = parser.parse_args(argv)
 
+    approved = cohort = None
+    if args.approved_cohort:
+        from laclaugpt_visualization.ep24_cohort import read_roster
+        approved, cohort = read_roster(args.approved_cohort)
+        if args.limit is not None:
+            raise SystemExit("--limit cannot be combined with an approved cohort")
     sources = parse_sources(args.source)
     if not sources:
         raise SystemExit("at least one --source COUNTRY=PATH is required")
@@ -1004,12 +1019,19 @@ def main(argv: list[str] | None = None) -> int:
                             profile=(profile or args.profile),
                             filter_value=filters.get(country),
                             require_video_id=args.require_video_id,
-                            unit=args.record_unit)
-             for country, (path, profile) in sources.items()]
+                            unit=args.record_unit, approved=approved, append_children=index > 0)
+             for index, (country, (path, profile)) in enumerate(sources.items())]
 
     combined = write_combined(output, [c for c in COUNTRIES if c in sources])
     write_text_bundle(output, [c for c in COUNTRIES if c in sources])
     write_manifest(output, stats, inputs, generated_at)
+    if cohort:
+        manifest_path = output / "MANIFEST.json"
+        manifest = json.loads(manifest_path.read_text())
+        cohort["exported_counts"] = {s.country: s.rows_exported for s in stats}
+        cohort["missing_counts"] = {c: 500 - cohort["exported_counts"].get(c, 0) for c in COUNTRIES}
+        manifest["approved_cohort"] = cohort
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     write_qa(output, stats)
     write_dictionary(output)
 

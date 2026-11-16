@@ -1,0 +1,16 @@
+# Install as a user service after replacing the generic paths.
+[Unit]
+Description=EP24 researcher dashboard (isolated)
+After=network.target
+
+[Service]
+WorkingDirectory=/srv/LaclauGPT-Data-Visualization
+EnvironmentFile=/srv/ep24-server-local.env
+ExecStart=/srv/LaclauGPT-Data-Visualization/.venv-ep24/bin/streamlit run src/laclaugpt_visualization/ep24_researcher_app.py --server.address=127.0.0.1 --server.port=8502 --server.headless=true
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target
