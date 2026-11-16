@@ -17,6 +17,21 @@ import plotly.io as pio
 import streamlit as st
 
 from laclaugpt_visualization.demo_auth import require_demo_password
+from laclaugpt_visualization.ep24_children import (
+    by_source as children_by_source,
+)
+from laclaugpt_visualization.ep24_children import (
+    load_children,
+)
+from laclaugpt_visualization.ep24_children import (
+    network as child_network,
+)
+from laclaugpt_visualization.ep24_children import (
+    statements as child_statements,
+)
+from laclaugpt_visualization.ep24_children import (
+    term_counts as child_term_counts,
+)
 from laclaugpt_visualization.ep24_presentation import hydrate_record, render_browser
 from laclaugpt_visualization.ep24_reprocessed import (
     STAGES,
@@ -36,7 +51,6 @@ from laclaugpt_visualization.ep24_researcher import (
     DNA_FIELDS,
     SNA_FIELDS,
     cohort_notes,
-    cohort_warnings,
     coverage,
     declared_run,
     evidence_sections,
@@ -80,30 +94,35 @@ if frame.empty:
     st.error("No private export loaded. Configure LACLAUGPT_VIS_ANALYSIS_DATA_DIR.")
     st.stop()
 
-warnings = cohort_warnings(frame, manifest)
-roster_path = os.environ.get("EP24_APPROVED_ROSTER")
-if not roster_path:
-    warnings.append("Configure the approved roster path to verify exact cohort membership.")
-else:
-    from laclaugpt_visualization.ep24_cohort import is_member, read_roster
-    try:
-        approved, roster_manifest = read_roster(Path(roster_path))
-        if roster_manifest["sha256"] != (manifest.get("approved_cohort") or {}).get("sha256"):
-            warnings.append("Approved roster checksum differs from the export manifest.")
-        if any(not is_member(row, str(row.get("country", "")).lower(), approved)
-               for row in frame.to_dict("records")):
-            warnings.append("Export includes records outside the approved cohort.")
-    except (OSError, ValueError) as exc:
-        warnings.append("Approved roster could not be validated: " + type(exc).__name__)
-for warning in warnings:
-    st.warning(warning)
+# The export keeps one-to-many findings in child tables keyed by source_key. Read them once; the
+# views below prefer a JSON column inside the parent row when one exists and fall back to these.
+CHILDREN = load_children(root)
+CHILDREN_BY_SOURCE = {name: children_by_source(rows) for name, rows in CHILDREN.items()}
+
+# The export is what it is: show it, and state what it contains. A cohort gate used to stop the
+# dashboard here unless a roster, a checksum and a dataset identifier all agreed; on the delivered
+# 500-video export that guard rejected correct data and the dashboard never opened (issue #242,
+# Tomi 2026-11-16: "make this work with 500 processed videos for each country, ignore the cohort
+# stuff"). Counts are now reported as facts, not policed as conditions.
+COUNTRY_LABELS = {"finland": "Finland", "poland": "Poland", "portugal": "Portugal",
+                  "fi": "Finland", "pl": "Poland", "pt": "Portugal"}
+if "country" in frame.columns:
+    observed = (frame["country"].fillna("").astype(str).str.lower()
+                .map(lambda value: COUNTRY_LABELS.get(value, value.title() or "unknown"))
+                .value_counts())
+    st.caption(
+        "Loaded " + f"{len(frame):,} videos · "
+        + " · ".join(f"{country} {count}" for country, count in observed.items())
+        + (f" · dataset {declared_run(manifest)}" if declared_run(manifest) else "")
+    )
+    short = {country: int(count) for country, count in observed.items() if int(count) != 500}
+    if short:
+        st.info("Country counts differ from 500: "
+                + ", ".join(f"{country}={count}" for country, count in short.items())
+                + ". Shown as measured; nothing is padded or dropped.")
 for note in cohort_notes(frame, manifest):
     st.caption(note)
-if not warnings:
-    st.success("All three 500-video cohorts and the dataset identifier match the export.")
-else:
-    st.error("Invalid or incomplete Monday500 cohort. Mount a verified, approved snapshot.")
-    st.stop()
+
 if manifest:
     st.caption(f"Snapshot: {manifest.get('generated_at', 'not specified')} | "
                f"exporter: {manifest.get('builder_version', 'not specified')}")
@@ -216,10 +235,12 @@ with tabs[1]:
                             for step, (label, _) in STAGES.items()]), "stage status")
 
 with tabs[2]:
-    for key, label in (("postprocess_entities", "Entities"),
-                       ("postprocess_themes", "Themes")):
+    for key, label, child in (("postprocess_entities", "Entities", "entities"),
+                              ("postprocess_themes", "Themes", "themes")):
         st.subheader(label)
         terms = list_terms(key)
+        if terms.empty and CHILDREN.get(child):
+            terms = pd.DataFrame(child_term_counts(CHILDREN[child]))
         if not terms.empty:
             st.plotly_chart(px.bar(terms.head(20), x="Videos / mentions", y="Term",
                                    orientation="h", title=label),
@@ -243,9 +264,14 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("Discourse Network Analysis · actor–concept positions")
     evidence = dna_evidence(data, root)
-    st.caption(f"{len(evidence.items)} evidenced statements, from {evidence.source}. "
+    items = list(evidence.items)
+    source_note = evidence.source
+    if not items and CHILDREN.get("dna"):
+        items = child_statements(CHILDREN["dna"])
+        source_note = f"the export's dna_statements table ({len(items):,} statements)"
+    st.caption(f"{len(items)} evidenced statements, from {source_note}. "
                "Actor–concept relations are not actor–actor social ties.")
-    dna = research_children(list(evidence.items)[:3000], DNA_FIELDS)
+    dna = research_children(items[:3000], DNA_FIELDS)
     table(dna, "DNA statements")
     if not dna.empty and "Actor" in dna and "Concept" in dna:
         pairs = dna[(dna["Actor"] != "") & (dna["Concept"] != "")]
@@ -258,6 +284,14 @@ with tabs[4]:
 with tabs[5]:
     st.subheader("Social Network Analysis · evidenced actor–actor ties")
     ties = []
+    if CHILDREN.get("sna_edges") and not any(record.get("sna_edges_json") for record in data[:50]):
+        nodes_rows, edge_rows = child_network(CHILDREN.get("sna_nodes", []), CHILDREN["sna_edges"])
+        ties = [{"document": edge.get("source", ""), "source_actor": edge["source"],
+                 "target_actor": edge["target"], "relation_type": edge["relation_type"],
+                 "evidence_quote": edge["evidence_quote"]} for edge in edge_rows
+                if edge.get("evidence_quote") and edge.get("relation_type")]
+        st.caption(f"Edges read from the export's sna_edges table: {len(edge_rows):,} rows, "
+                   f"{len(ties):,} of them carrying both a relation type and a quotation.")
     for record in data:
         parsed = unpack(record.get("sna_edges_json"))
         if isinstance(parsed, dict):
@@ -297,6 +331,15 @@ with tabs[6]:
     graph = multilayer(data, max_records=250, max_edges=1500)
     for warning in graph.warnings:
         st.warning(warning)
+    if not graph.edges and (CHILDREN.get("sna_edges") or CHILDREN.get("dna")):
+        # The parent rows carry no embedded graph in this export; the layers live in child tables.
+        counts_rows = []
+        for name, label in (("dna", "actor–concept (DNA)"), ("sna_edges", "actor–actor (SNA)")):
+            rows = CHILDREN.get(name) or []
+            videos = {str(row.get("source_key") or "") for row in rows if row.get("source_key")}
+            counts_rows.append({"Layer": label, "Rows": len(rows), "Videos": len(videos)})
+        st.caption("The export keeps these layers in child tables; their measured extent is below.")
+        st.dataframe(pd.DataFrame(counts_rows), use_container_width=True, hide_index=True)
     st.caption("Connections are typed. Extracted concepts and DNA positions are not social ties.")
     edges = research_children(list(graph.edges), {
         "type": "Relationship type", "document": "Source video",

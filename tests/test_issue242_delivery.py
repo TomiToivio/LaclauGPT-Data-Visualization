@@ -157,5 +157,5 @@ def test_authenticated_researcher_entrypoint_with_verified_roster(tmp_path, monk
     assert labels[:8] == ["Overview", "Videos & multimodal evidence", "Entities and themes",
                           "Laclau discourse", "DNA", "SNA", "Multilayer", "RDF & methods"]
     assert "Legacy analytics" in labels and "Export" in labels, "the merged tabs must be present"
-    assert any("match the export" in str(message.value) for message in app.success), \
-        "a verified roster must report success, not merely avoid errors"
+    assert any("Loaded 1,500 videos" in str(caption.value) for caption in app.caption), \
+        "the app must report the corpus it loaded, country by country"
