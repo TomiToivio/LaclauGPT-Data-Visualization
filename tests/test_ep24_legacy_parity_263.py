@@ -382,7 +382,7 @@ def test_mixed_date_columns_use_timestamp_only_for_missing_created_at():
         "source_key": ["derived", "raw", "undated"],
         "country": ["finland"] * 3,
         "created_at": ["2024-05-21", None, None],
-        "timestamp": ["2024-06-01", "2024-06-05T10:00:00Z", None],
+        "timestamp": ["2024-06-01T10:00:00Z", "2024-06-05T10:00:00Z", None],
     })
     may = apply_filters(parents, dates=(pd.Timestamp("2024-05-01").date(), pd.Timestamp("2024-05-31").date()))
     assert may["source_key"].tolist() == ["derived"]  # created_at takes precedence
