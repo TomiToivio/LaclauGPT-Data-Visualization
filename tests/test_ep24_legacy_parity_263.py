@@ -260,3 +260,15 @@ def test_cross_country_key_collision_requires_country_on_child():
     assert scope_children(child, parents).empty
     child["country"] = "poland"
     assert len(scope_children(child, parents)) == 1
+
+
+def test_same_native_key_across_countries_keeps_distinct_video_counts():
+    parents = pd.DataFrame({"source_key": ["shared", "shared"],
+                            "country": ["finland", "poland"]})
+    children = pd.DataFrame({"source_key": ["shared", "shared"],
+                             "country": ["finland", "poland"],
+                             "field": ["postprocess_themes", "postprocess_themes"],
+                             "item.label": ["justice", "justice"]})
+    scoped = scope_children(children, parents)
+    assert child_counts(scoped, "postprocess_themes").iloc[0]["records"] == 2
+    assert record_tabs(parents.iloc[0].to_dict(), scoped)["Themes"]["content"] == ["justice"]
