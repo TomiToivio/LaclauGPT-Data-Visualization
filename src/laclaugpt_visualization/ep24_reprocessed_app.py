@@ -28,6 +28,7 @@ try:  # normal case: the package is importable (development, pip install -e .)
         load_children,
         parity_rows,
         record_tabs,
+        scope_children,
         sentiment_counts,
         unsupported_tabs,
     )
@@ -63,6 +64,7 @@ except ModuleNotFoundError:  # standalone deployment: only this module was shipp
         load_children,
         parity_rows,
         record_tabs,
+        scope_children,
         sentiment_counts,
         unsupported_tabs,
     )
@@ -414,11 +416,12 @@ elif view == "Legacy parity · workbench":
     # one increment of a reader that cannot yet record a judgement.
     st.subheader("Legacy parity · researcher workbench")
     st.caption("Read-only. Review flags, cut/split and notes are not written here; see #263 §4.")
-    children = load_children(root, frame)
+    all_children = load_children(root, frame)
     workbench = apply_filters(
         frame,
         countries=[str(scope.rsplit(" (", 1)[0])] if scope != "All countries" else [],
     )
+    children = scope_children(all_children, workbench)
     st.caption(f"{len(workbench):,} of {len(frame):,} records match the sidebar filters.")
 
     record_view, aggregate_view = st.tabs(["Records", "Corpus"])
