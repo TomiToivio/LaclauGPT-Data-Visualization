@@ -1,5 +1,7 @@
 # Issue 242: researcher display and Monday500 delivery
 
+> For maintenance of the existing :8502 researcher service, see the [agent operating contract](EP24_8502_OPERATOR_CONTRACT.md). Historical acceptance and deployment notes here are not live-state verification.
+
 This extends the existing reprocessed explorer and streaming exporter, and integrates
 with `ep24_researcher_app.py` merged concurrently in PR #243. The service uses that
 authenticated researcher entrypoint; no third app or export contract is introduced. Issue 242 remains open until the
