@@ -103,3 +103,13 @@ def test_a_manifest_that_disagrees_with_the_loaded_count_is_reported():
     manifest = {**MANIFEST, "countries": {"finland": {"exported_videos": 499}}}
     warnings = processed_export_warnings(rows(), manifest)
     assert any("499" in warning for warning in warnings)
+
+def test_provenance_is_disclosed_as_a_note_when_no_manifest_exists():
+    """A missing manifest makes the counts unverifiable, not wrong (#252).
+
+    The warning list is for defects that change the numbers; provenance is a note the researcher
+    reads before trusting them.
+    """
+    notes = cohort_notes(rows(), {})
+    assert any("No export manifest" in note for note in notes)
+    assert any("dataset identifier" in note for note in notes)

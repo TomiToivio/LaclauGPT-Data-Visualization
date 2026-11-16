@@ -63,6 +63,15 @@ def test_processed_export_checks_manifest_counts_but_never_requires_roster():
         frame, {"countries": {"poland": {"exported_videos": 499}}}))
 
 
+def test_a_country_short_of_500_is_named_as_measured():
+    """#252's intent, on the surviving function: a short country is reported, not policed."""
+    frame = pd.DataFrame([{"country": "FI", "video_id": f"{i}"} for i in range(498)]
+                         + [{"country": "PL", "video_id": f"{i}"} for i in range(500)]
+                         + [{"country": "PT", "video_id": f"{i}"} for i in range(500)])
+    warnings = processed_export_warnings(frame, {})
+    assert any("Finland" in item and "498" in item for item in warnings)
+
+
 def test_stage_coverage_denominators_and_no_fabricated_success():
     results = coverage(pd.DataFrame([{"video_id": "x"}, {"video_id": "y"}]))
     assert not results.empty
