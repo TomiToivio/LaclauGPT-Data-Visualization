@@ -361,13 +361,14 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     empty = pd.DataFrame(columns=["month", "label", "videos"])
     if children is None or children.empty or not {"source_key", "field", "item.label"} <= set(children.columns):
         return empty
-    if not {"source_key", "timestamp"} <= set(parents.columns):
+    date_field = next((name for name in ("created_at", "timestamp") if name in parents.columns), None)
+    if "source_key" not in parents.columns or date_field is None:
         return empty
     keys = ["source_key"]
     if "country" in parents.columns and "country" in children.columns:
         keys.append("country")
-    dates = parents[keys + ["timestamp"]].copy()
-    dates["month"] = pd.to_datetime(dates["timestamp"], errors="coerce", utc=True).dt.strftime("%Y-%m")
+    dates = parents[keys + [date_field]].copy()
+    dates["month"] = pd.to_datetime(dates[date_field], errors="coerce", utc=True).dt.strftime("%Y-%m")
     dates = dates.dropna(subset=["month"])
     dates = dates.loc[~dates.duplicated(keys, keep=False)]
     selected = children.loc[children["field"] == field, keys + ["item.label"]].dropna(subset=["item.label"])
