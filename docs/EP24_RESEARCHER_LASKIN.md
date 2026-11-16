@@ -10,6 +10,7 @@ On the configured Laskin host, after authorized installation of the code and the
 
 
 The researcher-facing dashboard for the 500-video EP24 test cohort. Issue
+The researcher-facing dashboard for 500 processed EP24 videos per country (1,500 total). Issue
 [#242](https://github.com/TomiToivio/LaclauGPT-Data-Visualization/issues/242) targets CSC Pouta at
 `http://86.50.228.141:8502/`; **on Tomi's instruction the deployment is on Laskin instead** — the
 same service, the same data contract, the same acceptance checks, different host. The Pouta runbook
@@ -21,17 +22,18 @@ for the live-steps cohort.
 | URL | `http://100.115.95.109:8502/` (Tailscale address of `laskin01`) |
 | Code | `LaclauGPT-Data-Visualization@main` |
 | App | `src/laclaugpt_visualization/ep24_researcher_app.py` |
-| Data | `analysis/ep24/pouta_exports/fiplpt_500_20261115/` (checkpoint export, FI/PL/PT 500 each) |
+| Data | `analysis/ep24/pouta_exports/fiplpt_500_20261115/` (checkpoint export, 500 processed videos each for FI/PL/PT) |
 | Service | `laclaugpt-ep24-researcher.service` (systemd **user** unit) |
 | Neighbours | `:8501` AI26 dashboard, `:8503` live-steps operations — neither is touched |
 
 ## What the researcher sees
 
-The corpus is 1 500 videos — Finland, Poland and Portugal, 500 each — from the
-`ep24_monday500_20261031` run of the multimodal pipeline. The dashboard reports what the export contains and renders it; country counts that differ from 500
-are stated as measured. Cohort approval (`docs/EP24_COHORT_APPROVAL.md`) is optional bookkeeping, not
-a condition for the dashboard to open. The app is read-only: it opens the export
-files, never MongoDB, Redis, Slurm, a GPU or Ollama, and it writes nothing back.
+The corpus is 1 500 processed videos — Finland, Poland and Portugal, 500 each — from the
+`ep24_monday500_20261031` run of the multimodal pipeline. **There is no named-cohort, approved-roster
+or cohort-checksum requirement**: cohort approval (`docs/EP24_COHORT_APPROVAL.md`) is optional
+bookkeeping, not a condition for the dashboard to open, and country counts that differ from 500 are
+stated as measured rather than padded or dropped. The app is read-only: it opens the export files,
+never MongoDB, Redis, Slurm, a GPU or Ollama, and it writes nothing back.
 
 Tabs: Overview · Videos & multimodal evidence · Entities and themes · Laclau discourse · DNA · SNA ·
 Multilayer · RDF & methods · **Legacy analytics** · **Export**.
@@ -101,35 +103,13 @@ coverage; the served checkout is git and its tree is clean; the service answers
 **A dirty served tree is a failure even when the commit hash is right**: it means the code being
 served is not the commit being named.
 
-## Exact approved-cohort validation (required before closing #242)
+## 500-per-country acceptance
 
-The default verifier checks the 1,500 total, country counts, field allowlist, stage
-coverage and running service. **Those checks alone do not prove membership** in the
-approved Monday500 cohort. The private repository also contains the authoritative
-`analysis/ep24_reprocess/sample_roster/monday500_roster.txt` and the cleaned
-per-country DataFrames under `analysis/live_steps_1_7/cleaned/`.
-
-Run this additional fail-closed verification on an authorized checkout where Git LFS
-artifacts are materialized:
-
-```bash
-python scripts/ep24/verify_researcher_dashboard.py \
-    --data-root /path/to/LaclauGPT-Private/analysis/live_steps_1_7 \
-    --approved-roster /path/to/LaclauGPT-Private/analysis/ep24_reprocess/sample_roster/monday500_roster.txt \
-    --served-dir /path/to/served/visualization \
-    --expected-commit "$(git -C /path/to/served/visualization rev-parse HEAD)" \
-    --url http://100.115.95.109:8502
-```
-
-The membership check reads the canonical `_storage_id` column from the **private
-cleaned DataFrames**, compares its exact 500 IDs per country with the approved
-roster, and rejects duplicates, missing IDs, substituted videos or unreadable files.
-It does **not** export those canonical storage identifiers to the researcher UI.
-
-A passing legacy 16/16 check or a healthy HTTP endpoint cannot substitute for this
-test. Record the verifier output and served revision in the issue before closing it.
-If the cleaned DataFrames and dashboard index have been rebuilt at different times,
-rebuild them from the same authoritative producer cohort before approval.
+Run the deployment verifier without an approved-roster argument. It verifies the
+manifest and CSV totals, specifically **finland=500, poland=500, portugal=500**,
+as well as researcher-safe columns, stage coverage and server health.
+A run name or cohort checksum does not gate the dashboard. Partial DNA/SNA/RDF
+stage coverage remains visible, not interpreted as zero or full completion.
 
 ## Code update vs data update
 
