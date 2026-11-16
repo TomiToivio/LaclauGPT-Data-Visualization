@@ -27,6 +27,10 @@ This repository is the canonical Data Visualization module of LaclauGPT. Keep it
 The project-wide data contract is owned by [`TomiToivio/LaclauGPT`](https://github.com/TomiToivio/LaclauGPT/blob/main/docs/CANONICAL_DATA_CONTRACT.md). Read `docs/CANONICAL_DATA_MODEL.md` before changing loaders, persistence, review state or view-model fields.
 
 
+## Legacy EP24 :8502 service operating contract (issue #258)
+
+When explicitly asked to maintain the existing legacy EP24 researcher dashboard on port 8502, first read [docs/EP24_8502_OPERATOR_CONTRACT.md](docs/EP24_8502_OPERATOR_CONTRACT.md). This documents deployment verification, read-only versioned exports, private-repository placement, access-control owner decisions, and rollback evidence. It does **not** authorize extending EP24 beyond specifically requested maintenance, expose private data, or silently deploy/update the live service. AI26 remains the active default for new work.
+
 ## AI26 active pipeline scope
 
 **This repository's `main` branch contains the continuous AI26 implementation.**
