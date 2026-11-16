@@ -2,7 +2,7 @@
 """Verify the EP24 researcher dashboard deployment (issue #242).
 
 The issue's definition of done asks for facts about the *running* service: the served commit, the data
-manifest and version, the cohort counts, the stage coverage, and that a researcher can reach it. This
+manifest and version, the 500-per-country counts, the stage coverage, and that a researcher can reach it. This
 script answers those questions from the files and the process, not from the badge on a pull request.
 
     python scripts/ep24/verify_researcher_dashboard.py \
@@ -149,6 +149,12 @@ def check_manifest(data_root: Path) -> tuple[dict[str, Any], list[dict[str, Any]
             ", ".join(f"{key}={per_country[key]}" for key in sorted(per_country)),
         )
     )
+    expected = {"finland": 500, "poland": 500, "portugal": 500}
+    results.append(check(
+        "500 videos per country",
+        {str(key).lower(): value for key, value in per_country.items()} == expected,
+        ", ".join(f"{country}={per_country.get(country)}" for country in expected),
+    ))
     return manifest, results
 
 
