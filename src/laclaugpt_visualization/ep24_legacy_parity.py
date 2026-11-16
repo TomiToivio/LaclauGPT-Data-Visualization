@@ -157,8 +157,7 @@ def unsupported_tabs() -> list[str]:
     return [row["tab"] for row in parity_rows() if row["available"] == "no"]
 
 
-def _child_values(children: pd.DataFrame | None, source_key: str, field: str,
-                  country: str = "") -> list[str]:
+def _child_values(children: pd.DataFrame | None, row: Mapping[str, Any], field: str) -> list[str]:
     """Entities or themes for one record, from the export's child tables."""
     if children is None or children.empty:
         return []
@@ -172,6 +171,8 @@ def _child_values(children: pd.DataFrame | None, source_key: str, field: str,
                    if identifier else matches.iloc[0:0])
     else:
         return []
+    if "country" in matches and row.get("country"):
+        matches = matches[matches["country"].astype(str).str.casefold() == str(row["country"]).casefold()]
     if matches.empty:
         return []
     ordered = matches.sort_values("index") if "index" in matches.columns else matches
@@ -197,11 +198,11 @@ def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) ->
             tabs[tab] = {"available": False, "content": "", "reason": NO_SOURCE_REASON.get(tab, "")}
             continue
         if columns == ("__child__:postprocess_themes",):
-            values = _child_values(children, source_key, "postprocess_themes", str(row.get("country") or ""))
+            values = _child_values(children, row, "postprocess_themes")
             tabs[tab] = {"available": True, "content": values, "reason": ""}
             continue
         if columns == ("__child__:postprocess_entities",):
-            values = _child_values(children, source_key, "postprocess_entities", str(row.get("country") or ""))
+            values = _child_values(children, row, "postprocess_entities")
             tabs[tab] = {"available": True, "content": values, "reason": ""}
             continue
 
@@ -341,7 +342,7 @@ def child_counts(children: pd.DataFrame | None, field: str, *, limit: int = 20) 
     if subset.empty:
         return pd.DataFrame(columns=["label", "records"])
     counts = (subset.dropna(subset=["item.label", "source_key"])
-              .drop_duplicates(["source_key", "item.label"])["item.label"]
+              .drop_duplicates(["source_key", "item.label"] + (["country"] if "country" in subset else []))["item.label"]
               .astype(str).value_counts().head(limit))
     return pd.DataFrame({"label": counts.index, "records": counts.values})
 
@@ -357,13 +358,19 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
         return empty
     if not {"source_key", "timestamp"} <= set(parents.columns):
         return empty
-    dates = parents[["source_key", "timestamp"]].copy()
+    join_keys = ["source_key"]
+    if "country" in children and "country" in parents:
+        join_keys.append("country")
+    dates = parents[join_keys + ["timestamp"]].copy()
     dates["month"] = pd.to_datetime(dates["timestamp"], errors="coerce", utc=True).dt.tz_localize(None).dt.to_period("M")
     dates = dates.dropna(subset=["month"])
     if dates.empty:
         return empty
-    subset_fields = ["source_key", "item.label"]\n    if "country" in children:\n        subset_fields.append("country")\n    subset = children[children["field"] == field][subset_fields].drop_duplicates()
-    merged = subset.merge(dates[["source_key", "month"]], on="source_key", how="inner")
+    subset_fields = ["source_key", "item.label"]
+    if "country" in children:
+        subset_fields.append("country")
+    subset = children[children["field"] == field][subset_fields].drop_duplicates()
+    merged = subset.merge(dates[join_keys + ["month"]], on=join_keys, how="inner", validate="many_to_one")
     if merged.empty:
         return empty
     top = merged["item.label"].astype(str).value_counts().head(limit).index
