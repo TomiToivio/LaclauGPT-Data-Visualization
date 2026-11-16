@@ -8,8 +8,7 @@
 #   <DATA_ROOT>    the private checkpoint export     (combined.csv + manifest.json + roster)
 #   <BIND_ADDRESS> the Tailscale address of the host; never 0.0.0.0
 #
-# The app refuses to render without a verified cohort roster and an access password, so both are
-# required here. Keep the password in an EnvironmentFile with mode 0600, never in this file.
+# The dashboard validates 500 unique exported videos per country; no roster is required.\n# Keep the access password in a server-local EnvironmentFile. Keep the password in an EnvironmentFile with mode 0600, never in this file.
 [Unit]
 Description=LaclauGPT EP24 FI/PL/PT researcher dashboard (Laskin :8502, issue #242)
 Documentation=file://<REPO>/docs/EP24_RESEARCHER_LASKIN.md
@@ -20,7 +19,6 @@ StartLimitIntervalSec=0
 Type=simple
 WorkingDirectory=<REPO>
 Environment=LACLAUGPT_VIS_ANALYSIS_DATA_DIR=<DATA_ROOT>
-Environment=EP24_APPROVED_ROSTER=<DATA_ROOT>/approved_cohort.txt
 Environment=LACLAUGPT_VIS_PYTHON=<REPO>/.venv/bin/python
 # Required gate: the export carries author usernames, video identifiers and transcripts.
 EnvironmentFile=%h/.config/laclaugpt/ep24-researcher.env
