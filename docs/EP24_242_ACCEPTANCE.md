@@ -72,7 +72,7 @@ Create an isolated `.venv-ep24`, install the public package there, and freeze th
 resolved environment into a private deployment lock file; use that lock for
 subsequent installations. Do not silently reuse AI26's environment.
 
-Install `deploy/laclaugpt-ep24-researcher.service.example` as a user service, adjust
+Install `deploy/laclaugpt-ep24-monday500-loopback.service.example` as a user service, adjust
 paths, and enable it with `systemctl --user enable laclaugpt-ep24-researcher`.
 Boot start additionally requires the host's approved user-service/linger policy.
 The service binds **loopback :8502** and restarts on failure.
