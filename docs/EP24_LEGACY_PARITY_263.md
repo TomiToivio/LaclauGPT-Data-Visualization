@@ -50,6 +50,8 @@ platform, `YYYYMMDD`, then a sequence. `add_created_at()` fills a blank `created
 1,500 parse, covering 2024-05-20 .. 2024-06-16) and leaves a real value untouched, so a backfilled export
 takes over silently.
 
+Themes and Persons monthly timelines use the derived `created_at` date when present, falling back to `timestamp` for older exports. This avoids empty timelines when the reprocessed export has blank raw timestamps. The label counts remain per distinct country-scoped video, not child mentions.
+
 Precision is **one day**, deliberately. The trailing field is not a clock: it takes 180 distinct values from
 `1010000` to `4080000` and 366 of them cannot be any `HHMMSS` (minute 90, second 95), so it behaves like a
 per-session sequence. Deriving a time of day would fabricate one. The frame records how many values it filled
