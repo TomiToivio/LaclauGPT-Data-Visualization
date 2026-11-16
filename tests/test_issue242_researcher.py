@@ -1,7 +1,13 @@
 """Issue #242 researcher output never exposes internal dataframe fields."""
 import pandas as pd
+
 from laclaugpt_visualization.ep24_researcher import (
-    view, friendly, processed_export_warnings, coverage, research_children, DNA_FIELDS,
+    DNA_FIELDS,
+    coverage,
+    friendly,
+    processed_export_warnings,
+    research_children,
+    view,
 )
 
 def test_allowlist_excludes_processing_and_download_secrets():
