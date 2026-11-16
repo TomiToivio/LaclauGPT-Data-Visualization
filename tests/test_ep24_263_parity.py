@@ -8,6 +8,7 @@ from laclaugpt_visualization.ep24_legacy_workbench import (
     RECORD_TABS,
     available_aggregates,
     child_labels,
+    child_frequencies,
 )
 
 
@@ -47,3 +48,35 @@ def test_child_joins_are_country_scoped(tmp_path):
     assert child_labels(tmp_path, source, "themes") == ["justice"]
     assert child_labels(tmp_path, {"country": "poland", "_storage_id": "ID-1"}, "themes") == []
     assert child_labels(tmp_path, {"country": "finland"}, "themes") == []
+
+
+def test_child_aggregate_counts_distinct_matched_videos(tmp_path):
+    folder = tmp_path / "finland" / "children"
+    folder.mkdir(parents=True)
+    (folder / "themes.csv").write_text(
+        "source_record_id,name\\nA,justice\\nA,justice\\nB,justice\\n"
+        "B,climate\\nUNKNOWN,noise\\n",
+        encoding="utf-8",
+    )
+    frame = pd.DataFrame([
+        {"country": "finland", "_storage_id": "A"},
+        {"country": "finland", "_storage_id": "B"},
+    ])
+    counts = child_frequencies(tmp_path, frame, "themes")
+    assert dict(zip(counts["label"], counts["videos"])) == {"justice": 2, "climate": 1}
+
+
+def test_child_aggregate_excludes_ambiguous_parents_and_country_collisions(tmp_path):
+    for country in ("finland", "poland"):
+        folder = tmp_path / country / "children"
+        folder.mkdir(parents=True)
+        (folder / "entities.csv").write_text(
+            "source_record_id,name\\nDUP,ambiguous\\n", encoding="utf-8"
+        )
+    frame = pd.DataFrame([
+        {"country": "finland", "_storage_id": "DUP"},
+        {"country": "finland", "_storage_id": "DUP"},
+        {"country": "poland", "_storage_id": "DUP"},
+    ])
+    counts = child_frequencies(tmp_path, frame, "entities")
+    assert dict(zip(counts["label"], counts["videos"])) == {"ambiguous": 1}
