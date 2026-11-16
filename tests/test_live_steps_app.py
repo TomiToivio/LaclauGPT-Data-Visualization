@@ -262,3 +262,86 @@ class LiveStepsAppTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NodeLayoutTests(unittest.TestCase):
+    """A drawing must never be the reason a page fails (#242: SNA network)."""
+
+    def test_the_layout_is_finite_without_scipy(self):
+        import math
+
+        import networkx as nx
+
+        from laclaugpt_visualization.live_steps import node_layout
+
+        graph = nx.Graph()
+        for number in range(40):
+            graph.add_edge(f"a{number}", f"a{(number * 7) % 40}")
+        positions = node_layout(graph)
+        self.assertEqual(len(positions), 40)
+        self.assertTrue(all(math.isfinite(x) and math.isfinite(y) for x, y in positions.values()),
+                        "NaN coordinates render an empty or exploding figure")
+
+    def test_an_empty_graph_lays_out_without_raising(self):
+        import networkx as nx
+
+        from laclaugpt_visualization.live_steps import node_layout
+
+        self.assertEqual(node_layout(nx.Graph()), {})
+
+
+class StepNineAndCohortTests(unittest.TestCase):
+    """#242: a stage the export does not carry is not auditable, and the cohort is a target."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import tempfile
+
+        cls._temporary = tempfile.TemporaryDirectory()
+        base = Path(cls._temporary.name)
+        source = base / "src"
+        source.mkdir()
+        for country, rows in {
+            "finland": [row("finland", 11), row("finland", 12, platform="Tiktok")],
+            "poland": [row("poland", 13)],
+            "portugal": [row("portugal", 14)],
+        }.items():
+            with (source / f"{country}_live_steps_1_7.csv").open("w", newline="",
+                                                                 encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=HEADER, extrasaction="ignore")
+                writer.writeheader()
+                for item in rows:
+                    writer.writerow(item)
+        cls.data = base / "data"
+        builder.main(["--source-dir", str(source), "--out", str(cls.data)])
+        os.environ["LACLAUGPT_VIS_LIVE_STEPS_DATA"] = str(cls.data)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        os.environ.pop("LACLAUGPT_VIS_LIVE_STEPS_DATA", None)
+        cls._temporary.cleanup()
+
+    def test_the_app_says_step_nine_is_not_auditable(self):
+        data = str(self.data)
+        app = AppTest.from_file(str(APP), default_timeout=300).run()
+        notices = " ".join(str(element.value) for element in app.info)
+        manifest = json.loads((Path(data) / "MANIFEST.json").read_text(encoding="utf-8"))
+        has_step_nine = any(str(stage).startswith("9")
+                            for country in (manifest.get("stage_coverage") or {}).values()
+                            for stage in country)
+        if has_step_nine:
+            self.assertNotIn("The export carries no step-9 stage", notices)
+        else:
+            self.assertIn("The export carries no step-9 stage", notices)
+            self.assertIn("not auditable", notices, "a missing stage must not read as 0 %")
+
+    def test_the_cohort_is_described_as_a_target(self):
+        app = AppTest.from_file(str(APP), default_timeout=300).run()
+        captions = " ".join(str(element.value) for element in app.caption)
+        self.assertIn("Cohort.", captions)
+        self.assertIn("target", captions)
+
+    def test_the_sna_view_offers_a_confidence_threshold(self):
+        app = AppTest.from_file(str(APP), default_timeout=300).run()
+        labels = [slider.label for slider in app.slider]
+        self.assertIn("Minimum edge confidence to draw", labels)

@@ -15,6 +15,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+import networkx as nx
 import pandas as pd
 
 #: Steps in the export, with the bundle fields that carry their output and the index fields that
@@ -509,3 +510,41 @@ def language_by_preference(frame: pd.DataFrame) -> pd.DataFrame:
     return (pd.DataFrame({"language": language, "political_preference": preference})
             .groupby(["language", "political_preference"]).size().reset_index(name="records"))
 
+def node_layout(graph: nx.Graph) -> dict[str, tuple[float, float]]:
+    """Node positions, with a numpy fallback.
+
+    ``nx.spring_layout`` reaches for scipy on graphs above a few dozen nodes; scipy is not part of
+    this deployment's dependency set, so an SNA tab with real edges would crash the page on the one
+    interaction it exists for. A plain force-directed pass over the adjacency matrix is enough for a
+    reading aid, and it cannot fail on a missing optional package.
+    """
+    try:
+        return nx.spring_layout(graph, seed=7, k=0.9, iterations=120)
+    except Exception:  # noqa: BLE001 - any layout failure degrades, never crashes the page
+        import numpy as np
+
+        nodes = list(graph.nodes())
+        index = {node: position for position, node in enumerate(nodes)}
+        adjacency = np.zeros((len(nodes), len(nodes)))
+        for left, right in graph.edges():
+            adjacency[index[left], index[right]] = adjacency[index[right], index[left]] = 1.0
+        random = np.random.default_rng(7)
+        points = random.normal(size=(len(nodes), 2))
+        k = 1.0 / max(len(nodes), 1) ** 0.5
+        # Fruchterman–Reingold with a cooling schedule: without the temperature clamp the repulsive
+        # term (k²/d) blows up as two nodes coincide, and the figure renders NaN coordinates.
+        temperature = 0.1
+        for _ in range(120):
+            delta = points[:, None, :] - points[None, :, :]
+            distance = np.maximum(np.linalg.norm(delta, axis=2), 1e-3)
+            repulsion = (k * k / distance)[:, :, None] * (delta / distance[:, :, None])
+            attraction = (adjacency * distance / k)[:, :, None] * (delta / distance[:, :, None])
+            displacement = repulsion.sum(axis=1) - attraction.sum(axis=1)
+            length = np.linalg.norm(displacement, axis=1).max()
+            if not np.isfinite(length) or length == 0:
+                break
+            points = points + displacement * (min(temperature, np.float64(k)) / length)
+            points = points - points.mean(axis=0)
+            temperature *= 0.97
+        points = np.nan_to_num(points, nan=0.0, posinf=0.0, neginf=0.0)
+        return {node: (float(points[index[node], 0]), float(points[index[node], 1])) for node in nodes}

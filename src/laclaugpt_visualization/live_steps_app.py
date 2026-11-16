@@ -40,6 +40,7 @@ try:
         load,
         monthly_by,
         node_degrees,
+        node_layout,
         preference_counts,
         problem_rows,
         search_bundle,
@@ -167,7 +168,7 @@ def network_figure(nodes: pd.DataFrame, edges: pd.DataFrame, title: str,
     for row in edges.itertuples():
         graph.add_edge(row.source, row.target, weight=getattr(row, edge_weight, 1),
                        stance=getattr(row, "stance", "co-mentioned"))
-    position = nx.spring_layout(graph, seed=7, k=0.9, iterations=120)
+    position = node_layout(graph)
     segments = []
     for source, target in graph.edges():
         segments.append((position[source][0], position[source][1], position[target][0],
@@ -254,6 +255,19 @@ tabs = st.tabs(["Overview", "Steps & coverage", "Search", "Record browser", "Dis
                 "Stage explorer", "Export", "Legacy charts"])
 
 with tabs[0]:
+    counts = {name: entry for name, entry in (manifest.get("record_counts") or {}).items()
+              if isinstance(entry, dict)}
+    exported = sum(int(entry.get("exported") or 0) for entry in counts.values())
+    per_country = sorted(int(entry.get("exported") or 0) for entry in counts.values())
+    if exported:
+        spread = (f"{per_country[0]:,} per country" if len(set(per_country)) == 1
+                  else f"{per_country[0]:,}–{per_country[-1]:,} per country")
+        st.caption(
+            f"**Cohort.** {exported:,} exported videos across {len(counts)} countries ({spread}). "
+            "The 500-per-country figure is the cohort **target**, not a count of successful analyses; "
+            "coverage below is measured on what each stage actually wrote."
+        )
+
     columns = st.columns(4)
     columns[0].metric("Videos", f"{len(filtered):,}")
     columns[1].metric("Countries", filtered["country"].nunique() if len(filtered) else 0)
@@ -302,6 +316,18 @@ with tabs[1]:
         st.plotly_chart(px.bar(steps, x="stage", y="pct", color="country", barmode="group",
                                title="Step completion in the current selection (%)"),
                         width='stretch')
+    st.subheader("Step 9 · RDF / knowledge graph")
+    nine = sorted({stage for country in (manifest.get("stage_coverage") or {}).values()
+                   for stage in country if str(stage).startswith("9")})
+    if not nine:
+        st.info(
+            "**The export carries no step-9 stage.** The producer defines no RDF outputs for this "
+            "run and no record carries an RDF field, so there is nothing to count or download. This "
+            "is *not auditable*, not 0 % coverage — a zero would claim the stage ran and found nothing."
+        )
+    else:
+        st.caption(f"Step-9 stages present in the export: {', '.join(nine)}.")
+
     with st.expander("Status vocabulary as the producer wrote it"):
         for step, (label, _, _) in STEPS.items():
             column = f"step_0{step}_status"
@@ -511,6 +537,61 @@ with tabs[5]:
         table([{"record_id": item["record_id"],
                 **{key: clean(item.get(key))[:220] for key in keys}} for item in edges],
               "sna_table", caption="Every edge carries the quote it was drawn from.")
+
+        # A graph is a reading aid, so it is drawn only from the ties the producer evidenced, and the
+        # reader decides how weak a tie may be before it disappears from the picture.
+        minimum = st.slider("Minimum edge confidence to draw", 0.0, 1.0, 0.0, 0.05,
+                            key="sna_min_confidence",
+                            help="Filters the drawing and the tie list below it; the tables above stay complete.")
+        numeric = pd.to_numeric(edge_frame.get("confidence"), errors="coerce")
+        kept = edge_frame.assign(_conf=numeric).fillna({"_conf": 0.0})
+        kept = kept[kept["_conf"] >= minimum]
+        nodes_frame = pd.DataFrame([{
+            "id": clean(node.get("node_id")),
+            "label": clean(node.get("label")) or clean(node.get("node_id")),
+            "kind": clean(node.get("node_type")) or "actor",
+            "statements": 1,
+        } for node in nodes]).drop_duplicates("id") if nodes else pd.DataFrame()
+        edges_frame = pd.DataFrame([{
+            "source": clean(edge.get("source")),
+            "target": clean(edge.get("target")),
+            "videos": 1,
+            "stance": clean(edge.get("edge_type") or edge.get("relation_type")) or "evidenced",
+        } for edge in kept.to_dict("records")])
+        if edges_frame.empty:
+            st.info(f"No evidenced tie reaches confidence {minimum:.2f}; lower the threshold to see "
+                    "the weaker ones rather than reading the empty picture as an absence.")
+        else:
+            degree = pd.concat([edges_frame["source"], edges_frame["target"]]).value_counts()
+            if not nodes_frame.empty:
+                nodes_frame["statements"] = nodes_frame["id"].map(degree).fillna(0)
+            figure = network_figure(nodes_frame, edges_frame,
+                                    f"Actor–actor ties (step 8), confidence ≥ {minimum:.2f}")
+            if figure is not None:
+                st.plotly_chart(figure, width='stretch')
+            st.caption(f"{len(edges_frame):,} of {len(edges):,} evidenced ties shown. The layout is a "
+                       "spring embedding for legibility, not a finding: two actors drawn close are not "
+                       "thereby related.")
+
+        interpretations = bundle_text(ROOT, ("sna_analysis_markdown",
+                                             "sna_castells_interpretation_markdown"))
+        candidates = [(item["record_id"], interpretations.get(item["record_id"]) or {})
+                      for item in edges[:200]]
+        candidates = [(record_id, text) for record_id, text in candidates
+                      if any(text.get(field) for field in
+                             ("sna_analysis_markdown", "sna_castells_interpretation_markdown"))]
+        if candidates:
+            with st.expander("What the producer wrote about this network", expanded=False):
+                chosen = st.selectbox("Video", [record_id for record_id, _ in candidates],
+                                      key="sna_interpretation_video")
+                written = dict(candidates)[chosen]
+                for field, heading in (
+                    ("sna_analysis_markdown", "Relation extraction"),
+                    ("sna_castells_interpretation_markdown", "Castells interpretation (not empirical fact)"),
+                ):
+                    if written.get(field):
+                        st.markdown(f"**{heading}**")
+                        st.markdown(str(written[field])[:6000])
 
 with tabs[6]:
     st.subheader("Problems the producer recorded")
