@@ -93,6 +93,36 @@ coverage; the served checkout is git and its tree is clean; the service answers
 **A dirty served tree is a failure even when the commit hash is right**: it means the code being
 served is not the commit being named.
 
+## Exact approved-cohort validation (required before closing #242)
+
+The default verifier checks the 1,500 total, country counts, field allowlist, stage
+coverage and running service. **Those checks alone do not prove membership** in the
+approved Monday500 cohort. The private repository also contains the authoritative
+`analysis/ep24_reprocess/sample_roster/monday500_roster.txt` and the cleaned
+per-country DataFrames under `analysis/live_steps_1_7/cleaned/`.
+
+Run this additional fail-closed verification on an authorized checkout where Git LFS
+artifacts are materialized:
+
+```bash
+python scripts/ep24/verify_researcher_dashboard.py \
+    --data-root /path/to/LaclauGPT-Private/analysis/live_steps_1_7 \
+    --approved-roster /path/to/LaclauGPT-Private/analysis/ep24_reprocess/sample_roster/monday500_roster.txt \
+    --served-dir /path/to/served/visualization \
+    --expected-commit "$(git -C /path/to/served/visualization rev-parse HEAD)" \
+    --url http://100.115.95.109:8502
+```
+
+The membership check reads the canonical `_storage_id` column from the **private
+cleaned DataFrames**, compares its exact 500 IDs per country with the approved
+roster, and rejects duplicates, missing IDs, substituted videos or unreadable files.
+It does **not** export those canonical storage identifiers to the researcher UI.
+
+A passing legacy 16/16 check or a healthy HTTP endpoint cannot substitute for this
+test. Record the verifier output and served revision in the issue before closing it.
+If the cleaned DataFrames and dashboard index have been rebuilt at different times,
+rebuild them from the same authoritative producer cohort before approval.
+
 ## Code update vs data update
 
 They are separate, and should stay separate.
