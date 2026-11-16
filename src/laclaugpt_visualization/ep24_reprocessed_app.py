@@ -56,6 +56,14 @@ except ModuleNotFoundError:  # standalone deployment: only this module was shipp
         unpack,
     )
 
+from laclaugpt_visualization.ep24_presentation import (
+    readable,
+    render_browser,
+    render_inspector,
+    render_overview,
+    researcher_csv,
+)
+
 st.set_page_config(page_title="EP24 Reprocessed", layout="wide")
 # Security gate (#62): if LACLAUGPT_VIS_DEMO_PASSWORD is set, nothing is read until it is entered.
 require_demo_password()
@@ -64,8 +72,17 @@ st.caption("Read-only multimodal pipeline evidence | Separate from AI26 | " + SC
 root = os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR", "data")
 st.sidebar.caption("Read-only data root configured by the server operator.")
 frame = read_records(root)
+corpus_total = len(frame)
 manifest = read_manifest(root)
 if manifest:
+    cohort = manifest.get("approved_cohort")
+    if cohort:
+        st.caption("Approved cohort: " + str(cohort.get("dataset"))
+                   + " · roster SHA256: " + str(cohort.get("sha256")))
+        if any(cohort.get("missing_counts", {}).values()):
+            st.warning("Some approved cohort videos are missing from this snapshot.")
+    else:
+        st.warning("Approved 500-video cohort membership is unverified for this export.")
     st.caption("Loaded export: " + str(manifest.get("generated_at", "timestamp unknown"))
                + " | contract: " + str(manifest.get("contract") or manifest.get("schema")
                                        or manifest.get("record_unit") or "unknown")
@@ -120,14 +137,14 @@ if date_field is not None:
         if isinstance(picked, (tuple, list)) and len(picked) == 2:
             frame = frame.loc[dates.dt.date.between(picked[0], picked[1])]
 view = st.sidebar.radio("Research view", [
-    "Pipeline overview", "Multimodal · Steps 0–5",
+    "Corpus overview", "Video browser", "Pipeline overview", "Multimodal · Steps 0–5",
     "Laclaudian discourse · Step 6", "DNA · Step 7",
     "Social network · Step 8", "Combined multilayer", "RDF · Step 9",
     "Legacy / QA", "Data & methods",
 ])
 data = rows(frame)
 st.caption(f"{len(data)} records match current filters. All graph views are bounded and evidence-linked.")
-st.download_button("Download filtered video table (CSV)", data=frame.to_csv(index=False).encode("utf-8-sig"),
+st.download_button("Download filtered video table (CSV)", data=researcher_csv(frame),
                    file_name="ep24_filtered_videos.csv", mime="text/csv",
                    help="Contains the current filtered research data; only download to an approved location.")
 
@@ -136,7 +153,16 @@ def table(items, key):
     if not items:
         st.info("No exported evidence available for this view.")
         return
-    event = st.dataframe(pd.DataFrame(items), use_container_width=True,
+    event = st.dataframe(pd.DataFrame([{k.replace("_", " ").capitalize(): readable(v)
+                                        for k, v in item.items()
+                                        if k in {"document", "step", "stage", "status", "records",
+                                                 "source", "target", "type", "label", "country",
+                                                 "actor", "actor_name_raw", "concept", "concept_name_raw",
+                                                 "stance", "position", "evidence", "evidence_quote",
+                                                 "relation_type", "quote", "confidence", "uncertainty",
+                                                 "Concepts and evidence", "abstention", "read", "exported", "duplicates",
+                                                 "invalid_ids", "processing_status", "processing_reason", "quality"}}
+                                       for item in items]), use_container_width=True,
                          on_select="rerun", selection_mode="single-row", key=key)
     chosen = getattr(event, "selection", None)
     rows_selected = list(getattr(chosen, "rows", []) or [])
@@ -151,7 +177,9 @@ def pick_record():
     if not names:
         st.warning("No records with stable source identities")
         return None
-    labels = [f"{i+1}: {name}" for i, (name, _) in enumerate(names)]
+    labels = [f"{i+1}: {text(row.get('title')) or 'Untitled video'} · "
+              f"{text(row.get('country'))} · {text(row.get('source_type'))}"
+              for i, (_, row) in enumerate(names)]
     wanted = st.session_state.get("ep24_inspect")
     default = next((i for i, (name, _) in enumerate(names) if name == wanted), 0)
     selected = st.selectbox("Inspect source record", range(len(labels)), index=default,
@@ -160,29 +188,12 @@ def pick_record():
     return names[selected][1]
 
 def inspect(row):
-    if not row:
-        return
-    st.subheader("Evidence inspector")
-    st.caption("All values are verbatim exported fields. Missing means unavailable, not negative evidence.")
-    st.write({"document_identity": identity(row), "country": row.get("country"),
-              "video_id": row.get("video_id"), "storage_id": row.get("_storage_id"),
-              "source_platform": row.get("source_type")})
-    for step, (label, keys) in STAGES.items():
-        with st.expander(f"Step {step} · {label} · {status(row, step, rdf_available=bool(rdf_files(root)))}"):
-            values = {k: unpack(row[k]) for k in keys if k in row and text(row.get(k))}
-            # Keep every extra per-stage provenance key inspectable.
-            prefixes = {1: ("asr_", "ocr_", "preprocess_"), 2: ("frame_analysis_",),
-                        3: ("vllm_video_",), 4: ("summary_",),
-                        5: ("postprocess_", "ep24_"), 6: ("laclau_", "formula_of_populism_"),
-                        7: ("dna_",), 8: ("sna_",)}
-            for key in row:
-                if (key not in values
-                        and any(key.startswith(prefix) for prefix in prefixes.get(step, ()))
-                        and text(row.get(key))):
-                    values[key] = unpack(row[key])
-            st.json(values if values else {"availability": "not exported"})
-    with st.expander("Complete source/export row"):
+    render_inspector(root, row)
+    # Technical material is a separate opt-in operator surface, disabled by default.
+    if (row and os.environ.get("LACLAUGPT_VIS_EP24_DIAGNOSTICS") == "1"
+            and st.checkbox("Show Diagnostics / Provenance")):
         st.json({k: unpack(v) for k, v in row.items()})
+
 
 def evidence_rows(field, inner):
     output = []
@@ -196,7 +207,13 @@ def evidence_rows(field, inner):
                     output.append({"document": identity(row), **item})
     return output
 
-if view == "Pipeline overview":
+if view == "Corpus overview":
+    render_overview(frame, corpus_total)
+    inspect(pick_record())
+elif view == "Video browser":
+    render_browser(frame)
+    inspect(pick_record())
+elif view == "Pipeline overview":
     st.subheader("Step-by-step observability")
     summary = []
     for step, (label, _) in STAGES.items():
@@ -213,12 +230,12 @@ elif view == "Multimodal · Steps 0–5":
                "ocr_1", "frame_analysis_1", "vllm_video_analysis",
                "summary_analysis", "postprocess_entities", "postprocess_themes")
                if k in frame]
-    st.dataframe(frame[columns].head(1000), use_container_width=True)
+    render_browser(frame)
     inspect(pick_record())
 elif view == "Laclaudian discourse · Step 6":
     st.warning("Candidate interpretations require researcher review; counts never prove hegemony.")
     table([{"document": identity(row), "status": status(row, 6),
-           "structured": text(row.get("laclau_structured_json")),
+           "Concepts and evidence": readable(row.get("laclau_structured_json")),
            "abstention": text(row.get("laclau_abstention_reason"))} for row in data
            if status(row, 6) != "unavailable"], "laclau_table")
     inspect(pick_record())
@@ -239,12 +256,37 @@ elif view == "DNA · Step 7":
     else:
         st.info("No DNA statements in the export for this selection. "
                 "This may indicate an incomplete upstream stage.")
+    from laclaugpt_visualization.researcher_views import dna_network_figure
+    figure = dna_network_figure(list(evidence.items))
+    if figure is not None:
+        st.plotly_chart(figure, use_container_width=True)
+        st.caption("Bounded actor–concept projection. Positions and quotations are in the statement table.")
     table(list(evidence.items)[:2500], "dna_table")
     inspect(pick_record())
 elif view == "Social network · Step 8":
     st.caption("Only edges provided with source, target, type and evidence can count as SNA ties.")
     edges = evidence_rows("sna_edges_json", "edges")
-    edges = [e for e in edges if e.get("evidence_quote") and e.get("relation_type")]
+    edges = [e for e in edges if e.get("evidence_quote") and e.get("relation_type")
+             and e.get("source") and e.get("target")]
+    if edges:
+        import networkx as nx
+        import plotly.graph_objects as go
+        network = nx.DiGraph()
+        for edge in edges[:300]:
+            network.add_edge(str(edge["source"]), str(edge["target"]))
+        positions = nx.spring_layout(network, seed=17)
+        figure = go.Figure()
+        for edge in edges[:300]:
+            a, b = positions[str(edge["source"])], positions[str(edge["target"])]
+            figure.add_trace(go.Scatter(x=[a[0], b[0]], y=[a[1], b[1]], mode="lines",
+                                       text=[readable(edge)] * 2, hoverinfo="text", showlegend=False))
+        figure.add_trace(go.Scatter(x=[positions[n][0] for n in network],
+                                   y=[positions[n][1] for n in network], mode="markers+text",
+                                   text=list(network), showlegend=False))
+        figure.update_layout(height=450, xaxis={"visible": False}, yaxis={"visible": False})
+        st.plotly_chart(figure, use_container_width=True)
+        st.caption("At most 300 exported evidenced ties. Direction/type and source videos remain "
+                   "in the evidence table; layout is descriptive.")
     table(edges[:2500], "sna_table")
     inspect(pick_record())
 elif view == "Combined multilayer":

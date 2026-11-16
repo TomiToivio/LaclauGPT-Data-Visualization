@@ -16,13 +16,28 @@ import plotly.io as pio
 import streamlit as st
 
 from laclaugpt_visualization.demo_auth import require_demo_password
+from laclaugpt_visualization.ep24_presentation import hydrate_record, render_browser
 from laclaugpt_visualization.ep24_reprocessed import (
-    read_records, read_manifest, rows, identity, dna_evidence, multilayer,
-    status, STAGES, unpack, rdf_files,
+    STAGES,
+    dna_evidence,
+    identity,
+    multilayer,
+    rdf_files,
+    read_manifest,
+    read_records,
+    rows,
+    status,
+    unpack,
 )
 from laclaugpt_visualization.ep24_researcher import (
-    COUNTRIES, DISPLAY, DNA_FIELDS, SNA_FIELDS, cohort_warnings,
-    coverage, evidence_sections, friendly, research_children, view,
+    COUNTRIES,
+    DNA_FIELDS,
+    SNA_FIELDS,
+    cohort_warnings,
+    coverage,
+    evidence_sections,
+    friendly,
+    research_children,
 )
 
 st.set_page_config(page_title="EP2024 · FI/PL/PT research", layout="wide")
@@ -34,8 +49,8 @@ palette = ["#6C63FF", "#00C2A8", "#FF6B8A", "#FFA94D", "#4DABF7",
            "#B197FC", "#63E6BE", "#F783AC", "#FFD43B", "#74C0FC"]
 legacy_theme = go.layout.Template()
 legacy_theme.layout = go.Layout(colorway=palette, paper_bgcolor="#FFFFFF",
-    plot_bgcolor="#FAFBFF", font=dict(family="Inter, Segoe UI, sans-serif",
-    size=13, color="#0F172A"))
+    plot_bgcolor="#FAFBFF", font={"family": "Inter, Segoe UI, sans-serif",
+    "size": 13, "color": "#0F172A"})
 pio.templates["ep2024_groovy"] = legacy_theme
 pio.templates.default = "ep2024_groovy"
 st.title("EP2024 · Finland, Poland & Portugal")
@@ -49,6 +64,20 @@ if frame.empty:
     st.stop()
 
 warnings = cohort_warnings(frame, manifest)
+roster_path = os.environ.get("EP24_APPROVED_ROSTER")
+if not roster_path:
+    warnings.append("Configure the approved roster path to verify exact cohort membership.")
+else:
+    from laclaugpt_visualization.ep24_cohort import is_member, read_roster
+    try:
+        approved, roster_manifest = read_roster(Path(roster_path))
+        if roster_manifest["sha256"] != (manifest.get("approved_cohort") or {}).get("sha256"):
+            warnings.append("Approved roster checksum differs from the export manifest.")
+        if any(not is_member(row, str(row.get("country", "")).lower(), approved)
+               for row in frame.to_dict("records")):
+            warnings.append("Export includes records outside the approved cohort.")
+    except (OSError, ValueError) as exc:
+        warnings.append("Approved roster could not be validated: " + type(exc).__name__)
 for warning in warnings:
     st.warning(warning)
 if not warnings:
@@ -149,17 +178,13 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("Searchable video catalogue")
-    shown = view(frame)
-    table(shown, "videos")
-    st.download_button("Download researcher-readable filtered CSV",
-                       data=shown.to_csv(index=False).encode("utf-8-sig"),
-                       file_name="ep24_research_videos.csv", mime="text/csv")
+    render_browser(frame)
     if data:
         options = [f"{i+1}. {row.get('country', '')} · {row.get('video_id', 'unknown')}"
                    for i, row in enumerate(data)]
         selected = st.selectbox("Inspect a video", range(len(data)),
                                 format_func=lambda i: options[i])
-        row = data[selected]
+        row = hydrate_record(root, data[selected])
         st.caption(f"Source: {friendly(row.get('source_url')) or 'No source link exported'}")
         for heading, value in evidence_sections(row):
             with st.expander(heading, expanded=heading in (
@@ -237,13 +262,13 @@ with tabs[5]:
                 yy += [positions[a][1], positions[b][1], None]
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=xx, y=yy, mode="lines",
-                line=dict(color="#8b97a7"), hoverinfo="skip"))
+                line={"color": "#8b97a7"}, hoverinfo="skip"))
             fig.add_trace(go.Scatter(
                 x=[positions[n][0] for n in network],
                 y=[positions[n][1] for n in network], text=list(network),
-                mode="markers", hoverinfo="text", marker=dict(size=10)))
+                mode="markers", hoverinfo="text", marker={"size": 10}))
             fig.update_layout(height=560, showlegend=False,
-                xaxis=dict(visible=False), yaxis=dict(visible=False))
+                xaxis={"visible": False}, yaxis={"visible": False})
             st.plotly_chart(fig, use_container_width=True)
     st.caption("Only upstream relationships carrying an evidence quotation and type appear here.")
 

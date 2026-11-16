@@ -96,6 +96,10 @@ def status(row: Mapping[str, Any], stage: int, *, rdf_available: bool = False) -
             return "retry"
         if val in {"ok", "complete", "completed", "success", "analyzed", "done"}:
             return "complete"
+        if val in {"claimed", "processing", "in_progress", "running"}:
+            return "running"
+        if val in {"pending", "not_run", "not started", "queued"}:
+            return "not run"
         if val in {"skipped", "deleted", "delete"}:
             return "skipped"
         return val
@@ -207,7 +211,7 @@ def record_key(row: Mapping[str, Any]) -> str:
     The EP24 exporter writes ``record_id`` into every index row and keys its text bundles by the same
     value, so the bundle can be read without guessing at identity rules.
     """
-    return text(row.get("record_id")) or identity(row)
+    return text(row.get("record_id")) or text(row.get("record_key")) or identity(row)
 
 
 def _country_aliases(country: str) -> set[str]:
@@ -250,8 +254,12 @@ def read_bundle_field(root: str | Path, field: str,
                         payload = json.loads(line)
                     except ValueError:
                         continue
-                    key = text(payload.get("record_id"))
-                    entries = _dicts(payload.get(field))
+                    key = text(payload.get("record_id")) or text(payload.get("record_key"))
+                    value = payload.get(field)
+                    if value is None:
+                        value = next((block[field] for block in payload.values()
+                                      if isinstance(block, dict) and field in block), None)
+                    entries = _dicts(value)
                     if key and entries:
                         scanned[key] = entries
             _BUNDLE_MEMO[memo_key] = scanned

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
+
 import pandas as pd
 
-from laclaugpt_visualization.ep24_reprocessed import unpack, text, identity, status, STAGES
+from laclaugpt_visualization.ep24_reprocessed import STAGES, status
 
 # Display columns are deliberately enumerated. No pipeline columns can leak via exports.
 DISPLAY = {
@@ -42,15 +44,8 @@ EXPECTED_DATASET = "ep24_monday500_20261031"
 
 def friendly(value: Any) -> str:
     """Render structured evidence as a readable line, never Python/JSON repr."""
-    value = unpack(value)
-    if value is None:
-        return ""
-    if isinstance(value, dict):
-        return "; ".join(f"{str(k).replace('_', ' ').capitalize()}: {friendly(v)}"
-                         for k, v in value.items() if friendly(v))
-    if isinstance(value, list):
-        return " • ".join(friendly(item) for item in value if friendly(item))
-    return text(value)
+    from laclaugpt_visualization.ep24_presentation import readable
+    return readable(value)
 
 
 def view(frame: pd.DataFrame, *, full: bool = False) -> pd.DataFrame:
@@ -71,7 +66,7 @@ def cohort_warnings(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> list[st
         warnings.append("No export manifest: provenance unverified.")
     # Never turn a blank manifest into a claim that this is Monday500.
     run = str(manifest.get("dataset") or manifest.get("dataset_id")
-              or manifest.get("run_id") or "").strip()
+              or manifest.get("run_id") or (manifest.get("approved_cohort") or {}).get("dataset") or "").strip()
     if not run:
         inputs = manifest.get("inputs") or {}
         declared = {str(v.get("dataset") or v.get("dataset_id") or "").strip()
@@ -98,6 +93,12 @@ def cohort_warnings(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> list[st
         other = frame["dataset"].dropna().astype(str)
         if not other.empty and not other.eq(EXPECTED_DATASET).all():
             warnings.append("Some exported rows belong to another dataset.")
+    cohort = manifest.get("approved_cohort") or {}
+    if not cohort.get("sha256") or cohort.get("approved_counts") != dict.fromkeys(
+            ("finland", "poland", "portugal"), 500):
+        warnings.append("Explicit approved cohort manifest and roster checksum are required.")
+    if "_storage_id" not in frame or frame["_storage_id"].nunique() != len(frame):
+        warnings.append("Cohort identities missing or duplicated.")
     return warnings
 
 
