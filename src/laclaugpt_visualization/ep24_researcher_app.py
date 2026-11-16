@@ -32,6 +32,7 @@ from laclaugpt_visualization.ep24_children import (
 from laclaugpt_visualization.ep24_children import (
     term_counts as child_term_counts,
 )
+from laclaugpt_visualization.ep24_children import select_children
 from laclaugpt_visualization.ep24_presentation import hydrate_record, render_browser
 from laclaugpt_visualization.ep24_reprocessed import (
     STAGES,
@@ -183,6 +184,8 @@ if "published_at" in frame or "created_at" in frame:
             frame = frame.loc[times.dt.date.between(*dates)]
 
 data = rows(frame)
+# Children must follow every country/platform/date/search filter, not the whole export.
+SELECTED_CHILDREN = select_children(CHILDREN, data)
 st.metric("Videos matching filters", f"{len(frame):,}")
 st.caption("Counts use filtered exported rows. Missing stage evidence is not a negative finding.")
 tabs = st.tabs(["Overview", "Videos & multimodal evidence", "Entities and themes",
@@ -260,8 +263,8 @@ with tabs[2]:
                               ("postprocess_themes", "Themes", "themes")):
         st.subheader(label)
         terms = list_terms(key)
-        if terms.empty and CHILDREN.get(child):
-            terms = pd.DataFrame(child_term_counts(CHILDREN[child]))
+        if terms.empty and SELECTED_CHILDREN.get(child):
+            terms = pd.DataFrame(child_term_counts(SELECTED_CHILDREN[child]))
         if not terms.empty:
             st.plotly_chart(px.bar(terms.head(20), x="Videos / mentions", y="Term",
                                    orientation="h", title=label),
@@ -287,8 +290,8 @@ with tabs[4]:
     evidence = dna_evidence(data, root)
     items = list(evidence.items)
     source_note = evidence.source
-    if not items and CHILDREN.get("dna"):
-        items = child_statements(CHILDREN["dna"])
+    if not items and SELECTED_CHILDREN.get("dna"):
+        items = child_statements(SELECTED_CHILDREN["dna"])
         source_note = f"the export's dna_statements table ({len(items):,} statements)"
     st.caption(f"{len(items)} evidenced statements, from {source_note}. "
                "Actor–concept relations are not actor–actor social ties.")
@@ -305,8 +308,8 @@ with tabs[4]:
 with tabs[5]:
     st.subheader("Social Network Analysis · evidenced actor–actor ties")
     ties = []
-    if CHILDREN.get("sna_edges") and not any(record.get("sna_edges_json") for record in data[:50]):
-        nodes_rows, edge_rows = child_network(CHILDREN.get("sna_nodes", []), CHILDREN["sna_edges"])
+    if SELECTED_CHILDREN.get("sna_edges") and not any(record.get("sna_edges_json") for record in data[:50]):
+        nodes_rows, edge_rows = child_network(SELECTED_CHILDREN.get("sna_nodes", []), SELECTED_CHILDREN["sna_edges"])
         ties = [{"document": edge.get("source", ""), "source_actor": edge["source"],
                  "target_actor": edge["target"], "relation_type": edge["relation_type"],
                  "evidence_quote": edge["evidence_quote"]} for edge in edge_rows
@@ -356,11 +359,11 @@ with tabs[6]:
     graph = multilayer(data, max_records=250, max_edges=1500)
     for warning in graph.warnings:
         st.warning(warning)
-    if not graph.edges and (CHILDREN.get("sna_edges") or CHILDREN.get("dna")):
+    if not graph.edges and (SELECTED_CHILDREN.get("sna_edges") or SELECTED_CHILDREN.get("dna")):
         # The parent rows carry no embedded graph in this export; the layers live in child tables.
         counts_rows = []
         for name, label in (("dna", "actor–concept (DNA)"), ("sna_edges", "actor–actor (SNA)")):
-            rows = CHILDREN.get(name) or []
+            rows = SELECTED_CHILDREN.get(name) or []
             videos = {str(row.get("source_key") or "") for row in rows if row.get("source_key")}
             counts_rows.append({"Layer": label, "Rows": len(rows), "Videos": len(videos)})
         st.caption("The export keeps these layers in child tables; their measured extent is below.")
