@@ -58,6 +58,8 @@ except ModuleNotFoundError:  # standalone deployment: only this module was shipp
         unpack,
     )
 
+from laclaugpt_visualization.ep24_legacy_workbench import render_aggregates, render_record
+
 from laclaugpt_visualization.ep24_presentation import (
     readable,
     render_browser,
@@ -138,7 +140,8 @@ if date_field is not None:
         if isinstance(picked, (tuple, list)) and len(picked) == 2:
             frame = frame.loc[dates.dt.date.between(picked[0], picked[1])]
 view = st.sidebar.radio("Research view", [
-    "Corpus overview", "Video browser", "Pipeline overview", "Multimodal · Steps 0–5",
+    "Corpus overview", "Video browser", "Legacy record workbench",
+    "Legacy corpus aggregates", "Pipeline overview", "Multimodal · Steps 0–5",
     "Laclaudian discourse · Step 6", "DNA · Step 7",
     "Social network · Step 8", "Combined multilayer", "RDF · Step 9",
     "Legacy / QA", "Data & methods",
@@ -214,6 +217,12 @@ if view == "Corpus overview":
 elif view == "Video browser":
     render_browser(frame)
     inspect(pick_record())
+elif view == "Legacy record workbench":
+    selected_record = pick_record()
+    render_record(root, selected_record)
+    inspect(selected_record)
+elif view == "Legacy corpus aggregates":
+    render_aggregates(root, frame)
 elif view == "Pipeline overview":
     st.subheader("Step-by-step observability")
     summary = []
