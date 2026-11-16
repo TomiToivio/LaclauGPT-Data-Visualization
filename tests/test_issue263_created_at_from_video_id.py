@@ -19,12 +19,14 @@ from laclaugpt_visualization.ep24_reprocessed import (
 
 def test_the_date_is_read_out_of_the_id():
     assert created_at_from_video_id("HEPP24-FI-CR-IG-20240521-1027000") == pd.Timestamp(
-        "2024-05-21 10:27:00", tz="UTC")
+        "2024-05-21", tz="UTC")
 
 
-def test_the_fraction_after_the_seconds_is_kept():
-    stamp = created_at_from_video_id("HEPP24-PL-CR-FB-20240616-2359595")
-    assert stamp == pd.Timestamp("2024-06-16 23:59:59.500000", tz="UTC")
+def test_the_trailing_field_is_not_read_as_a_clock_time():
+    """180 distinct trailing values (1010000 .. 4080000); 366 cannot be any HHMMSS. It is a sequence, so the
+    derivation stops at the date rather than inventing a time of day."""
+    assert created_at_from_video_id("HEPP24-FI-CR-IG-20240527-1090000") == pd.Timestamp("2024-05-27", tz="UTC")
+    assert created_at_from_video_id("HEPP24-PL-CR-FB-20240616-4080000") == pd.Timestamp("2024-06-16", tz="UTC")
 
 
 @pytest.mark.parametrize("bad", ["", None, "nonsense", "HEPP24-FI-CR-IG-20240521", "HEPP24-FI-IG-99999999-1"])
@@ -39,7 +41,7 @@ def test_a_real_created_at_wins_over_the_derivation():
     })
     result = add_created_at(frame)
     assert result["created_at"].iloc[0] == pd.Timestamp("2024-06-01", tz="UTC")
-    assert result["created_at"].iloc[1] == pd.Timestamp("2024-05-22 10:27:00", tz="UTC")
+    assert result["created_at"].iloc[1] == pd.Timestamp("2024-05-22", tz="UTC")
     assert result.attrs["created_at_derived"] == 1
 
 
