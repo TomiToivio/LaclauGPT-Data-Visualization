@@ -110,6 +110,14 @@ FILTERS: dict[str, str] = {
 #: Legacy filters with no reprocessed source (the legacy workbench could filter on these).
 UNSUPPORTED_FILTERS = ("ManifestoBERTa class", "LDA topic", "Whisper model-free entity filter")
 
+PLATFORM_DERIVATION = "Platform is represented by the exported source_type and account_type fields; no legacy platform class is inferred."
+
+
+def label_for(column: str) -> str:
+    """Human-readable label for a field already approved for display."""
+    return column.replace("_", " ").strip().capitalize()
+
+
 
 @dataclass(frozen=True)
 class Parity:
