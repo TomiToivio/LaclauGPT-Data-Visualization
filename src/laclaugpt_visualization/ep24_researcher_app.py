@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -17,12 +18,27 @@ import streamlit as st
 
 from laclaugpt_visualization.demo_auth import require_demo_password
 from laclaugpt_visualization.ep24_reprocessed import (
-    read_records, read_manifest, rows, identity, dna_evidence, multilayer,
-    status, STAGES, unpack, rdf_files,
+    STAGES,
+    dna_evidence,
+    identity,
+    multilayer,
+    rdf_files,
+    read_manifest,
+    read_records,
+    rows,
+    status,
+    unpack,
 )
 from laclaugpt_visualization.ep24_researcher import (
-    COUNTRIES, DISPLAY, DNA_FIELDS, SNA_FIELDS, cohort_warnings,
-    coverage, evidence_sections, friendly, research_children, view,
+    COUNTRIES,
+    DNA_FIELDS,
+    SNA_FIELDS,
+    cohort_warnings,
+    coverage,
+    evidence_sections,
+    friendly,
+    research_children,
+    view,
 )
 
 st.set_page_config(page_title="EP2024 · FI/PL/PT research", layout="wide")
@@ -34,8 +50,8 @@ palette = ["#6C63FF", "#00C2A8", "#FF6B8A", "#FFA94D", "#4DABF7",
            "#B197FC", "#63E6BE", "#F783AC", "#FFD43B", "#74C0FC"]
 legacy_theme = go.layout.Template()
 legacy_theme.layout = go.Layout(colorway=palette, paper_bgcolor="#FFFFFF",
-    plot_bgcolor="#FAFBFF", font=dict(family="Inter, Segoe UI, sans-serif",
-    size=13, color="#0F172A"))
+    plot_bgcolor="#FAFBFF", font={"family": "Inter, Segoe UI, sans-serif",
+    "size": 13, "color": "#0F172A"})
 pio.templates["ep2024_groovy"] = legacy_theme
 pio.templates.default = "ep2024_groovy"
 st.title("EP2024 · Finland, Poland & Portugal")
@@ -237,13 +253,13 @@ with tabs[5]:
                 yy += [positions[a][1], positions[b][1], None]
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=xx, y=yy, mode="lines",
-                line=dict(color="#8b97a7"), hoverinfo="skip"))
+                line={"color": "#8b97a7"}, hoverinfo="skip"))
             fig.add_trace(go.Scatter(
                 x=[positions[n][0] for n in network],
                 y=[positions[n][1] for n in network], text=list(network),
-                mode="markers", hoverinfo="text", marker=dict(size=10)))
+                mode="markers", hoverinfo="text", marker={"size": 10}))
             fig.update_layout(height=560, showlegend=False,
-                xaxis=dict(visible=False), yaxis=dict(visible=False))
+                xaxis={"visible": False}, yaxis={"visible": False})
             st.plotly_chart(fig, use_container_width=True)
     st.caption("Only upstream relationships carrying an evidence quotation and type appear here.")
 

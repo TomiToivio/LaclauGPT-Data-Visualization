@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
+
 import pandas as pd
 
-from laclaugpt_visualization.ep24_reprocessed import unpack, text, identity, status, STAGES
+from laclaugpt_visualization.ep24_reprocessed import STAGES, status, text, unpack
 
 # Display columns are deliberately enumerated. No pipeline columns can leak via exports.
 DISPLAY = {
