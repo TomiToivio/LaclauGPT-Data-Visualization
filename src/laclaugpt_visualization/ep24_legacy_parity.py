@@ -336,7 +336,8 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     if "country" in children:
         subset_fields.append("country")
     subset = children[children["field"] == field][subset_fields].drop_duplicates()
-    merged = subset.merge(dates[join_keys + ["month"]], on=join_keys, how="inner",\n                          validate="many_to_one")
+    merged = subset.merge(dates[join_keys + ["month"]], on=join_keys, how="inner",
+                          validate="many_to_one")
     if merged.empty:
         return empty
     top = merged["item.label"].astype(str).value_counts().head(limit).index
