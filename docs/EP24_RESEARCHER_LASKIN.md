@@ -21,16 +21,16 @@ for the live-steps cohort.
 | URL | `http://100.115.95.109:8502/` (Tailscale address of `laskin01`) |
 | Code | `LaclauGPT-Data-Visualization@main` |
 | App | `src/laclaugpt_visualization/ep24_researcher_app.py` |
-| Data | `analysis/ep24/pouta_exports/fiplpt_500_20261115/` (checkpoint export + approved roster) |
+| Data | `analysis/ep24/pouta_exports/fiplpt_500_20261115/` (checkpoint export, FI/PL/PT 500 each) |
 | Service | `laclaugpt-ep24-researcher.service` (systemd **user** unit) |
 | Neighbours | `:8501` AI26 dashboard, `:8503` live-steps operations — neither is touched |
 
 ## What the researcher sees
 
 The corpus is 1 500 videos — Finland, Poland and Portugal, 500 each — from the
-`ep24_monday500_20261031` run of the multimodal pipeline. The dashboard gates on an **approved
-cohort roster** (`approved_cohort.txt`, 1 500 identities, digest recorded in the export manifest);
-see `docs/EP24_COHORT_APPROVAL.md` for how it is built and what it proves. The app is read-only: it opens the export
+`ep24_monday500_20261031` run of the multimodal pipeline. The dashboard reports what the export contains and renders it; country counts that differ from 500
+are stated as measured. Cohort approval (`docs/EP24_COHORT_APPROVAL.md`) is optional bookkeeping, not
+a condition for the dashboard to open. The app is read-only: it opens the export
 files, never MongoDB, Redis, Slurm, a GPU or Ollama, and it writes nothing back.
 
 Tabs: Overview · Videos & multimodal evidence · Entities and themes · Laclau discourse · DNA · SNA ·
@@ -171,3 +171,17 @@ the environment, never in the repository.
   knowledge-graph view for it rather than an empty one.
 - Step 8 (SNA) is partial; the UI reports the coverage and the edge evidence, and does not infer ties
   the producer did not emit.
+
+
+## The :8502 service after 2026-11-16
+
+- App: `ep24_researcher_app.py`, ten tabs (Overview · Videos & multimodal evidence · Entities and
+  themes · Laclau discourse · DNA · SNA · Multilayer · RDF & methods · Legacy analytics · Export).
+- Data: `fiplpt_500_20261115` — 1 500 videos, 500 per country, stages 0–9 with per-stage outcomes.
+  Findings live in the export's child tables (`entities`, `themes`, `dna_statements`, `sna_nodes`,
+  `sna_edges`) keyed by `source_key`; the app reads them through `ep24_children.py`.
+- Access: Tailscale address only, plus the password in
+  `~/.config/laclaugpt/ep24-researcher.env` (mode 0600, loaded as a systemd `EnvironmentFile`).
+- The live-steps explorer from the earlier deployment remains available at
+  `:8503` (`laclaugpt-live-steps.service`) as the operations view; `:8501` and the EP24 reprocessed
+  service on `:18506` are untouched.

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Serve the EP24 FI/PL/PT researcher dashboard on Laskin (issue #242, target :8502).
 #
-# Public dashboard code reads private 500-video-per-country exported snapshots.
-# No cohort roster is needed. Require a protected password and the actual combined.csv.
+# The app is public code; the export is private data: 500 processed videos per country, read from
+# LACLAUGPT_VIS_ANALYSIS_DATA_DIR - never a path inside this repository. No cohort roster is needed;
+# a protected password and the actual combined.csv are.
 #
 #   LACLAUGPT_VIS_ANALYSIS_DATA_DIR=... scripts/ep24/serve_researcher_dashboard.sh [port] [address]
 #
@@ -22,6 +23,11 @@ if [[ -z "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR:-}" ]]; then
 fi
 if [[ ! -f "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}/combined.csv" ]]; then
   echo "no combined.csv under ${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}" >&2
+  exit 2
+fi
+# The cohort roster is optional: the export is shown as measured (issue #242, Tomi 2026-11-16).
+if [[ -n "${EP24_APPROVED_ROSTER:-}" && ! -f "${EP24_APPROVED_ROSTER}" ]]; then
+  echo "EP24_APPROVED_ROSTER is set but missing: ${EP24_APPROVED_ROSTER}" >&2
   exit 2
 fi
 if [[ -z "${LACLAUGPT_VIS_DEMO_PASSWORD:-}" ]]; then

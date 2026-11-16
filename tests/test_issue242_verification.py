@@ -7,7 +7,6 @@ not match the manifest, a producer column nobody classified, and a checkout serv
 from __future__ import annotations
 
 import csv
-import hashlib
 import importlib.util
 import json
 import subprocess
@@ -152,7 +151,8 @@ def test_http_health_reports_an_unreachable_service():
 
 def test_the_exit_status_is_the_number_of_failures(tmp_path, capsys):
     root = build(tmp_path, rows=10)
-    code = VERIFY.main(["--data-root", str(root), "--served-dir", str(tmp_path / "missing")])
+    code = VERIFY.main(["--data-root", str(root), "--served-dir", str(tmp_path / "missing"),
+                        "--allowlist", "auto"])
     assert code >= 1
     assert "checks passed" in capsys.readouterr().out
 
@@ -189,18 +189,12 @@ def test_the_checkpoint_dialect_normalises_into_the_artifact_shape():
     assert manifest["record_counts"]["exported_total"] == 1500
 
 
-def test_the_roster_check_requires_five_hundred_per_country(tmp_path):
-    roster = tmp_path / "approved_cohort.txt"
-    roster.write_text("\n".join(
-        f"monday500:{country}:{index:04x}"
-        for country in ("finland", "poland", "portugal") for index in range(500)
-    ) + "\n", encoding="utf-8")
-    digest = hashlib.sha256(roster.read_bytes()).hexdigest()
-    results = VERIFY.check_roster(tmp_path, {"approved_cohort": {"sha256": digest}})
-    assert all(item["status"] == "PASS" for item in results)
-    results = VERIFY.check_roster(tmp_path, {"approved_cohort": {"sha256": "0" * 64}})
-    assert any(item["status"] == "FAIL" for item in results), "a digest mismatch must fail"
-
+def test_a_deployment_without_a_roster_is_still_verifiable(tmp_path):
+    """Cohort bookkeeping is optional (Tomi, 2026-11-16): the export is shown as measured."""
+    root = build(tmp_path)
+    manifest, results = VERIFY.check_manifest(root)
+    results += VERIFY.check_artifacts(root, manifest)
+    assert [item for item in results if item["status"] == "FAIL"] == []
 
 def test_auto_allowlist_falls_back_to_the_display_list_and_says_so(tmp_path):
     """Two apps, two allowlists: the verifier must name which one it applied."""

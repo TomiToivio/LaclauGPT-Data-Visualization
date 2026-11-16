@@ -17,6 +17,21 @@ import plotly.io as pio
 import streamlit as st
 
 from laclaugpt_visualization.demo_auth import require_demo_password
+from laclaugpt_visualization.ep24_children import (
+    by_source as children_by_source,
+)
+from laclaugpt_visualization.ep24_children import (
+    load_children,
+)
+from laclaugpt_visualization.ep24_children import (
+    network as child_network,
+)
+from laclaugpt_visualization.ep24_children import (
+    statements as child_statements,
+)
+from laclaugpt_visualization.ep24_children import (
+    term_counts as child_term_counts,
+)
 from laclaugpt_visualization.ep24_presentation import hydrate_record, render_browser
 from laclaugpt_visualization.ep24_reprocessed import (
     STAGES,
@@ -35,11 +50,12 @@ from laclaugpt_visualization.ep24_researcher import (
     DISPLAY,
     DNA_FIELDS,
     SNA_FIELDS,
-    processed_export_warnings,
+    cohort_notes,
     coverage,
     declared_run,
     evidence_sections,
     friendly,
+    processed_export_warnings,
     research_children,
 )
 from laclaugpt_visualization.live_steps import (
@@ -79,15 +95,54 @@ if frame.empty:
     st.error("No private export loaded. Configure LACLAUGPT_VIS_ANALYSIS_DATA_DIR.")
     st.stop()
 
+# The export keeps one-to-many findings in child tables keyed by source_key. Read them once; the
+# views below prefer a JSON column inside the parent row when one exists and fall back to these.
+# The legacy timeline chart needs a month; this export carries timestamps instead. Derive it once,
+# and only when it is missing, so a producer that ships `month` still wins.
+if "month" not in frame.columns:
+    _derived = pd.Series([""] * len(frame), index=frame.index)
+    for _key in ("published_at", "created_at", "record_date", "timestamp"):
+        if _key in frame.columns:
+            _times = pd.to_datetime(frame[_key], errors="coerce", utc=True)
+            if _times.notna().any():
+                _derived = _times.dt.strftime("%Y-%m").fillna("")
+                break
+    if not _derived.astype(bool).any() and "video_id" in frame.columns:
+        # The EP24 media id embeds the publication date (HEPP24-FI-CR-IG-20240521-…); the same
+        # derivation the live-steps builder uses, so both views agree on the month axis.
+        _date = frame["video_id"].astype(str).str.extract(r"(20\d{6})", expand=False)
+        _parsed = pd.to_datetime(_date, format="%Y%m%d", errors="coerce")
+        _derived = _parsed.dt.strftime("%Y-%m").fillna("")
+    if _derived.astype(bool).any():
+        frame["month"] = _derived
+
+CHILDREN = load_children(root)
+CHILDREN_BY_SOURCE = {name: children_by_source(rows) for name, rows in CHILDREN.items()}
+
+# Structural validation: this dashboard presents 500 processed videos per country. It is not a
+# cohort-membership claim and needs no roster (issue #242, Tomi 2026-11-16) -- counts are checked
+# because "500 per country" is the shape of the export, not because a roster approved it.
 warnings = processed_export_warnings(frame, manifest)
 for warning in warnings:
     st.warning(warning)
-if warnings:
-    st.error("Export validation failed. Provide 500 distinct processed videos per FI/PL/PT country.")
-    st.stop()
-st.success("Loaded 500 distinct exported videos per country (1,500 total).")
-st.caption("These are processed-video exports, not cohort membership claims. "
-           "Later-stage results may be incomplete; see stage coverage.")
+
+COUNTRY_LABELS = {"finland": "Finland", "poland": "Poland", "portugal": "Portugal",
+                  "fi": "Finland", "pl": "Poland", "pt": "Portugal"}
+if "country" in frame.columns:
+    observed = (frame["country"].fillna("").astype(str).str.lower()
+                .map(lambda value: COUNTRY_LABELS.get(value, value.title() or "unknown"))
+                .value_counts())
+    st.caption(
+        "Loaded " + f"{len(frame):,} videos · "
+        + " · ".join(f"{country} {count}" for country, count in observed.items())
+        + (f" · dataset {declared_run(manifest)}" if declared_run(manifest) else "")
+    )
+    if not warnings:
+        st.success("Loaded 1,500 distinct processed videos — 500 per country.")
+    st.caption("These are processed-video exports, not cohort-membership claims; later stages may be "
+               "incomplete, which the stage coverage shows.")
+for note in cohort_notes(frame, manifest):
+    st.caption(note)
 
 if manifest:
     st.caption(f"Snapshot: {manifest.get('generated_at', 'not specified')} | "
@@ -201,10 +256,12 @@ with tabs[1]:
                             for step, (label, _) in STAGES.items()]), "stage status")
 
 with tabs[2]:
-    for key, label in (("postprocess_entities", "Entities"),
-                       ("postprocess_themes", "Themes")):
+    for key, label, child in (("postprocess_entities", "Entities", "entities"),
+                              ("postprocess_themes", "Themes", "themes")):
         st.subheader(label)
         terms = list_terms(key)
+        if terms.empty and CHILDREN.get(child):
+            terms = pd.DataFrame(child_term_counts(CHILDREN[child]))
         if not terms.empty:
             st.plotly_chart(px.bar(terms.head(20), x="Videos / mentions", y="Term",
                                    orientation="h", title=label),
@@ -228,9 +285,14 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("Discourse Network Analysis · actor–concept positions")
     evidence = dna_evidence(data, root)
-    st.caption(f"{len(evidence.items)} evidenced statements, from {evidence.source}. "
+    items = list(evidence.items)
+    source_note = evidence.source
+    if not items and CHILDREN.get("dna"):
+        items = child_statements(CHILDREN["dna"])
+        source_note = f"the export's dna_statements table ({len(items):,} statements)"
+    st.caption(f"{len(items)} evidenced statements, from {source_note}. "
                "Actor–concept relations are not actor–actor social ties.")
-    dna = research_children(list(evidence.items)[:3000], DNA_FIELDS)
+    dna = research_children(items[:3000], DNA_FIELDS)
     table(dna, "DNA statements")
     if not dna.empty and "Actor" in dna and "Concept" in dna:
         pairs = dna[(dna["Actor"] != "") & (dna["Concept"] != "")]
@@ -243,6 +305,14 @@ with tabs[4]:
 with tabs[5]:
     st.subheader("Social Network Analysis · evidenced actor–actor ties")
     ties = []
+    if CHILDREN.get("sna_edges") and not any(record.get("sna_edges_json") for record in data[:50]):
+        nodes_rows, edge_rows = child_network(CHILDREN.get("sna_nodes", []), CHILDREN["sna_edges"])
+        ties = [{"document": edge.get("source", ""), "source_actor": edge["source"],
+                 "target_actor": edge["target"], "relation_type": edge["relation_type"],
+                 "evidence_quote": edge["evidence_quote"]} for edge in edge_rows
+                if edge.get("evidence_quote") and edge.get("relation_type")]
+        st.caption(f"Edges read from the export's sna_edges table: {len(edge_rows):,} rows, "
+                   f"{len(ties):,} of them carrying both a relation type and a quotation.")
     for record in data:
         parsed = unpack(record.get("sna_edges_json"))
         if isinstance(parsed, dict):
@@ -260,7 +330,11 @@ with tabs[5]:
             if source and target:
                 network.add_edge(str(source), str(target))
         if network.number_of_edges():
-            positions = nx.spring_layout(network, seed=24)
+            # Spring layout reaches for scipy on large graphs, and scipy is not a dependency of this
+            # deployment; `node_layout` keeps the spring layout and falls back to a numpy force pass.
+            from laclaugpt_visualization.live_steps import node_layout
+
+            positions = node_layout(network)
             xx, yy = [], []
             for a, b in network.edges():
                 xx += [positions[a][0], positions[b][0], None]
@@ -282,6 +356,15 @@ with tabs[6]:
     graph = multilayer(data, max_records=250, max_edges=1500)
     for warning in graph.warnings:
         st.warning(warning)
+    if not graph.edges and (CHILDREN.get("sna_edges") or CHILDREN.get("dna")):
+        # The parent rows carry no embedded graph in this export; the layers live in child tables.
+        counts_rows = []
+        for name, label in (("dna", "actor–concept (DNA)"), ("sna_edges", "actor–actor (SNA)")):
+            rows = CHILDREN.get(name) or []
+            videos = {str(row.get("source_key") or "") for row in rows if row.get("source_key")}
+            counts_rows.append({"Layer": label, "Rows": len(rows), "Videos": len(videos)})
+        st.caption("The export keeps these layers in child tables; their measured extent is below.")
+        st.dataframe(pd.DataFrame(counts_rows), use_container_width=True, hide_index=True)
     st.caption("Connections are typed. Extracted concepts and DNA positions are not social ties.")
     edges = research_children(list(graph.edges), {
         "type": "Relationship type", "document": "Source video",
