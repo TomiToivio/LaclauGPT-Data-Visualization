@@ -1,5 +1,11 @@
 # EP24 dashboard refresh procedure and provenance (#210)
 
+> **Historical procedure, not a deployment instruction.** This page describes the Laskin `:18503`
+> deployment and the snapshot-refresh verifier. The live EP24 researcher service may run under a
+> different unit on a different host, so start from the
+> [agent operating contract](EP24_8502_OPERATOR_CONTRACT.md) and treat this page as the
+> provenance/refresh procedure it is.
+
 The reprocessed EP24 dashboard (`src/laclaugpt_visualization/ep24_reprocessed_app.py`, served on Laskin at
 `:18503`) reads a **copy** of an export from a private directory. Nothing about the dashboard can tell you
 whether that copy is the newest completed reprocessing output — so the answer is computed, not eyeballed:
