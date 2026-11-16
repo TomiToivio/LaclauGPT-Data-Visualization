@@ -304,7 +304,7 @@ def test_filtered_child_labels_are_scoped_and_deduplicated():
     scoped = scope_children(children, parents.iloc[:1])
     assert list(scoped["item.label"]) == ["justice", "justice"]
     result = child_counts(scoped, "postprocess_themes")
-    assert result.to_dict("records") == [{"label": "justice", "records": 1}]
+    assert result.to_dict("records") == [{"label": "justice", "videos": 1}]
 
 
 def test_ambiguous_parent_keys_never_multiply_child_counts():
