@@ -1,6 +1,6 @@
 # EP24 legacy → reprocessed feature matrix (#195, #306 §5)
 
-**Status: analysis record.** The #242 acceptance record, verified against the deployed dashboard, is [EP24_LEGACY_PARITY_242.md](EP24_LEGACY_PARITY_242.md). What the legacy `ep2024_dashboard` does, what the
+**Status: analysis record.** The #242 acceptance record, verified against the deployed dashboard, is [EP24_LEGACY_PARITY_242.md](EP24_LEGACY_PARITY_242.md). The #263 work on the reprocessed export — the per-record tab mapping and the tabs with no source at all — is [EP24_LEGACY_PARITY_263.md](EP24_LEGACY_PARITY_263.md). What the legacy `ep2024_dashboard` does, what the
 reprocessed explorer does, and what the new one does **not** yet replace. Written
 because "the new dashboard is better" is an assumption until the two are compared
 feature by feature.

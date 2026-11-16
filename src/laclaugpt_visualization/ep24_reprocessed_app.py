@@ -138,8 +138,8 @@ if date_field is not None:
         if isinstance(picked, (tuple, list)) and len(picked) == 2:
             frame = frame.loc[dates.dt.date.between(picked[0], picked[1])]
 view = st.sidebar.radio("Research view", [
-    "Corpus overview", "Video browser", "Pipeline overview", "Multimodal · Steps 0–5",
-    "Laclaudian discourse · Step 6", "DNA · Step 7",
+    "Corpus overview", "Video browser", "Video workbench · legacy parity", "Pipeline overview",
+    "Multimodal · Steps 0–5", "Laclaudian discourse · Step 6", "DNA · Step 7",
     "Social network · Step 8", "Combined multilayer", "RDF · Step 9",
     "Legacy / QA", "Data & methods",
 ])
@@ -178,9 +178,16 @@ def pick_record():
     if not names:
         st.warning("No records with stable source identities")
         return None
-    labels = [f"{i+1}: {text(row.get('title')) or 'Untitled video'} · "
-              f"{text(row.get('country'))} · {text(row.get('source_type'))}"
-              for i, (_, row) in enumerate(names)]
+    # The reprocessed export carries no `title`: a picker of 1,500 "Untitled video" rows is unusable,
+    # so fall back through the identifiers the export does carry, and name the author when present.
+    labels = []
+    for position, (name, row) in enumerate(names):
+        head = (text(row.get("title")) or text(row.get("video_id"))
+                or text(row.get("allas_filename")) or name.rsplit("|", 1)[-1])
+        author = text(row.get("author_username"))
+        labels.append(f"{position + 1}: {head}"
+                      + (f" · {author}" if author else "")
+                      + f" · {text(row.get('country'))} · {text(row.get('source_type'))}")
     wanted = st.session_state.get("ep24_inspect")
     default = next((i for i, (name, _) in enumerate(names) if name == wanted), 0)
     selected = st.selectbox("Inspect source record", range(len(labels)), index=default,
@@ -214,6 +221,32 @@ if view == "Corpus overview":
 elif view == "Video browser":
     render_browser(frame)
     inspect(pick_record())
+elif view == "Video workbench · legacy parity":
+    # Issue #263: the legacy :8501 workbench's per-record reading half, on the reprocessed export.
+    # Read-only by contract: where a researcher's decision lands is #263 §4, an owner decision, so the
+    # notes tab says it is not written instead of offering a form that saves nothing.
+    from laclaugpt_visualization.ep24_children import load_children, select_children
+    from laclaugpt_visualization.ep24_workbench import (
+        children_for,
+        render_parity_table,
+        render_record_tabs,
+    )
+
+    @st.cache_data(show_spinner=False)
+    def _children(path: str):
+        return load_children(path)
+
+    st.subheader("Researcher workbench · legacy :8501 parity")
+    st.caption("Legacy per-record tabs rebuilt on the reprocessed export. Reading only: this build "
+               "does not write review state (issue #263 section 4).")
+    record = pick_record()
+    if record:
+        children = select_children(_children(root), data)
+        render_record_tabs(record, children_for(children, record))
+        with st.expander("Evidence inspector — coded fields and provenance"):
+            inspect(record)
+    with st.expander("Parity claim, tab by tab (what feeds each legacy tab, or why nothing can)"):
+        render_parity_table(sorted({key for row in data for key in row}), list(_children(root)))
 elif view == "Pipeline overview":
     st.subheader("Step-by-step observability")
     summary = []
