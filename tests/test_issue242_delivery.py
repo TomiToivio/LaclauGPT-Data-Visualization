@@ -94,7 +94,10 @@ def test_app_default_and_browser_do_not_show_internal_values(tmp_path, monkeypat
     app.run(timeout=30)
     assert not app.exception
     assert not app.json
-    next(r for r in app.sidebar.radio if r.label == "Research view").set_value("Video browser").run()
+    # A Streamlit rerun over the EP24 frame takes seconds; AppTest's 3 s default is a flake
+    # generator on a loaded machine (this test failed in a full-suite run and passed alone).
+    next(r for r in app.sidebar.radio if r.label == "Research view").set_value("Video browser").run(
+        timeout=60)
     assert not app.exception
     assert "SECRET" not in str(app.dataframe[0].value)
 

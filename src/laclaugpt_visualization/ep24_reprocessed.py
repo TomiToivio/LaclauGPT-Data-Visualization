@@ -108,9 +108,36 @@ def status(row: Mapping[str, Any], stage: int, *, rdf_available: bool = False) -
     return "unavailable"
 
 
+#: Country codes the export uses, in the order a combined frame is assembled.
+EXPORT_COUNTRIES = ("finland", "poland", "portugal")
+
+
 def read_records(root: str | Path) -> pd.DataFrame:
-    """Read CSV/JSONL/SQLite exports from a private directory, without network access."""
+    """Read CSV/JSONL/SQLite exports from a private directory, without network access.
+
+    Three layouts exist and all three are supported, because the delivered export has changed
+    shape once already and a dashboard that only knows one of them reports "no export" against
+    correct data:
+
+    * ``<root>/combined.csv`` -- one frame for the whole cohort (the #195 dialect);
+    * ``<root>/<country>/<country>.csv`` -- the 2026-11-15 LFS delivery, one directory per country;
+    * ``<root>/<country>.csv`` or ``<root>/data/<country>.csv`` -- flat per-country files.
+
+    Per-country files are read with the stdlib reader's defaults and concatenated in a fixed order,
+    so the result is deterministic for the same input.
+    """
     root = Path(root)
+
+    # 2026-11-15 layout: <root>/<country>/<country>.csv (Git LFS objects in the private repo).
+    per_country = [root / country / f"{country}.csv" for country in EXPORT_COUNTRIES]
+    if all(path.is_file() for path in per_country):
+        frames = [pd.read_csv(path, low_memory=False) for path in per_country]
+        combined = pd.concat(frames, ignore_index=True, sort=False)
+        if "country" not in combined.columns:
+            combined.insert(0, "country", [country for country, frame in
+                                           zip(EXPORT_COUNTRIES, frames) for _ in range(len(frame))])
+        return combined
+
     for folder in (root, root / "data"):
         for filename in ("combined.csv", "finland.csv", "poland.csv", "portugal.csv",
                          "records.jsonl", "records.csv"):
