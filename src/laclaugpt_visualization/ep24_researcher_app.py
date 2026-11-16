@@ -96,6 +96,25 @@ if frame.empty:
 
 # The export keeps one-to-many findings in child tables keyed by source_key. Read them once; the
 # views below prefer a JSON column inside the parent row when one exists and fall back to these.
+# The legacy timeline chart needs a month; this export carries timestamps instead. Derive it once,
+# and only when it is missing, so a producer that ships `month` still wins.
+if "month" not in frame.columns:
+    _derived = pd.Series([""] * len(frame), index=frame.index)
+    for _key in ("published_at", "created_at", "record_date", "timestamp"):
+        if _key in frame.columns:
+            _times = pd.to_datetime(frame[_key], errors="coerce", utc=True)
+            if _times.notna().any():
+                _derived = _times.dt.strftime("%Y-%m").fillna("")
+                break
+    if not _derived.astype(bool).any() and "video_id" in frame.columns:
+        # The EP24 media id embeds the publication date (HEPP24-FI-CR-IG-20240521-…); the same
+        # derivation the live-steps builder uses, so both views agree on the month axis.
+        _date = frame["video_id"].astype(str).str.extract(r"(20\d{6})", expand=False)
+        _parsed = pd.to_datetime(_date, format="%Y%m%d", errors="coerce")
+        _derived = _parsed.dt.strftime("%Y-%m").fillna("")
+    if _derived.astype(bool).any():
+        frame["month"] = _derived
+
 CHILDREN = load_children(root)
 CHILDREN_BY_SOURCE = {name: children_by_source(rows) for name, rows in CHILDREN.items()}
 
