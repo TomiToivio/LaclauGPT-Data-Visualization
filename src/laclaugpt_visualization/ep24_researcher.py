@@ -96,6 +96,11 @@ def cohort_notes(frame: pd.DataFrame, manifest: Mapping[str, Any]) -> list[str]:
     reject all 1 500 delivered videos. The label is reported here, as provenance.
     """
     notes: list[str] = []
+    if not manifest:
+        notes.append(
+            "No export manifest: these counts have no producer run to point at, and no verifiable "
+            "dataset identifier. Treat them as rows from a file, not as an exported cohort."
+        )
     if "dataset" in frame.columns:
         labels = sorted({str(value) for value in frame["dataset"].dropna().unique() if str(value).strip()})
         if labels:
