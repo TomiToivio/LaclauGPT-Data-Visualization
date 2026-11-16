@@ -136,3 +136,31 @@ verified against its `manifest.json` by `scripts/ep24/verify_served_export.py` (
 disagreements). See `docs/EP24_SERVED_EXPORT_VERIFICATION.md` — before that check existed the host served a
 flat `combined.csv` build that matched no committed file, and the manifest was three sidecars short of its own
 tree.
+
+## Human review: what the export carries, and what it cannot (#263 §4)
+
+The legacy workbench wrote sixteen review fields to `spectacleScraper.ep24_dataframe`, keyed by `new_id`:
+`video_checked`, `delete_video`, `dubious_video`, `rerun_llm`, `rerun_ocr`, `rerun_whisper`, `cut_video`,
+`cut_at`, `cut_keep`, `split_video`, `split_at`, `new_persons`, `new_themes`, `wrong_language`,
+`researcher_note`, plus the tab that displayed them.
+
+The reprocessed export carries **two** of them, as read-only residue, measured over all 1,500 records:
+
+| field | records with a value | share |
+| --- | --- | --- |
+| `needs_resplit` (flagged) | 368 | 24.5% |
+| `researcher_note` | 91 | 6.1% |
+
+The other fourteen are **absent from the export entirely** — not empty, absent. So the workbench can show that
+someone flagged 368 videos for a re-split without being able to show why, and cannot show a single rerun, cut
+or split decision. Both states are now labelled in the "Report Problems / Researcher Notes" tab and in the
+corpus coverage table, because "nobody flagged this" and "this dashboard cannot see the flag" are different
+facts and a reader must be able to tell them apart.
+
+Where new judgements are written is the open decision in
+`docs/EP24_WRITE_PATH_DECISION_263.md` (§4). Until it is made, the dashboard does not
+collect judgements at all rather than inventing a second place where research decisions live unreviewed.
+
+The coverage figures are also a warning about the corpus: three quarters of the videos have never been
+flagged for re-split and 94% carry no note. That is not evidence that they are clean — it is a statement about
+how much of the corpus a human has actually looked at.
