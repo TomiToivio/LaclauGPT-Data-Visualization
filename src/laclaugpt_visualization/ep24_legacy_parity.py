@@ -324,7 +324,10 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
         return empty
     if not {"source_key", "timestamp"} <= set(parents.columns):
         return empty
-    dates = parents[["source_key", "timestamp"]].copy()
+    join_keys = ["source_key"]
+    if "country" in children and "country" in parents:
+        join_keys.append("country")
+    dates = parents[join_keys + ["timestamp"]].copy()
     dates["month"] = pd.to_datetime(dates["timestamp"], errors="coerce", utc=True).dt.tz_localize(None).dt.to_period("M")
     dates = dates.dropna(subset=["month"])
     if dates.empty:
@@ -333,7 +336,7 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     if "country" in children:
         subset_fields.append("country")
     subset = children[children["field"] == field][subset_fields].drop_duplicates()
-    merged = subset.merge(dates[["source_key", "month"]], on="source_key", how="inner")
+    merged = subset.merge(dates[join_keys + ["month"]], on=join_keys, how="inner",\n                          validate="many_to_one")
     if merged.empty:
         return empty
     top = merged["item.label"].astype(str).value_counts().head(limit).index
