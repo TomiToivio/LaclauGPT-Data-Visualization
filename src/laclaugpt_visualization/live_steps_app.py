@@ -19,6 +19,7 @@ import networkx as nx
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -30,11 +31,16 @@ try:
         bundle_text,
         child_records,
         clean,
+        country_preference_platform,
+        duration_by,
+        duration_seconds,
         filter_records,
         laclau_summary,
+        language_by_preference,
         load,
         monthly_by,
         node_degrees,
+        preference_counts,
         problem_rows,
         search_bundle,
         sentiment_totals,
@@ -79,6 +85,21 @@ from laclaugpt_visualization.researcher_export import (
     served_commit,
 )
 from laclaugpt_visualization.researcher_views import render_stage_explorer
+
+# The legacy dashboard's design language (ep2024_dashboard GROOVY_COLORWAY and typography), so a
+# researcher who learned the :8501 charts reads these the same way. Issue #242 asks for the same
+# overall design language, not merely the same numbers.
+LEGACY_COLORWAY = ("#6C63FF", "#00C2A8", "#FF6B8A", "#FFA94D", "#4DABF7",
+                   "#B197FC", "#63E6BE", "#F783AC", "#FFD43B", "#74C0FC")
+_legacy_template = go.layout.Template()
+_legacy_template.layout = go.Layout(
+    colorway=list(LEGACY_COLORWAY),
+    paper_bgcolor="#FFFFFF",
+    plot_bgcolor="#FAFBFF",
+    font={"family": "Inter, Segoe UI, sans-serif", "size": 13, "color": "#0F172A"},
+)
+pio.templates["ep24_legacy"] = _legacy_template
+pio.templates.default = "ep24_legacy"
 
 ROOT = (os.environ.get("LACLAUGPT_VIS_LIVE_STEPS_DATA")
         or os.environ.get("LACLAUGPT_VIS_ANALYSIS_DATA_DIR") or "data")
@@ -230,7 +251,7 @@ st.caption(f"{len(filtered):,} of {len(frame):,} videos match the filters.")
 
 tabs = st.tabs(["Overview", "Steps & coverage", "Search", "Record browser", "Discourse · DNA",
                 "Network · SNA", "Problems", "Aggregates", "Data quality", "Methods",
-                "Stage explorer", "Export"])
+                "Stage explorer", "Export", "Legacy charts"])
 
 with tabs[0]:
     columns = st.columns(4)
@@ -639,3 +660,93 @@ with tabs[11]:
         )
     with st.expander("What the provenance records"):
         st.json(selection_provenance, expanded=False)
+
+
+with tabs[12]:
+    st.subheader("The legacy dashboard's questions, on this cohort")
+    st.caption(
+        "Each chart answers a question the legacy :8501 dashboard asked, using this export's columns. "
+        "The denominator is the current selection; a field the export does not carry removes the chart "
+        "instead of drawing a zero that would read as a finding."
+    )
+
+    left, right = st.columns(2)
+    with left:
+        frequencies = preference_counts(filtered)
+        if frequencies.empty:
+            st.info("No political preference field in this export.")
+        else:
+            st.plotly_chart(
+                px.bar(frequencies, x="preference", y="records",
+                       title="Recording frequency by political preference"),
+                width="stretch",
+            )
+            st.caption(f"Denominator: {len(filtered):,} videos in this selection.")
+    with right:
+        hours = duration_by(filtered)
+        if hours.empty:
+            st.info("No video duration field in this export.")
+        else:
+            st.plotly_chart(
+                px.bar(hours, x="political_preference", y="hours",
+                       title="Total video duration by political preference (hours)"),
+                width="stretch",
+            )
+            if int(hours["without_duration"].iloc[0]):
+                st.caption(f"{int(hours['without_duration'].iloc[0]):,} videos carry no duration and are excluded.")
+
+    three_way = country_preference_platform(filtered)
+    if three_way.empty:
+        st.info("Not enough fields for the country × preference × platform breakdown.")
+    else:
+        st.plotly_chart(
+            px.sunburst(three_way, path=["country", "political_preference", "source_type"],
+                        values="records",
+                        title="Videos by country, political preference and platform"),
+            width="stretch",
+        )
+
+    left, right = st.columns(2)
+    with left:
+        timeline = monthly_by(filtered, "country")
+        if timeline.empty:
+            st.info("No recording month field in this export.")
+        else:
+            st.plotly_chart(
+                px.line(timeline, x="month", y="records", color="_split", markers=True,
+                        title="Video release timeline"),
+                width="stretch",
+            )
+    with right:
+        durations = duration_seconds(filtered)
+        if durations.empty:
+            st.info("No video duration field in this export.")
+        else:
+            st.plotly_chart(
+                px.histogram(durations, nbins=40, title="Video duration distribution (seconds)"),
+                width="stretch",
+            )
+
+    languages = language_by_preference(filtered)
+    if not languages.empty:
+        st.plotly_chart(
+            px.bar(languages, x="language", y="records", color="political_preference",
+                   title="Language distribution by political preference"),
+            width="stretch",
+        )
+
+    coverage = stage_availability(manifest)
+    if coverage.empty:
+        st.info("The manifest carries no per-stage coverage.")
+    else:
+        st.markdown("**Dataset coverage** — the legacy gauges, as measured denominators")
+        st.dataframe(coverage, width="stretch")
+
+    st.markdown("**Not reproduced, and why**")
+    st.caption(
+        "ManifestoBERTa does not exist in this pipeline: the legacy classifier's output has no "
+        "counterpart here, and inventing a stand-in would be a different variable under the same "
+        "name. Persons and Topics browsing are served by the Aggregates tab from the producer's "
+        "entity and theme fields; this export carries no separate persons column, so no Persons "
+        "tab is drawn."
+    )

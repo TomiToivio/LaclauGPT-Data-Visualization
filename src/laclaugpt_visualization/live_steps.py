@@ -444,3 +444,68 @@ def stage_availability(manifest: Mapping[str, Any]) -> pd.DataFrame:
                          "pct": round(100 * data.get("records", 0) / denominator, 1) if denominator else None,
                          "availability": "present" if data.get("available") else "unavailable in this source"})
     return pd.DataFrame(rows)
+
+# -- legacy parity analytics (issue #242 §3) ---------------------------------------------------- #
+# The legacy :8501 dashboard asked aggregate questions -- frequency, duration, country x preference x
+# platform, timeline, distribution, language, coverage. These functions ask the same questions of
+# this export and return empty frames where the field is absent, so the app drops the chart instead
+# of drawing a zero that looks like a finding.
+
+def preference_counts(frame: pd.DataFrame) -> pd.DataFrame:
+    """Recording frequency by political preference -- legacy's leading chart."""
+    if "political_preference" not in frame.columns:
+        return pd.DataFrame(columns=["preference", "records"])
+    values = frame["political_preference"].map(clean).replace("", "not reported")
+    return (values.value_counts().rename_axis("preference").reset_index(name="records"))
+
+
+def duration_by(frame: pd.DataFrame, by: str = "political_preference") -> pd.DataFrame:
+    """Total hours of video per group. Records without a duration are excluded and counted."""
+    if "video_duration_seconds" not in frame.columns or by not in frame.columns:
+        return pd.DataFrame(columns=[by, "hours", "records", "without_duration"])
+    seconds = pd.to_numeric(frame["video_duration_seconds"], errors="coerce")
+    group = frame[by].map(clean).replace("", "not reported")
+    usable = seconds.notna()
+    grouped = (pd.DataFrame({"group": group[usable], "seconds": seconds[usable]})
+               .groupby("group")
+               .agg(hours=("seconds", lambda values: round(values.sum() / 3600, 2)),
+                    records=("seconds", "size"))
+               .reset_index()
+               .rename(columns={"group": by}))
+    missing = int((~usable).sum())
+    grouped["without_duration"] = missing
+    return grouped.sort_values("hours", ascending=False)
+
+
+def country_preference_platform(frame: pd.DataFrame) -> pd.DataFrame:
+    """Videos by country, political preference and platform -- legacy's three-way breakdown."""
+    columns = [name for name in ("country", "political_preference", "source_type") if name in frame.columns]
+    if len(columns) < 2:
+        return pd.DataFrame(columns=["country", "political_preference", "source_type", "records"])
+    working = frame[columns].copy()
+    for column in columns:
+        working[column] = working[column].map(clean).replace("", "not reported")
+    for column in ("country", "political_preference", "source_type"):
+        if column not in working.columns:
+            working[column] = "not exported"
+    return (working.groupby(["country", "political_preference", "source_type"]).size()
+            .reset_index(name="records"))
+
+
+def duration_seconds(frame: pd.DataFrame) -> pd.Series:
+    """Numeric durations for a distribution plot; blanks dropped rather than zero-filled."""
+    if "video_duration_seconds" not in frame.columns:
+        return pd.Series(dtype=float)
+    return pd.to_numeric(frame["video_duration_seconds"], errors="coerce").dropna()
+
+
+def language_by_preference(frame: pd.DataFrame) -> pd.DataFrame:
+    """Language distribution overall, and per political preference."""
+    if "asr_language" not in frame.columns:
+        return pd.DataFrame(columns=["language", "political_preference", "records"])
+    language = frame["asr_language"].map(clean).replace("", "not reported")
+    preference = (frame["political_preference"].map(clean).replace("", "not reported")
+                  if "political_preference" in frame.columns else pd.Series("not reported", index=frame.index))
+    return (pd.DataFrame({"language": language, "political_preference": preference})
+            .groupby(["language", "political_preference"]).size().reset_index(name="records"))
+
