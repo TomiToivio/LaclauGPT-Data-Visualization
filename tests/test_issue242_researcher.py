@@ -10,6 +10,7 @@ from laclaugpt_visualization.ep24_researcher import (
     view,
 )
 
+
 def test_allowlist_excludes_processing_and_download_secrets():
     frame = pd.DataFrame([{
         "country": "Finland", "video_id": "abc", "summary_analysis": "Research finding",
