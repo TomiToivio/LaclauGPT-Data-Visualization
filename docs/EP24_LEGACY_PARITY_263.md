@@ -84,13 +84,27 @@ Consequences worth naming:
   deduplicated on `(source_key, label)` and labelled `videos`, with the filtered frame as its denominator
   and `source_key` as its identity rule.
 
-## Not implemented on purpose: the write path
+## The write path (#263 §4): append-only review events
 
-The legacy workbench records review decisions — `video_checked`, `delete_video`, `dubious_video`, `rerun_llm`,
-`rerun_ocr`, `rerun_whisper`, `cut_video`/`cut_at`/`cut_keep`, `split_video`/`split_at`, `new_themes`,
-`new_persons`, `researcher_note` — in MongoDB. The reprocessed app is read-only by contract (its unit points at
-a read-only snapshot), so a decision is needed first: a MongoDB review collection (legacy behaviour, new write
-path), append-only review events in the private repository, or no write path in this iteration.
+The legacy workbench recorded review decisions — `video_checked`, `delete_video`, `dubious_video`,
+`rerun_llm`, `rerun_ocr`, `rerun_whisper`, `cut_video`/`cut_at`/`cut_keep`, `split_video`/`split_at`,
+`new_themes`, `new_persons`, `researcher_note` — in MongoDB. This deployment takes option **(b)**: the corpus
+stays read-only, and a decision is one immutable line in a monthly JSONL shard under the private repository
+(`analysis/ep24/reviews/events-YYYY-MM.jsonl`), committed like any other research artefact.
 
-This increment is the third option: the reading half is delivered, and nothing invents a second place where
-research decisions live. See #263 §4.
+What the implementation guarantees (`ep24_review_log.py`):
+
+| rule | why |
+| --- | --- |
+| **append-only** | a correction is a new event; the earlier decision is never rewritten or deleted, and the fold shows the newest value per field while the history stays auditable |
+| **explicit False is a decision** | "not dubious" clears a flag; it is not the same claim as "never mentioned" |
+| **nothing is written unless the deployment says where** | `LACLAUGPT_EP24_REVIEW_DIR` unset → read-only, and the notes tab says so instead of offering a form that saves nothing |
+| **a public checkout is not a destination** | the store refuses a directory inside the code checkout: review events carry researcher notes and identity |
+| **the log holds the decision, not the corpus** | record identity, reviewer and the decision fields — never a transcript, evidence or analysis copy |
+| **a corrupt line is skipped and reported** | a log that throws on one bad byte loses every decision after it |
+
+`cut_video`/`split_video` are recorded as **decisions**, not performed: this build marks the judgement for the
+producer, it does not cut or move media.
+
+Committing the shards to the private repository is a separate, human-controlled step — the dashboard appends,
+it never runs `git commit`, and it never writes to `main` on GitHub.

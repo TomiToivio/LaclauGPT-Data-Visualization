@@ -419,11 +419,88 @@ elif view == "Legacy / QA":
         st.info("No manifest next to the export, so export QA cannot be reported.")
 elif view == "Legacy parity · workbench":
     # Parity with the legacy :8501 workbench (#263): the same filters, the same nine per-record tabs and
-    # the same nine aggregate tabs, on the reprocessed export. Read-only on purpose — where a researcher's
-    # decision lands is the open decision in #263 §4, and inventing a second write path would be worse than
-    # one increment of a reader that cannot yet record a judgement.
+    # the same nine aggregate tabs, on the reprocessed export. The reading half is read-only; a decision is
+    # an append-only review event (#263 §4 option b), written only when the deployment names a directory.
+    from laclaugpt_visualization.ep24_review_log import ReviewStore
+
+    def checkout_root() -> Path:
+        """The code checkout this process runs from — a review directory inside it must be refused."""
+        for parent in Path(__file__).resolve().parents:
+            if (parent / ".git").exists():
+                return parent
+        return Path(__file__).resolve().parents[1]
+
+    review_store = ReviewStore.from_environment(application_root=checkout_root())
+
+    def render_review_panel(store, record):
+        """Record a decision for this record (#263 §4 option b), or say why it cannot be recorded."""
+        from laclaugpt_visualization.ep24_review_log import EDITS, FLAGS, TIMESTAMPS, ReviewError
+
+        key = text(record.get("source_key")) or text(record.get("record_id"))
+        if key:
+            state = store.fold(key)
+            if state.events:
+                st.caption(f"{state.events} recorded decision(s) for this record"
+                           + (f" · reviewer(s): {', '.join(state.reviewers)}" if state.reviewers else ""))
+                st.dataframe(pd.DataFrame([{"field": name, "value": value}
+                                           for name, value in sorted(state.values.items())]),
+                             hide_index=True, use_container_width=True)
+            else:
+                st.caption("No recorded decision for this record yet.")
+        if not store.enabled:
+            st.info("Review writing is not configured on this deployment "
+                    "(LACLAUGPT_EP24_REVIEW_DIR is unset), so no form is shown: a decision typed here "
+                    "would have nowhere to go.")
+            return
+        reason = store.unsafe_reason()
+        if reason:
+            st.error("Review writing is disabled: " + reason)
+            return
+        if not key:
+            st.warning("This record has no stable identity, so a decision could not be attributed to it.")
+            return
+
+        with st.form("ep24_review_" + key):
+            st.markdown("**Record a decision** — appended, never overwriting an earlier one")
+            ticked: list[str] = []
+            columns = st.columns(3)
+            for position, name in enumerate(FLAGS + EDITS):
+                if columns[position % 3].checkbox(name.replace("_", " ")):
+                    ticked.append(name)
+            stamps = {name: st.text_input(name.replace("_", " "), key="stamp_" + name) for name in TIMESTAMPS}
+            persons = st.text_input("new persons (comma separated)")
+            themes = st.text_input("new themes (comma separated)")
+            cut_keep = st.text_input("cut keep")
+            note = st.text_area("researcher note")
+            reviewer = st.text_input("reviewer")
+            submitted = st.form_submit_button("Record decision")
+        if not submitted:
+            return
+        payload: dict[str, object] = {name: True for name in ticked}
+        payload.update({name: value for name, value in stamps.items() if value.strip()})
+        if persons.strip():
+            payload["new_persons"] = persons
+        if themes.strip():
+            payload["new_themes"] = themes
+        if cut_keep.strip():
+            payload["cut_keep"] = cut_keep
+        if note.strip():
+            payload["researcher_note"] = note
+        try:
+            event = store.append(key, text(record.get("country")), payload, reviewer=reviewer)
+        except ReviewError as error:
+            st.error("Not saved: " + str(error))
+            return
+        st.success(f"Recorded {event.event_id[:8]} at {event.recorded_at}. Append-only: the earlier "
+                   "decision is still in the log.")
+
     st.subheader("Legacy parity · researcher workbench")
-    st.caption("Read-only. Review flags, cut/split and notes are not written here; see #263 §4.")
+    st.caption(
+        "Reading is read-only. A decision is recorded as an append-only review event: "
+        + ("review log configured." if review_store.enabled else
+           "no review directory configured on this deployment, so decisions cannot be saved here.")
+        + " See #263 §4."
+    )
     all_children = load_children(root, frame)
     workbench = apply_filters(
         frame,
@@ -464,6 +541,8 @@ elif view == "Legacy parity · workbench":
                     if content_of["empty"]:
                         st.caption("No output for this record: " + ", ".join(content_of["empty"])
                                    + " — an absence of output, not a finding that the video has none.")
+                    if panel == "Report Problems / Researcher Notes":
+                        render_review_panel(review_store, row)
 
     with aggregate_view:
         # A count without its denominator and identity rule is not a claim (#205).

@@ -14,9 +14,10 @@ Two rules keep it honest:
 * **Every count names its denominator.** The repository's existing rule (#205): two exports legitimately
   disagree on totals, so a "records" figure without its identity rule and its filter scope is not a claim.
 
-Read-only by design: the legacy write path (review flags, cut/split, notes to MongoDB) is deliberately not
-implemented here. Where a researcher's decision lands is the open decision in #263 §4, and inventing a second
-write path would be worse than leaving the workbench read-only for one increment.
+Read-only over the corpus. A researcher's decision does **not** go into MongoDB and does not edit the export:
+it is an append-only review event (`ep24_review_log.py`, #263 §4 option b), written only when the deployment
+names a review directory. This module stays the view model; the log owns the write, and the fold it produces
+is what the notes tab shows.
 """
 from __future__ import annotations
 
