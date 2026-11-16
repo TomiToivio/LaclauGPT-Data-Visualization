@@ -29,6 +29,7 @@ from laclaugpt_visualization.ep24_legacy_parity import (
     load_children,
     parity_rows,
     record_tabs,
+    scope_children,
     sentiment_counts,
     unsupported_tabs,
 )
@@ -228,3 +229,34 @@ def test_the_workbench_view_renders_without_exception(tmp_path: Path, monkeypatc
     assert not app.exception, app.exception
     # The tabs come from the module's registry, and the record's child-table entities must be rendered.
     assert "Legacy parity · researcher workbench" in [heading.value for heading in app.subheader]
+
+
+def test_filtered_child_labels_are_scoped_and_deduplicated():
+    parents = pd.DataFrame({"source_key": ["a", "b"], "country": ["finland", "poland"]})
+    children = pd.DataFrame({
+        "source_key": ["a", "a", "b", "missing"],
+        "country": ["finland", "finland", "poland", "finland"],
+        "field": ["postprocess_themes"] * 4,
+        "item.label": ["justice", "justice", "climate", "noise"],
+    })
+    scoped = scope_children(children, parents.iloc[:1])
+    assert list(scoped["item.label"]) == ["justice", "justice"]
+    result = child_counts(scoped, "postprocess_themes")
+    assert result.to_dict("records") == [{"label": "justice", "records": 1}]
+
+
+def test_ambiguous_parent_keys_never_multiply_child_counts():
+    parents = pd.DataFrame({"source_key": ["same", "same"], "country": ["finland", "finland"]})
+    children = pd.DataFrame({"source_key": ["same"], "country": ["finland"],
+                             "field": ["postprocess_entities"], "item.label": ["Person"]})
+    assert scope_children(children, parents).empty
+
+
+def test_cross_country_key_collision_requires_country_on_child():
+    parents = pd.DataFrame({"source_key": ["same", "same"],
+                            "country": ["finland", "poland"]})
+    child = pd.DataFrame({"source_key": ["same"], "field": ["postprocess_themes"],
+                          "item.label": ["justice"]})
+    assert scope_children(child, parents).empty
+    child["country"] = "poland"
+    assert len(scope_children(child, parents)) == 1
