@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import subprocess
 import sys
@@ -50,13 +51,79 @@ def _header(path: Path) -> list[str]:
         return next(csv.reader(handle))
 
 
+#: Outcome keys that mean "this stage produced an output for this record".
+_PRESENT_OUTCOMES = {"ok", "output_present", "cached", "success", "complete", "completed", "present"}
+
+
+def normalise_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Add the totals and coverage keys the checks read, from either exporter's dialect.
+
+    Two manifests exist in this project: the artifact builder's (``records``, ``record_counts``,
+    ``stage_coverage``) and the checkpoint exporter's (``countries[].exported_videos``,
+    ``countries[].stages`` with per-outcome counts). The verifier reads one shape; normalising here
+    keeps that single shape without pretending the two files are identical.
+    """
+    normalised = dict(manifest)
+    countries = manifest.get("countries") or {}
+    if not isinstance(countries, dict):
+        countries = {}
+    counts = manifest.get("record_counts")
+    if not isinstance(counts, dict) or not counts:
+        per_country = {}
+        for country, data in countries.items():
+            if not isinstance(data, dict):
+                continue
+            exported = data.get("exported_videos", data.get("exported", data.get("input_rows")))
+            if isinstance(exported, int):
+                per_country[country] = {"exported": exported}
+        if per_country:
+            per_country["exported_total"] = sum(v["exported"] for v in per_country.values())
+            normalised["record_counts"] = per_country
+            normalised.setdefault("records", per_country["exported_total"])
+
+    if not manifest.get("stage_coverage"):
+        coverage = {}
+        for country, data in countries.items():
+            if not isinstance(data, dict):
+                continue
+            stages = data.get("stages") or data.get("coverage") or {}
+            if not isinstance(stages, dict):
+                continue
+            entries = {}
+            for step, outcome in stages.items():
+                if isinstance(outcome, dict):
+                    # A stage's dict counts *outcomes* (ok, cached, error, not_exported). Summing
+                    # them reports 500 for a stage that produced nothing, which is precisely how a
+                    # missing stage gets disguised as a complete one. Count what exists.
+                    present = sum(
+                        value for key, value in outcome.items()
+                        if isinstance(value, int) and str(key).lower() in _PRESENT_OUTCOMES
+                    )
+                    if not any(str(key).lower() in _PRESENT_OUTCOMES for key in outcome):
+                        # No outcome key names a produced output: a stage whose only outcome is
+                        # "not_exported" produced nothing. A total-ish key still counts.
+                        present = next((outcome[key] for key in ("records", "total", "count", "exported")
+                                        if isinstance(outcome.get(key), int)), 0)
+                    entries[str(step)] = {"records": present,
+                                          "outcomes": {str(k): v for k, v in outcome.items()
+                                                       if isinstance(v, int)}}
+                else:
+                    entries[str(step)] = {"records": outcome}
+            if entries:
+                coverage[country] = entries
+        if coverage:
+            normalised["stage_coverage"] = coverage
+    return normalised
+
+
 def check_manifest(data_root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """The manifest exists, parses, and its totals agree with its own per-country counts."""
-    manifest_path = data_root / "MANIFEST.json"
+    manifest_path = next((data_root / name for name in ("MANIFEST.json", "manifest.json")
+                          if (data_root / name).is_file()), data_root / "MANIFEST.json")
     if not manifest_path.is_file():
         return {}, [check("manifest", False, f"missing {manifest_path}")]
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = normalise_manifest(json.loads(manifest_path.read_text(encoding="utf-8")))
     except json.JSONDecodeError as error:
         return {}, [check("manifest", False, f"unreadable JSON: {error}")]
 
@@ -85,7 +152,39 @@ def check_manifest(data_root: Path) -> tuple[dict[str, Any], list[dict[str, Any]
     return manifest, results
 
 
-def check_artifacts(data_root: Path, manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def _display_allowlist() -> tuple[str, ...]:
+    """The researcher app's own display allowlist (#243/#245)."""
+    from laclaugpt_visualization.ep24_researcher import (
+        DISPLAY,
+    )
+
+    return tuple(DISPLAY)
+
+
+def _classify_for(header: list[str], allowlist: str) -> tuple[list[str], list[dict[str, str]], str]:
+    """Classify a header against one of the two allowlists this project actually uses.
+
+    ``research`` is the live-steps index allowlist; ``display`` is the researcher app's DISPLAY map.
+    ``auto`` prefers the former and falls back to the latter, reporting which one it used — the two
+    apps serve different exports and a verifier that assumes one allowlist reports a false failure
+    against the other.
+    """
+    if allowlist in {"auto", "research"}:
+        try:
+            keep, dropped = classify(header, strict=True)
+            return keep, dropped, "research"
+        except UnclassifiedColumnError:
+            if allowlist == "research":
+                raise
+    display = _display_allowlist()
+    keep = [column for column in display if column in header]
+    dropped = [{"column": column, "reason": "not on the researcher display allowlist"}
+               for column in header if column not in keep]
+    return keep, dropped, "display"
+
+
+def check_artifacts(data_root: Path, manifest: dict[str, Any], *, allowlist: str = "auto"
+                    ) -> list[dict[str, Any]]:
     """The CSVs the app reads exist, and their headers classify without drift."""
     results: list[dict[str, Any]] = []
     combined = data_root / "combined.csv"
@@ -96,7 +195,7 @@ def check_artifacts(data_root: Path, manifest: dict[str, Any]) -> list[dict[str,
     results.append(check("combined.csv", True, f"{len(header)} columns"))
 
     try:
-        keep, dropped = classify(header, strict=True)
+        keep, dropped, used = _classify_for(header, allowlist)
     except UnclassifiedColumnError as error:
         results.append(check("column allowlist", False, str(error)))
     else:
@@ -104,7 +203,8 @@ def check_artifacts(data_root: Path, manifest: dict[str, Any]) -> list[dict[str,
             check(
                 "column allowlist",
                 True,
-                f"{len(keep)} researcher columns, {len(dropped)} dropped with a reason",
+                f"{len(keep)} researcher columns, {len(dropped)} dropped with a reason "
+                f"({used} allowlist)",
             )
         )
         risky = [column for column in keep if _looks_like_backend_field(column)]
@@ -128,10 +228,17 @@ def check_artifacts(data_root: Path, manifest: dict[str, Any]) -> list[dict[str,
             check("combined.csv row count", rows == manifest_records, f"{rows} rows vs manifest {manifest_records}")
         )
 
-    for suffix in ("_text.jsonl.gz",):
+    # Long-form evidence ships as gzipped bundles in the artifact dialect and as per-country
+    # CSV/JSONL in the checkpoint dialect; check whichever this export uses.
+    if any(data_root.glob("*_text.jsonl.gz")):
         missing = [country for country in ("finland", "poland", "portugal")
-                   if not (data_root / f"{country}{suffix}").is_file()]
+                   if not (data_root / f"{country}_text.jsonl.gz").is_file()]
         results.append(check("text bundles present", not missing, ", ".join(missing) or "all three"))
+    else:
+        missing = [country for country in ("finland", "poland", "portugal")
+                   if not (data_root / f"{country}.csv").is_file()
+                   and not (data_root / f"{country}.jsonl").is_file()]
+        results.append(check("country tables present", not missing, ", ".join(missing) or "all three"))
     return results
 
 
@@ -298,8 +405,9 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
     manifest, manifest_results = check_manifest(data_root)
     results.extend(manifest_results)
     if manifest:
-        results.extend(check_artifacts(data_root, manifest))
+        results.extend(check_artifacts(data_root, manifest, allowlist=args.allowlist))
         results.extend(check_coverage(manifest))
+        results.extend(check_roster(data_root, manifest))
     results.extend(check_checkout(Path(args.served_dir).expanduser() if args.served_dir else None,
                                   args.expected_commit))
     roster = getattr(args, "approved_roster", None)

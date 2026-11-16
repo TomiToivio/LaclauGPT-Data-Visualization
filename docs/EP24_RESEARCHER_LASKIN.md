@@ -11,19 +11,21 @@ for the live-steps cohort.
 | --- | --- |
 | URL | `http://100.115.95.109:8502/` (Tailscale address of `laskin01`) |
 | Code | `LaclauGPT-Data-Visualization@main` |
-| App | `src/laclaugpt_visualization/live_steps_app.py` |
-| Data | private artifacts, `LACLAUGPT_VIS_LIVE_STEPS_DATA` |
+| App | `src/laclaugpt_visualization/ep24_researcher_app.py` |
+| Data | `analysis/ep24/pouta_exports/fiplpt_500_20261115/` (checkpoint export + approved roster) |
 | Service | `laclaugpt-ep24-researcher.service` (systemd **user** unit) |
 | Neighbours | `:8501` AI26 dashboard, `:8503` live-steps operations — neither is touched |
 
 ## What the researcher sees
 
 The corpus is 1 500 videos — Finland, Poland and Portugal, 500 each — from the
-`ep24_monday500_20261031` run of the multimodal pipeline. The app is read-only: it opens the export
+`ep24_monday500_20261031` run of the multimodal pipeline. The dashboard gates on an **approved
+cohort roster** (`approved_cohort.txt`, 1 500 identities, digest recorded in the export manifest);
+see `docs/EP24_COHORT_APPROVAL.md` for how it is built and what it proves. The app is read-only: it opens the export
 files, never MongoDB, Redis, Slurm, a GPU or Ollama, and it writes nothing back.
 
-Tabs: Overview · Steps & coverage · Search · Record browser · Discourse · DNA · Network (SNA) ·
-Problems · Aggregates · Data quality · Methods · Stage explorer · **Export**.
+Tabs: Overview · Videos & multimodal evidence · Entities and themes · Laclau discourse · DNA · SNA ·
+Multilayer · RDF & methods · **Legacy analytics** · **Export**.
 
 Coverage is a measurement, not a claim. In the 2026-11-10 build: steps 1–6 complete for all
 1 500 videos, step 7 (DNA) complete for 500 of them, step 8 (SNA) partial, step 9 (RDF) not in the
@@ -56,9 +58,10 @@ python3 -m venv .venv && . .venv/bin/activate
 python -m pip install -e .
 
 # private data: place the artifact directory outside the repository
-export LACLAUGPT_VIS_LIVE_STEPS_DATA=/path/to/private/analysis/live_steps_1_7
+export LACLAUGPT_VIS_ANALYSIS_DATA_DIR=/path/to/private/analysis/ep24/pouta_exports/fiplpt_500_20261115
+export EP24_APPROVED_ROSTER="$LACLAUGPT_VIS_ANALYSIS_DATA_DIR/approved_cohort.txt"
 python scripts/ep24/verify_researcher_dashboard.py \
-    --data-root "$LACLAUGPT_VIS_LIVE_STEPS_DATA"
+    --data-root "$LACLAUGPT_VIS_ANALYSIS_DATA_DIR"
 ```
 
 Then the unit:

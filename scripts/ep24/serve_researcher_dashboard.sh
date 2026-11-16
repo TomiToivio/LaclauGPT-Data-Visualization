@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Serve the EP24 FI/PL/PT researcher dashboard on Laskin (issue #242, target :8502).
 #
-# The app is public code; the artifacts are private data. Point the app at the artifact root with
-# LACLAUGPT_VIS_LIVE_STEPS_DATA - never at a path inside this repository.
+# The app is public code; the export is private data. Point it at the checkpoint export with
+# LACLAUGPT_VIS_ANALYSIS_DATA_DIR and at the approved cohort roster with EP24_APPROVED_ROSTER -
+# never at a path inside this repository. The app refuses to render without a verified roster, so
+# the two go together.
 #
 #   LACLAUGPT_VIS_LIVE_STEPS_DATA=... scripts/ep24/serve_researcher_dashboard.sh [port] [address]
 #
@@ -16,12 +18,20 @@ PORT="${1:-8502}"
 ADDRESS="${2:-127.0.0.1}"
 PYTHON="${LACLAUGPT_VIS_PYTHON:-${ROOT}/.venv/bin/python}"
 
-if [[ -z "${LACLAUGPT_VIS_LIVE_STEPS_DATA:-}" ]]; then
-  echo "LACLAUGPT_VIS_LIVE_STEPS_DATA is not set: it must point at the private artifact directory" >&2
+if [[ -z "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR:-}" ]]; then
+  echo "LACLAUGPT_VIS_ANALYSIS_DATA_DIR is not set: it must point at the private export directory" >&2
   exit 2
 fi
-if [[ ! -f "${LACLAUGPT_VIS_LIVE_STEPS_DATA}/MANIFEST.json" ]]; then
-  echo "no MANIFEST.json under ${LACLAUGPT_VIS_LIVE_STEPS_DATA}" >&2
+if [[ ! -f "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}/combined.csv" ]]; then
+  echo "no combined.csv under ${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}" >&2
+  exit 2
+fi
+if [[ -z "${EP24_APPROVED_ROSTER:-}" || ! -f "${EP24_APPROVED_ROSTER}" ]]; then
+  echo "EP24_APPROVED_ROSTER must point at the approved cohort roster (1500 identities)" >&2
+  exit 2
+fi
+if [[ -z "${LACLAUGPT_VIS_DEMO_PASSWORD:-}" ]]; then
+  echo "LACLAUGPT_VIS_DEMO_PASSWORD is not set: the export carries transcripts and usernames" >&2
   exit 2
 fi
 if [[ ! -x "${PYTHON}" ]]; then
@@ -39,10 +49,10 @@ for reserved in 8501 8503; do
   fi
 done
 
-export LACLAUGPT_VIS_LIVE_STEPS_DATA
+export LACLAUGPT_VIS_ANALYSIS_DATA_DIR EP24_APPROVED_ROSTER
 export PYTHONUNBUFFERED=1
 exec "${PYTHON}" -m streamlit run \
-  "${ROOT}/src/laclaugpt_visualization/live_steps_app.py" \
+  "${ROOT}/src/laclaugpt_visualization/ep24_researcher_app.py" \
   --server.address "${ADDRESS}" \
   --server.port "${PORT}" \
   --server.headless true \

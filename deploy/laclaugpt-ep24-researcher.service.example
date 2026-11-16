@@ -5,8 +5,11 @@
 # below: host paths are deployment state, not repository content, and this repository is public.
 #
 #   <REPO>         the checkout this service runs   (e.g. /srv/laclaugpt/visualization)
-#   <DATA_ROOT>    the private artifact root built by tools/build_live_steps_artifacts.py
+#   <DATA_ROOT>    the private checkpoint export     (combined.csv + manifest.json + roster)
 #   <BIND_ADDRESS> the Tailscale address of the host; never 0.0.0.0
+#
+# The app refuses to render without a verified cohort roster and an access password, so both are
+# required here. Keep the password in an EnvironmentFile with mode 0600, never in this file.
 [Unit]
 Description=LaclauGPT EP24 FI/PL/PT researcher dashboard (Laskin :8502, issue #242)
 Documentation=file://<REPO>/docs/EP24_RESEARCHER_LASKIN.md
@@ -16,10 +19,11 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 WorkingDirectory=<REPO>
-Environment=LACLAUGPT_VIS_LIVE_STEPS_DATA=<DATA_ROOT>
+Environment=LACLAUGPT_VIS_ANALYSIS_DATA_DIR=<DATA_ROOT>
+Environment=EP24_APPROVED_ROSTER=<DATA_ROOT>/approved_cohort.txt
 Environment=LACLAUGPT_VIS_PYTHON=<REPO>/.venv/bin/python
-# Optional second gate. Keep the password in an EnvironmentFile with mode 0600, never here:
-# EnvironmentFile=-%h/.config/laclaugpt-ep24-researcher.env
+# Required gate: the export carries author usernames, video identifiers and transcripts.
+EnvironmentFile=%h/.config/laclaugpt/ep24-researcher.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=<REPO>/scripts/ep24/serve_researcher_dashboard.sh 8502 <BIND_ADDRESS>
 Restart=always

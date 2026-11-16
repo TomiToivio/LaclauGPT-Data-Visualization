@@ -30,10 +30,18 @@ def read_roster(path: Path) -> tuple[set[str], dict]:
 
 
 def is_member(row, country: str, approved: set[str]) -> bool:
+    """Is this row one of the approved identities for its country?
+
+    Membership is decided by the roster, the ``monday500:<country>:<id>`` storage key and the row's
+    own country — not by the ``dataset`` column. On the real checkpoint export that column carries
+    the *pipeline* label (``ep2024_reprocess``); the cohort is named by the storage key and by the
+    export manifest's ``producer_revision`` (``monday500_20261031``). Requiring the column to equal
+    the cohort name rejected every row of the delivered 500-video export, which is how a guard
+    becomes an outage.
+    """
     value = str(row.get("_storage_id", "")).strip()
     return (
         value in approved
         and value.startswith(f"monday500:{country}:")
         and str(row.get("country", country)).casefold() == country
-        and str(row.get("dataset") or "ep24_monday500_20261031") == "ep24_monday500_20261031"
     )
