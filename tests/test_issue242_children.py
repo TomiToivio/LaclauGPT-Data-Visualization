@@ -16,9 +16,9 @@ from laclaugpt_visualization.ep24_children import (
     coverage,
     load_children,
     network,
+    select_children,
     statements,
     term_counts,
-    select_children,
 )
 
 ROWS = {
