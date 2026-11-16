@@ -105,6 +105,7 @@ def test_sna_edges_without_a_quotation_are_not_promoted_to_evidence(tmp_path):
     assert nodes[0]["label"] == "Riikka Purra"
     assert len(edges) == 2, "both rows are returned; the app decides which carry evidence"
     assert edges[0]["relation_type"] == "critique"
+    assert edges[0]["document"] == "ep24:finland:x:ig:v1"
 
 
 def test_coverage_reports_the_denominator_a_view_needs(tmp_path):
