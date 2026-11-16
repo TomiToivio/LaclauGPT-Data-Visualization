@@ -16,6 +16,7 @@ from laclaugpt_visualization.ep24_children import (
     coverage,
     load_children,
     network,
+    select_children,
     statements,
     term_counts,
 )
@@ -104,6 +105,7 @@ def test_sna_edges_without_a_quotation_are_not_promoted_to_evidence(tmp_path):
     assert nodes[0]["label"] == "Riikka Purra"
     assert len(edges) == 2, "both rows are returned; the app decides which carry evidence"
     assert edges[0]["relation_type"] == "critique"
+    assert edges[0]["document"] == "ep24:finland:x:ig:v1"
 
 
 def test_coverage_reports_the_denominator_a_view_needs(tmp_path):
@@ -117,3 +119,39 @@ def test_a_missing_child_table_is_empty_not_an_error(tmp_path):
     children = load_children(tmp_path)
     assert children["entities"] == []
     assert term_counts(children["entities"]) == []
+
+
+def test_filtered_children_never_include_other_countries_or_videos(tmp_path):
+    children = load_children(build(tmp_path))
+    # Only one FI video is visible after filtering. The second FI video
+    # and a Polish one must not contribute to any child-backed chart.
+    children["dna"].append({
+        "source_key": "ep24:poland:x:ig:v3",
+        "actor_name_raw": "Polish actor", "concept_label_raw": "different concept",
+    })
+    filtered = select_children(children, [{"source_key": "ep24:finland:x:ig:v1"}])
+    assert len(filtered["entities"]) == 2
+    assert len(filtered["themes"]) == 1
+    assert len(filtered["dna"]) == 1
+    assert len(filtered["sna_edges"]) == 1
+    assert filtered["dna"][0]["actor_name_raw"] == "Riikka Purra"
+
+    # An empty filtered result must not show evidence from the entire export.
+    assert all(not items for items in select_children(children, []).values())
+
+
+def test_filtered_children_do_not_join_by_nonnamespaced_video_id():
+    children = {"dna": [
+        {"source_key": "ep24:finland:x:ig:123", "video_id": "123"},
+        {"source_key": "ep24:poland:x:ig:123", "video_id": "123"},
+    ]}
+    selected = select_children(children, [
+        {"source_key": "ep24:poland:x:ig:123", "video_id": "123"}
+    ])
+    assert selected["dna"] == [children["dna"][1]]
+
+
+def test_filtered_children_support_normalized_parent_record_ids():
+    children = {"dna": [{"parent_record_id": "fi:one"}, {"parent_record_id": "pl:one"}]}
+    selected = select_children(children, [{"record_id": "fi:one"}])
+    assert selected["dna"] == [children["dna"][0]]

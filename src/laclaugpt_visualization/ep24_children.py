@@ -136,6 +136,7 @@ def network(rows_nodes: Iterable[Mapping[str, Any]], rows_edges: Iterable[Mappin
         if not (source and target):
             continue
         edges.append({
+            "document": str(row.get("source_key") or row.get("parent_record_id") or "").strip(),
             "source": source,
             "target": target,
             "relation_type": str(row.get("edge_type") or row.get("relation_type") or "").strip(),
@@ -154,3 +155,38 @@ def coverage(children: Mapping[str, Sequence[Mapping[str, Any]]]) -> list[dict[s
         videos = {str(item.get("source_key") or "") for item in items if item.get("source_key")}
         rows.append({"child table": name, "rows": len(items), "videos": len(videos)})
     return rows
+
+
+def select_children(
+    children: Mapping[str, Sequence[Mapping[str, Any]]],
+    parents: Iterable[Mapping[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Restrict normalized findings to the *currently filtered* parent videos.
+
+    The 2026-11-15 export uses source_key on both tables. The alternative
+    exporter uses record_id on parents and parent_record_id on children.
+    Do not join across incompatible identifier dialects or by actor names.
+    """
+    source_keys: set[str] = set()
+    record_ids: set[str] = set()
+    for row in parents:
+        source_key = str(row.get("source_key") or "").strip()
+        record_id = str(row.get("record_id") or "").strip()
+        if source_key:
+            source_keys.add(source_key)
+        if record_id:
+            record_ids.add(record_id)
+
+    selected: dict[str, list[dict[str, Any]]] = {}
+    for name, items in children.items():
+        selected[name] = [
+            dict(item) for item in items
+            if (
+                str(item.get("source_key") or "").strip() in source_keys
+                and bool(str(item.get("source_key") or "").strip())
+            ) or (
+                str(item.get("parent_record_id") or "").strip() in record_ids
+                and bool(str(item.get("parent_record_id") or "").strip())
+            )
+        ]
+    return selected
