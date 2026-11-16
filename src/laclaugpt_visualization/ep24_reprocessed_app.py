@@ -297,15 +297,26 @@ elif view == "Data & methods":
     if not manifest:
         st.info("No MANIFEST.json next to the export. Coverage cannot be asserted without it.")
     else:
-        st.caption(f"Builder `{manifest.get('builder_version')}` · generated "
-                   f"{manifest.get('generated_at')} · schema {SCHEMA_VERSION}")
+        # Two real manifest shapes: the #210 Mongo refresh writes builder_version/generated_at, the
+        # checkpoint exporter writes version/exported_at. Neither may render as "None" (#242).
+        builder = manifest.get("builder_version") or manifest.get("version") or "unknown"
+        generated = manifest.get("generated_at") or manifest.get("exported_at") or "unknown"
+        st.caption(f"Builder `{builder}` · generated {generated} · schema {SCHEMA_VERSION}")
         counts = manifest.get("record_counts") or {}
         rows_counts = [{"country": k, **v} for k, v in counts.items() if isinstance(v, dict)]
         table(rows_counts, "manifest_counts")
         covering = coverage_rows(manifest)
         if covering:
-            st.markdown("**Stage coverage** — denominator is that country's exported records.")
+            st.markdown("**Stage coverage** — denominator is that country's exported records. "
+                        "`not_exported` means the batch never produced that stage; it is not a "
+                        "failure, and it is not a zero.")
             st.dataframe(pd.DataFrame(covering), use_container_width=True)
+            errored = [row for row in covering if row.get("errored")]
+            if errored:
+                st.caption("Stages with errors: "
+                           + ", ".join(f"{row['country']} step {row['stage']} "
+                                       f"({row['errored']} errored)" for row in errored)
+                           + " — those documents are still shown with what was produced.")
         inputs = manifest.get("inputs") or {}
         profiles = {k: (v or {}).get("profile", "reprocessed") for k, v in inputs.items()}
         st.markdown("**Source profile per country**")

@@ -413,16 +413,23 @@ def multilayer(records: list[Mapping[str, Any]], max_records: int = 1000,
         warnings.append(f"Graph capped at {max_edges} edges")
     return Graph(tuple(nodes.values()), tuple(edges.values()), tuple(warnings))
 
+#: Manifest spellings seen in real bundles: the #210 Mongo refresh writes ``MANIFEST.json``, the
+#: #195/#242 checkpoint exporter writes ``manifest.json``. Both are the export's own manifest and
+#: neither may be read as "no manifest" (#242).
+MANIFEST_NAMES = ("MANIFEST.json", "manifest.json")
+
+
 def read_manifest(root: str | Path) -> dict[str, Any]:
     """The export's own manifest, if present. An absent manifest is reported, never invented."""
     root = Path(root)
     for folder in (root, root / "data"):
-        path = folder / "MANIFEST.json"
-        if path.is_file():
-            try:
-                return json.loads(path.read_text(encoding="utf-8"))
-            except (ValueError, OSError):
-                return {}
+        for name in MANIFEST_NAMES:
+            path = folder / name
+            if path.is_file():
+                try:
+                    return json.loads(path.read_text(encoding="utf-8"))
+                except (ValueError, OSError):
+                    return {}
     return {}
 
 
@@ -433,8 +440,11 @@ def exported_counts(manifest: Mapping[str, Any]) -> dict[str, int]:
     count is not evidence that a country is missing from the export.
     """
     counts = manifest.get("record_counts") or {}
-    if not isinstance(counts, Mapping) or not counts:
-        return {}
+    countries = manifest.get("countries") or {}
+    if not isinstance(counts, Mapping):
+        counts = {}
+    if not isinstance(countries, Mapping):
+        countries = {}
     totals: dict[str, int] = {}
     for iso, aliases in COUNTRY_ALIASES.items():
         total = 0
@@ -446,8 +456,14 @@ def exported_counts(manifest: Mapping[str, Any]) -> dict[str, int]:
             if isinstance(entry, int | float):
                 total = int(entry)
                 break
-        totals[iso] = total
-    return totals
+            # #242: the checkpoint exporter reports ``exported_videos`` per country instead.
+            checkpoint = countries.get(key)
+            if isinstance(checkpoint, Mapping):
+                total = int(checkpoint.get("exported_videos") or 0)
+                break
+        if total or iso not in totals:
+            totals[iso] = total
+    return totals if any(totals.values()) else {}
 
 
 def missing_countries(manifest: Mapping[str, Any]) -> list[str]:
@@ -456,32 +472,115 @@ def missing_countries(manifest: Mapping[str, Any]) -> list[str]:
     return [iso for iso in COUNTRY_ALIASES if iso in totals and not totals[iso]]
 
 
+#: Outcome keys the checkpoint exporter writes per stage (#242). ``not_exported`` means the batch
+#: never produced that stage's output at all — it is not a failure and must not read as one.
+STAGE_OUTCOME_ALIASES = {
+    "present": {"ok", "okay", "cached", "complete", "completed", "success", "successful",
+                "output_present", "done", "records"},
+    "error": {"error", "errors", "failed", "failure", "timeout"},
+    "skipped": {"skipped", "deleted", "excluded"},
+    "not_exported": {"not_exported", "not_run", "missing", "unavailable", "none"},
+}
+
+
+def stage_outcomes(stage: Mapping[str, Any] | None) -> dict[str, int]:
+    """Classify one stage's outcome counts, case-insensitive and shape-tolerant (#242).
+
+    The checkpoint exporter writes ``{"ok": 472, "error": 1, "not_exported": 27}``; the Mongo refresh
+    writes ``{"records": 500}``. Both must land in the same vocabulary so a researcher reads
+    "472 present, 1 errored, 27 not produced" instead of a single opaque percentage.
+    """
+    totals = {"present": 0, "error": 0, "skipped": 0, "not_exported": 0, "other": 0}
+    if not isinstance(stage, Mapping):
+        return totals
+    for key, value in stage.items():
+        if not isinstance(value, int | float):
+            continue
+        name = str(key).strip().casefold()
+        if "pct" in name or "percent" in name:
+            # ``pct_of_exported`` restates the ratio; it is not an outcome count.
+            continue
+        for bucket, aliases in STAGE_OUTCOME_ALIASES.items():
+            if name in aliases:
+                totals[bucket] += int(value)
+                break
+        else:
+            totals["other"] += int(value)
+    return totals
+
+
+def _stage_availability(totals: Mapping[str, int], denominator: int) -> str:
+    present = int(totals.get("present") or 0)
+    if not denominator:
+        return "no records"
+    if present >= denominator:
+        return "present"
+    if present:
+        return "partial"
+    if int(totals.get("not_exported") or 0) >= denominator:
+        return "unavailable in this source"
+    if int(totals.get("error") or 0):
+        return "errors only"
+    return "no records"
+
+
 def coverage_rows(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
     """One row per country and stage: how many records carry it, and out of how many.
 
     A denominator of zero means the country has no exported records, not that the stage is empty.
     An ``unavailable`` stage is marked as such rather than rendered as 0 %.
+
+    Two real manifest shapes are understood (#242): the #210 Mongo refresh's
+    ``stage_coverage``/``record_counts`` and the checkpoint exporter's
+    ``countries[<country>].stages``/``exported_videos``. The second one carries the outcome mix, so
+    errors and never-produced stages are reported next to the successes instead of being flattened
+    into one number.
     """
     rows_out: list[dict[str, Any]] = []
     counts = manifest.get("record_counts") or {}
     coverage = manifest.get("stage_coverage") or {}
+    checkpoint = manifest.get("countries") or {}
+    if not isinstance(checkpoint, Mapping):
+        checkpoint = {}
     unavailable = {country: set(data.get("stage_unavailable") or ())
                    for country, data in (manifest.get("inputs") or {}).items()
                    if isinstance(data, Mapping)}
+
+    def profile_of(country: str) -> str:
+        entry = checkpoint.get(country)
+        if isinstance(entry, Mapping) and entry.get("collection"):
+            return str(entry["collection"])
+        return (manifest.get("inputs", {}).get(country) or {}).get("profile", "reprocessed")
+
+    def emit(country: str, stage: Any, totals: dict[str, int], denominator: int,
+             missing: bool) -> None:
+        present = totals["present"]
+        availability = ("unavailable in this source" if missing
+                        else _stage_availability(totals, denominator))
+        # A stage the batch never produced is "unavailable", never "0 % complete": a zero would read
+        # as a measured failure rather than an absent one (#242, and the #177 rule it inherits).
+        unmeasured = availability == "unavailable in this source" or not denominator
+        rows_out.append({
+            "country": country, "profile": profile_of(country), "stage": str(stage),
+            "records": present, "denominator": denominator,
+            "coverage_pct": None if unmeasured else round(100 * present / denominator, 1),
+            "availability": availability,
+            "errored": totals["error"] or None,
+            "not_exported": totals["not_exported"] or None,
+        })
+
     for country, stages in coverage.items():
         denominator = 0
         if isinstance(counts.get(country), Mapping):
             denominator = int(counts[country].get("exported") or 0)
-        profile = (manifest.get("inputs", {}).get(country) or {}).get("profile", "reprocessed")
-        for stage, data in stages.items():
-            records = int((data or {}).get("records") or 0)
-            missing = stage in unavailable.get(country, set())
-            rows_out.append({
-                "country": country, "profile": profile, "stage": stage,
-                "records": records, "denominator": denominator,
-                "coverage_pct": None if missing or not denominator
-                else round(100 * records / denominator, 1),
-                "availability": "unavailable in this source" if missing else
-                ("no records" if not records else "present"),
-            })
+        missing_stages = unavailable.get(country, set())
+        for stage, data in (stages or {}).items():
+            emit(country, stage, stage_outcomes(data), denominator, stage in missing_stages)
+
+    for country, entry in checkpoint.items():
+        if not isinstance(entry, Mapping):
+            continue
+        denominator = int(entry.get("exported_videos") or entry.get("input_rows") or 0)
+        for stage, data in (entry.get("stages") or {}).items():
+            emit(country, stage, stage_outcomes(data), denominator, False)
     return rows_out
