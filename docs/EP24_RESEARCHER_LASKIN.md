@@ -123,9 +123,9 @@ the environment, never in the repository.
 
 ## What this deployment does not yet claim
 
-- The legacy-to-new feature matrix (`docs/EP24_LEGACY_FEATURE_MATRIX.md`) is written as an analysis
-  record; the live legacy `:8501` was not re-audited for this cohort, so parity is claimed against
-  the recorded audit, not against a fresh side-by-side.
+- Legacy parity is recorded per surface in `docs/EP24_LEGACY_PARITY_242.md`, verified against the
+  legacy *source* and the deployed app. The live legacy `:8501` was not re-audited for this cohort,
+  and ManifestoBERTa has no counterpart in this pipeline — both stated rather than papered over.
 - Step 9 (RDF) has no representation in this cohort's artifacts, so the dashboard shows no
   knowledge-graph view for it rather than an empty one.
 - Step 8 (SNA) is partial; the UI reports the coverage and the edge evidence, and does not infer ties
