@@ -32,7 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from served_state import password_variable_from_environment, render, report  # noqa: E402
+from served_state import password_variable_from_environment, render, report
 
 
 def main(argv: list[str] | None = None) -> int:
