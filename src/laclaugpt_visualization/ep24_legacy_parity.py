@@ -326,10 +326,10 @@ def scope_children(children: pd.DataFrame | None, parents: pd.DataFrame) -> pd.D
     incoming = children.copy()
     incoming["source_key"] = incoming["source_key"].astype(str)
     if "country" in parent and "country" not in incoming:
-        # Country is part of the identity; an unscoped child may match multiple nations.
-        conflicting = parent.groupby("source_key")["country"].nunique()
-        ambiguous = set(conflicting[conflicting > 1].index)
-        incoming = incoming[~incoming["source_key"].isin(ambiguous)]
+        # A source key shared by countries cannot identify an unscoped child.
+        ambiguous = parent.groupby("source_key")["country"].nunique(dropna=False)
+        conflicting_keys = set(ambiguous[ambiguous > 1].index)
+        incoming = incoming.loc[~incoming["source_key"].isin(conflicting_keys)]
     if "country" in incoming and "country" in parent:
         keys = ["source_key", "country"]
         parent["country"] = parent["country"].astype(str).str.casefold()
@@ -348,7 +348,7 @@ def child_counts(children: pd.DataFrame | None, field: str, *, limit: int = 20) 
     if subset.empty:
         return pd.DataFrame(columns=["label", "videos"])
     counts = (subset.dropna(subset=["item.label", "source_key"])
-              .drop_duplicates(["source_key", "item.label"] + (["country"] if "country" in subset.columns else []))["item.label"]
+              .drop_duplicates(["source_key", "item.label"] + (["country"] if "country" in subset else []))["item.label"]
               .astype(str).value_counts().head(limit))
     return pd.DataFrame({"label": counts.index, "videos": counts.values})
 
