@@ -17,6 +17,8 @@ from pathlib import Path
 from laclaugpt_visualization.ep24_reprocessed import (
     coverage_rows,
     exported_counts,
+    manifest_counts_rows,
+    manifest_provenance,
     read_manifest,
     stage_outcomes,
 )
@@ -151,3 +153,41 @@ def test_the_mongo_shape_still_renders_its_unavailable_marker():
 
 def test_coverage_of_an_empty_manifest_is_empty():
     assert coverage_rows({}) == []
+
+
+# ---------------------------------------------------------------- provenance and manifest table
+
+
+def test_provenance_is_read_from_the_checkpoint_shape():
+    provenance = manifest_provenance(CHECKPOINT_MANIFEST)
+    assert provenance["timestamp"] == "2026-11-15T19:00:00+00:00"
+    assert provenance["contract"] == "ep24-export/2"
+    assert provenance["source"] == "unknown"
+
+
+def test_provenance_is_read_from_the_mongo_shape():
+    """#210 carried no explicit contract key; its builder identifies the source, and that is what shows."""
+    provenance = manifest_provenance(MONGO_MANIFEST)
+    assert provenance["source"] == "ep24-bundle/1"
+    assert provenance["contract"] == "unknown"
+
+
+def test_provenance_says_unknown_only_when_it_is():
+    assert manifest_provenance({}) == {"timestamp": "unknown", "contract": "unknown",
+                                       "source": "unknown"}
+
+
+def test_counts_table_comes_from_the_checkpoint_countries():
+    rows = manifest_counts_rows(CHECKPOINT_MANIFEST)
+    assert {row["country"] for row in rows} == {"finland", "poland"}
+    finland = next(row for row in rows if row["country"] == "finland")
+    assert finland["exported videos"] == 500
+    assert finland["collection"] == "monday500_20261031_finland"
+    # The stage outcome counts are not spilled into the manifest table.
+    assert "stages" not in finland
+
+
+def test_counts_table_still_comes_from_record_counts():
+    rows = manifest_counts_rows(MONGO_MANIFEST)
+    assert rows == [{"country": "finland", "exported": 500},
+                    {"country": "poland", "exported": 500}]

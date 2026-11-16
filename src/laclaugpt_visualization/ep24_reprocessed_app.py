@@ -25,6 +25,8 @@ try:  # normal case: the package is importable (development, pip install -e .)
         dna_evidence,
         exported_counts,
         identity,
+        manifest_counts_rows,
+        manifest_provenance,
         missing_countries,
         multilayer,
         rdf_files,
@@ -83,11 +85,10 @@ if manifest:
             st.warning("Some approved cohort videos are missing from this snapshot.")
     else:
         st.warning("Approved 500-video cohort membership is unverified for this export.")
-    st.caption("Loaded export: " + str(manifest.get("generated_at", "timestamp unknown"))
-               + " | contract: " + str(manifest.get("contract") or manifest.get("schema")
-                                       or manifest.get("record_unit") or "unknown")
-               + " | source: " + str(manifest.get("builder_version")
-                                     or manifest.get("exporter_version") or "unknown"))
+    provenance = manifest_provenance(manifest)
+    st.caption("Loaded export: " + provenance["timestamp"]
+               + " | contract: " + provenance["contract"]
+               + " | source: " + provenance["source"])
     absent = missing_countries(manifest)
     totals = exported_counts(manifest)
     if totals:
@@ -344,9 +345,7 @@ elif view == "Data & methods":
         builder = manifest.get("builder_version") or manifest.get("version") or "unknown"
         generated = manifest.get("generated_at") or manifest.get("exported_at") or "unknown"
         st.caption(f"Builder `{builder}` · generated {generated} · schema {SCHEMA_VERSION}")
-        counts = manifest.get("record_counts") or {}
-        rows_counts = [{"country": k, **v} for k, v in counts.items() if isinstance(v, dict)]
-        table(rows_counts, "manifest_counts")
+        table(manifest_counts_rows(manifest), "manifest_counts")
         covering = coverage_rows(manifest)
         if covering:
             st.markdown("**Stage coverage** — denominator is that country's exported records. "
