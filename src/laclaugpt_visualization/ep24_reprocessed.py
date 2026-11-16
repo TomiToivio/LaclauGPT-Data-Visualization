@@ -532,6 +532,51 @@ def _stage_availability(totals: Mapping[str, int], denominator: int) -> str:
     return "no records"
 
 
+def manifest_provenance(manifest: Mapping[str, Any]) -> dict[str, str]:
+    """Timestamp, contract and source of an export, from either manifest shape (#242).
+
+    The header used to print "timestamp unknown | contract unknown | source unknown" over a manifest
+    that carried all three, because it only knew the #210 key names. Unknown is only allowed to mean
+    unknown.
+    """
+    def first(*keys: str) -> str:
+        for key in keys:
+            value = manifest.get(key)
+            if value not in (None, "", {}):
+                return str(value)
+        return "unknown"
+
+    return {
+        "timestamp": first("generated_at", "exported_at", "created_at"),
+        "contract": first("contract", "schema", "record_unit", "version"),
+        "source": first("builder_version", "exporter_version", "producer_revision",
+                        "mapping_producer_revision"),
+    }
+
+
+def manifest_counts_rows(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """One row per country for the manifest table, from either manifest shape (#242).
+
+    #210 writes ``record_counts.<country>.{read,exported,duplicates}``; the checkpoint exporter writes
+    ``countries.<country>.{exported_videos,input_rows,collection}``. Reading only the first shape made
+    a valid 1 500-record export render "No exported evidence available for this view".
+    """
+    counts = manifest.get("record_counts") or {}
+    rows_out = [{"country": name, **entry} for name, entry in counts.items()
+                if isinstance(entry, Mapping)]
+    if rows_out:
+        return rows_out
+    countries = manifest.get("countries") or {}
+    return [
+        {"country": name,
+         "exported videos": entry.get("exported_videos"),
+         "input rows": entry.get("input_rows"),
+         "collection": entry.get("collection", "")}
+        for name, entry in countries.items()
+        if isinstance(entry, Mapping)
+    ]
+
+
 def coverage_rows(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
     """One row per country and stage: how many records carry it, and out of how many.
 
