@@ -332,5 +332,5 @@ def test_same_native_key_across_countries_keeps_distinct_video_counts():
                              "field": ["postprocess_themes", "postprocess_themes"],
                              "item.label": ["justice", "justice"]})
     scoped = scope_children(children, parents)
-    assert child_counts(scoped, "postprocess_themes").iloc[0]["records"] == 2
-    assert record_tabs(parents.iloc[0].to_dict(), scoped)["Themes"]["content"] == ["justice"]
+    assert child_counts(scoped, "postprocess_themes").iloc[0]["videos"] == 2
+    assert record_tabs(parents.iloc[0].to_dict(), scoped)["Themes"]["blocks"][0]["value"] == "justice"
