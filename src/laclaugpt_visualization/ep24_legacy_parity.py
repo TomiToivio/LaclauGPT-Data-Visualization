@@ -228,6 +228,20 @@ def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) ->
                      "empty": empty, "note": "", "reason": ""}
     return tabs
 
+def _resolved_dates(frame: pd.DataFrame) -> pd.Series:
+    """Prefer per-row created_at, falling back to timestamp when it is blank.
+
+    A mixed export may contain both columns but only populate one for some videos.
+    Picking a column globally would silently lose otherwise dated records.
+    """
+    dates = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]")
+    for column in ("created_at", "timestamp"):
+        if column in frame.columns:
+            parsed = pd.to_datetime(frame[column], errors="coerce", utc=True)
+            dates = dates.fillna(parsed)
+    return dates
+
+
 def apply_filters(
     frame: pd.DataFrame,
     *,
@@ -260,9 +274,8 @@ def apply_filters(
         low, high = duration
         numeric = pd.to_numeric(data["video_duration_seconds"], errors="coerce")
         data = data[(numeric >= low) & (numeric <= high)]
-    dated = next((column for column in ("created_at", "timestamp") if column in data.columns), None)
-    if dates and dated is not None:
-        parsed = pd.to_datetime(data[dated], errors="coerce", utc=True)
+    if dates and ("created_at" in data.columns or "timestamp" in data.columns):
+        parsed = _resolved_dates(data)
         start = pd.Timestamp(dates[0], tz="UTC") if dates[0] is not None else parsed.min()
         # A date input gives midnight, so a naive filter silently drops the whole end day. Build the end
         # boundary with stdlib datetime rather than pandas timedelta arithmetic, which warns on this version.
@@ -361,14 +374,13 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     empty = pd.DataFrame(columns=["month", "label", "videos"])
     if children is None or children.empty or not {"source_key", "field", "item.label"} <= set(children.columns):
         return empty
-    date_field = next((name for name in ("created_at", "timestamp") if name in parents.columns), None)
-    if "source_key" not in parents.columns or date_field is None:
+    if "source_key" not in parents.columns or not ({"created_at", "timestamp"} & set(parents.columns)):
         return empty
     keys = ["source_key"]
     if "country" in parents.columns and "country" in children.columns:
         keys.append("country")
-    dates = parents[keys + [date_field]].copy()
-    dates["month"] = pd.to_datetime(dates[date_field], errors="coerce", utc=True).dt.strftime("%Y-%m")
+    dates = parents[keys].copy()
+    dates["month"] = _resolved_dates(parents).dt.strftime("%Y-%m")
     dates = dates.dropna(subset=["month"])
     dates = dates.loc[~dates.duplicated(keys, keep=False)]
     selected = children.loc[children["field"] == field, keys + ["item.label"]].dropna(subset=["item.label"])
