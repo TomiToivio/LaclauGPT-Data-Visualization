@@ -289,16 +289,29 @@ def check_roster(data_root: Path, manifest: dict[str, Any]) -> list[dict[str, An
     return results
 
 
+def _records_file(data_root: Path) -> Path | None:
+    """The file whose header and row count describe the corpus, in either delivered layout."""
+    combined = data_root / "combined.csv"
+    if combined.is_file():
+        return combined
+    for country in ("finland", "poland", "portugal"):
+        candidate = data_root / country / f"{country}.csv"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def check_artifacts(data_root: Path, manifest: dict[str, Any], *, allowlist: str = "auto"
                     ) -> list[dict[str, Any]]:
     """The CSVs the app reads exist, and their headers classify without drift."""
     results: list[dict[str, Any]] = []
-    combined = data_root / "combined.csv"
-    if not combined.is_file():
-        return [check("combined.csv", False, f"missing {combined}")]
+    combined = _records_file(data_root)
+    if combined is None:
+        return [check("records file", False,
+                      f"neither combined.csv nor finland/poland/portugal directories under {data_root}")]
 
     header = _header(combined)
-    results.append(check("combined.csv", True, f"{len(header)} columns"))
+    results.append(check(combined.name, True, f"{len(header)} columns"))
 
     try:
         keep, dropped, used = _classify_for(header, allowlist)
@@ -323,13 +336,27 @@ def check_artifacts(data_root: Path, manifest: dict[str, Any], *, allowlist: str
         )
 
     manifest_records = manifest.get("records")
+    if manifest_records is None and combined.name != "combined.csv":
+        # The delivered layout has no single frame: the corpus is the three country files.
+        manifest_records = sum(row.get("exported", 0) for key, row in
+                               (manifest.get("record_counts") or {}).items()
+                               if key != "exported_total" and isinstance(row, dict))
     if isinstance(manifest_records, int):
         # Parse rather than count lines: transcripts contain embedded newlines inside quoted fields,
         # so a line count reports 4057 rows for a 1500-video corpus.
-        with combined.open("r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.reader(handle)
-            next(reader, None)
-            rows = sum(1 for row in reader if row)
+        if combined.name == "combined.csv":
+            files = [combined]
+        else:
+            files = [data_root / country / f"{country}.csv" for country in
+                     ("finland", "poland", "portugal")]
+        rows = 0
+        for path in files:
+            if not path.is_file():
+                continue
+            with path.open("r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.reader(handle)
+                next(reader, None)
+                rows += sum(1 for row in reader if row)
         results.append(
             check("combined.csv row count", rows == manifest_records, f"{rows} rows vs manifest {manifest_records}")
         )
@@ -341,9 +368,16 @@ def check_artifacts(data_root: Path, manifest: dict[str, Any], *, allowlist: str
                    if not (data_root / f"{country}_text.jsonl.gz").is_file()]
         results.append(check("text bundles present", not missing, ", ".join(missing) or "all three"))
     else:
-        missing = [country for country in ("finland", "poland", "portugal")
-                   if not (data_root / f"{country}.csv").is_file()
-                   and not (data_root / f"{country}.jsonl").is_file()]
+        candidates = []
+        for country in ("finland", "poland", "portugal"):
+            candidates.append((
+                country,
+                [(data_root / f"{country}.csv"), (data_root / f"{country}.jsonl"),
+                 (data_root / country / f"{country}.csv"),
+                 (data_root / country / f"{country}.jsonl")],
+            ))
+        missing = [country for country, paths in candidates
+                   if not any(path.is_file() for path in paths)]
         results.append(check("country tables present", not missing, ", ".join(missing) or "all three"))
     return results
 

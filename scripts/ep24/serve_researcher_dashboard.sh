@@ -21,8 +21,16 @@ if [[ -z "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR:-}" ]]; then
   echo "LACLAUGPT_VIS_ANALYSIS_DATA_DIR is not set: it must point at the private export directory" >&2
   exit 2
 fi
-if [[ ! -f "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}/combined.csv" ]]; then
-  echo "no combined.csv under ${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}" >&2
+# Two layouts are served: one combined frame, or the 2026-11-15 delivery with one directory per
+# country. Both are correct; requiring the older one refused to start against the newer data.
+if [[ -f "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}/combined.csv" ]]; then
+  :
+elif [[ -f "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}/finland/finland.csv" \
+     && -f "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}/poland/poland.csv" \
+     && -f "${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}/portugal/portugal.csv" ]]; then
+  :
+else
+  echo "no combined.csv and no finland/poland/portugal directories under ${LACLAUGPT_VIS_ANALYSIS_DATA_DIR}" >&2
   exit 2
 fi
 # The cohort roster is optional: the export is shown as measured (issue #242, Tomi 2026-11-16).
