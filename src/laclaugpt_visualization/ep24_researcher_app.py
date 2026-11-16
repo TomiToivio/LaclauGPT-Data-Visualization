@@ -19,20 +19,12 @@ import streamlit as st
 from laclaugpt_visualization.demo_auth import require_demo_password
 from laclaugpt_visualization.ep24_children import (
     by_source as children_by_source,
-)
-from laclaugpt_visualization.ep24_children import (
     load_children,
-)
-from laclaugpt_visualization.ep24_children import (
     network as child_network,
-)
-from laclaugpt_visualization.ep24_children import (
+    select_children,
     statements as child_statements,
-)
-from laclaugpt_visualization.ep24_children import (
     term_counts as child_term_counts,
 )
-from laclaugpt_visualization.ep24_children import select_children
 from laclaugpt_visualization.ep24_presentation import hydrate_record, render_browser
 from laclaugpt_visualization.ep24_reprocessed import (
     STAGES,
