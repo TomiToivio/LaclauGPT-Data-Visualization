@@ -374,3 +374,28 @@ def test_child_timeline_remains_compatible_with_timestamp_only_exports():
     assert child_counts_over_time(children, parents, "postprocess_themes").to_dict("records") == [
         {"month": "2024-05", "label": "elections", "videos": 1},
     ]
+
+
+def test_mixed_date_columns_use_timestamp_only_for_missing_created_at():
+    """A partially backfilled export must not drop rows that still have raw dates."""
+    parents = pd.DataFrame({
+        "source_key": ["derived", "raw", "undated"],
+        "country": ["finland"] * 3,
+        "created_at": ["2024-05-21", None, None],
+        "timestamp": ["2024-06-01", "2024-06-05T10:00:00Z", None],
+    })
+    may = apply_filters(parents, dates=(pd.Timestamp("2024-05-01").date(), pd.Timestamp("2024-05-31").date()))
+    assert may["source_key"].tolist() == ["derived"]  # created_at takes precedence
+    june = apply_filters(parents, dates=(pd.Timestamp("2024-06-01").date(), pd.Timestamp("2024-06-30").date()))
+    assert june["source_key"].tolist() == ["raw"]  # fallback is per row, not per export
+    children = pd.DataFrame({
+        "source_key": ["derived", "raw", "undated"],
+        "country": ["finland"] * 3,
+        "field": ["postprocess_themes"] * 3,
+        "item.label": ["justice"] * 3,
+    })
+    timeline = child_counts_over_time(children, parents, "postprocess_themes")
+    assert timeline.to_dict("records") == [
+        {"month": "2024-05", "label": "justice", "videos": 1},
+        {"month": "2024-06", "label": "justice", "videos": 1},
+    ]
