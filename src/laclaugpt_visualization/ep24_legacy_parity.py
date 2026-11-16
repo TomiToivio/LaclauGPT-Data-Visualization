@@ -163,6 +163,8 @@ def _child_values(children: pd.DataFrame | None, source_key: str, field: str,
     if not {"source_key", "field", "item.label"} <= set(children.columns):
         return []
     matches = children[(children["source_key"] == source_key) & (children["field"] == field)]
+    if country and "country" in matches:
+        matches = matches[matches["country"].astype(str).str.casefold() == country.casefold()]
     if matches.empty:
         return []
     ordered = matches.sort_values("index") if "index" in matches.columns else matches
