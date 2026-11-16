@@ -12,9 +12,12 @@ with the artifact in the private repository, and twice the gap mattered:
 
 ```bash
 python scripts/ep24/verify_served_export.py \
-  --served /home/ubuntu/ep24_research/exports/fiplpt_500_20261115_release \
-  --manifest /home/ubuntu/ep24_research/exports/fiplpt_500_20261115_release/manifest.json
+  --served "$EXPORT_ROOT/fiplpt_500_20261115_release" \
+  --manifest "$EXPORT_ROOT/fiplpt_500_20261115_release/manifest.json"
 ```
+
+`$EXPORT_ROOT` is the serving host's export directory, set by the operator; no machine path belongs in this
+repository.
 
 Read-only. It reports every disagreement and exits non-zero when there is one:
 
@@ -35,17 +38,16 @@ serving was not the per-country release at all. The private manifest was also th
 tree (the cohort, dictionary and qa sidecars were excluded by an extension filter); that was fixed in
 LaclauGPT-Private#78, which now declares all 28 files.
 
-The released layout was then copied to the host as `fiplpt_500_20261115_release`, verified, and the unit
-pointed at it through a drop-in:
+The released layout was then copied to the serving host, verified, and the unit pointed at it through a
+systemd drop-in — visible and reversible, rather than an edit of the unit file:
 
 ```ini
-# ~/.config/systemd/user/ep24-dashboard-pouta.service.d/data-release.conf
 [Service]
-Environment=LACLAUGPT_VIS_ANALYSIS_DATA_DIR=/home/ubuntu/ep24_research/exports/fiplpt_500_20261115_release
+Environment=LACLAUGPT_VIS_ANALYSIS_DATA_DIR=$EXPORT_ROOT/fiplpt_500_20261115_release
 ```
 
 ```text
-OK: .../fiplpt_500_20261115_release matches .../manifest.json (28 files)
+OK: $EXPORT_ROOT/fiplpt_500_20261115_release matches .../manifest.json (28 files)
 records 1500 | created_at filled 1500 | children 11804
 ```
 
