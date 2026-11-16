@@ -1,32 +1,33 @@
 # EP24 FI/PL/PT researcher dashboard, Laskin :8502 (issue #242).
 #
-# A systemd *user* unit, matching the other Laskin deployments (ep24-fiplpt, laclaugpt-live-steps,
-# laclaugpt-visualization-ai26). Copy to ~/.config/systemd/user/ and change the three marked lines.
-# The artifact directory is private data and must live outside the repository.
+# A systemd *user* unit, matching the other Laskin deployments. Copy to
+# ~/.config/systemd/user/laclaugpt-ep24-researcher.service and substitute the three placeholders
+# below: host paths are deployment state, not repository content, and this repository is public.
+#
+#   <REPO>         the checkout this service runs   (e.g. /srv/laclaugpt/visualization)
+#   <DATA_ROOT>    the private artifact root built by tools/build_live_steps_artifacts.py
+#   <BIND_ADDRESS> the Tailscale address of the host; never 0.0.0.0
 [Unit]
 Description=LaclauGPT EP24 FI/PL/PT researcher dashboard (Laskin :8502, issue #242)
-Documentation=file:///mnt/workspace/LaclauGPT-Data-Visualization/docs/EP24_RESEARCHER_LASKIN.md
+Documentation=file://<REPO>/docs/EP24_RESEARCHER_LASKIN.md
 After=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-# --- change 1: the checkout this service runs ---
-WorkingDirectory=/mnt/workspace/LaclauGPT-Data-Visualization
-# --- change 2: the private artifact root built by tools/build_live_steps_artifacts.py ---
-Environment=LACLAUGPT_VIS_LIVE_STEPS_DATA=/mnt/workspace/LP-live/analysis/live_steps_1_7
-Environment=LACLAUGPT_VIS_PYTHON=/mnt/workspace/LaclauGPT-Data-Visualization/.venv/bin/python
-# Optional second gate; set it in an EnvironmentFile with mode 0600, never here:
+WorkingDirectory=<REPO>
+Environment=LACLAUGPT_VIS_LIVE_STEPS_DATA=<DATA_ROOT>
+Environment=LACLAUGPT_VIS_PYTHON=<REPO>/.venv/bin/python
+# Optional second gate. Keep the password in an EnvironmentFile with mode 0600, never here:
 # EnvironmentFile=-%h/.config/laclaugpt-ep24-researcher.env
 Environment=PYTHONUNBUFFERED=1
-# --- change 3: bind address. Tailscale address for tailnet-only access; never 0.0.0.0 ---
-ExecStart=/mnt/workspace/LaclauGPT-Data-Visualization/scripts/ep24/serve_researcher_dashboard.sh 8502 100.115.95.109
+ExecStart=<REPO>/scripts/ep24/serve_researcher_dashboard.sh 8502 <BIND_ADDRESS>
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
-StandardOutput=append:/mnt/workspace/LaclauGPT-Private/analysis/ep24/logs/researcher_8502.log
-StandardError=append:/mnt/workspace/LaclauGPT-Private/analysis/ep24/logs/researcher_8502.log
+StandardOutput=append:<DATA_ROOT>/../logs/researcher_8502.log
+StandardError=append:<DATA_ROOT>/../logs/researcher_8502.log
 
 [Install]
 WantedBy=default.target
