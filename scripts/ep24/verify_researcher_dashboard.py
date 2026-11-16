@@ -471,8 +471,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--url", default=None, help="dashboard base URL, e.g. http://100.115.95.109:8502")
     parser.add_argument("--expected-commit", default=None,
                         help="commit the deployment is supposed to be serving (prefix is enough)")
-    parser.add_argument("--allowlist", default="auto",
-                        help="allowlist to classify against: auto (default) or a named version")
     parser.add_argument("--approved-roster", type=Path, default=None,
                         help="require exact private Monday500 membership using cleaned country dataframes")
     parser.add_argument("--allowlist", choices=("auto", "research", "display"), default="auto",
