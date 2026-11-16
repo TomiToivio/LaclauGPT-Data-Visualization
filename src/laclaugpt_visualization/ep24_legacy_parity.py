@@ -155,7 +155,8 @@ def unsupported_tabs() -> list[str]:
     return [row["tab"] for row in parity_rows() if row["available"] == "no"]
 
 
-def _child_values(children: pd.DataFrame | None, source_key: str, field: str,\n                  country: str = "") -> list[str]:
+def _child_values(children: pd.DataFrame | None, source_key: str, field: str,
+                  country: str = "") -> list[str]:
     """Entities or themes for one record, from the export's child tables."""
     if children is None or children.empty:
         return []
