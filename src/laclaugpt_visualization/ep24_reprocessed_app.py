@@ -18,6 +18,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 try:  # normal case: the package is importable (development, pip install -e .)
     from laclaugpt_visualization.demo_auth import require_demo_password
+    from laclaugpt_visualization.ep24_legacy_parity import (
+        apply_filters,
+        child_counts,
+        child_counts_over_time,
+        duration_by,
+        frequency_by,
+        language_counts,
+        load_children,
+        parity_rows,
+        record_tabs,
+        sentiment_counts,
+        unsupported_tabs,
+    )
     from laclaugpt_visualization.ep24_reprocessed import (
         SCHEMA_VERSION,
         STAGES,
@@ -40,6 +53,19 @@ try:  # normal case: the package is importable (development, pip install -e .)
 except ModuleNotFoundError:  # standalone deployment: only this module was shipped
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from demo_auth import require_demo_password  # type: ignore[no-redef]
+    from ep24_legacy_parity import (  # type: ignore[no-redef]
+        apply_filters,
+        child_counts,
+        child_counts_over_time,
+        duration_by,
+        frequency_by,
+        language_counts,
+        load_children,
+        parity_rows,
+        record_tabs,
+        sentiment_counts,
+        unsupported_tabs,
+    )
     from ep24_reprocessed import (  # type: ignore[no-redef]
         SCHEMA_VERSION,
         STAGES,
@@ -141,7 +167,7 @@ view = st.sidebar.radio("Research view", [
     "Corpus overview", "Video browser", "Pipeline overview", "Multimodal · Steps 0–5",
     "Laclaudian discourse · Step 6", "DNA · Step 7",
     "Social network · Step 8", "Combined multilayer", "RDF · Step 9",
-    "Legacy / QA", "Data & methods",
+    "Legacy parity · workbench", "Legacy / QA", "Data & methods",
 ])
 data = rows(frame)
 st.caption(f"{len(data)} records match current filters. All graph views are bounded and evidence-linked.")
@@ -335,6 +361,134 @@ elif view == "RDF · Step 9":
                 p.open(encoding="utf-8", errors="replace") as stream:
             st.code("".join([next(stream, "") for _ in range(40)]), language="turtle")
     inspect(pick_record())
+elif view == "Legacy / QA":
+    # The radio offered this view with no handler, so selecting it rendered a blank page. Its useful content
+    # is the legacy comparison itself: which legacy columns this export can serve, which it cannot, and what
+    # the export's own QA counters say (#263).
+    st.subheader("Legacy comparison and export QA")
+    st.caption("Which legacy :8501 columns this export can serve — the same facts as the parity matrix.")
+    legacy_columns = {
+        "whisper transcript": "asr_transcript",
+        "whisper translation": "asr_translation",
+        "OCR frame 1": "ocr_1",
+        "frame analysis 1": "frame_analysis_1",
+        "LLM summary": "summary_analysis",
+        "formula of populism": "formula_of_populism_analysis",
+        "political preference": "political_preference",
+        "video duration": "video_duration_seconds",
+        "sentiments": "positive",
+        "recording date": "timestamp",
+        "platform": "source_type",
+        "researcher note": "researcher_note",
+        "ManifestoBERTa class": "manifestoberta_predicted_class",
+        "LDA topic": "lda_topic",
+    }
+    availability = [
+        {
+            "legacy field": legacy,
+            "new column": column,
+            "present": "yes" if column in frame.columns else "no",
+            "filled": (f"{int(frame[column].notna().sum()):,}" if column in frame.columns else "—"),
+        }
+        for legacy, column in legacy_columns.items()
+    ]
+    st.dataframe(pd.DataFrame(availability), hide_index=True, use_container_width=True)
+    absent = [row["legacy field"] for row in availability if row["present"] == "no"]
+    if absent:
+        st.warning("Not reproducible from this export: " + ", ".join(absent)
+                   + ". See the parity matrix for the decision each one needs.")
+    if manifest:
+        qa = manifest.get("qa_counts") or {}
+        if qa:
+            st.markdown("**Exporter QA counters**")
+            st.dataframe(pd.DataFrame([{"counter": key, "value": value} for key, value in qa.items()]),
+                         hide_index=True, use_container_width=True)
+        else:
+            st.caption("The manifest carries no qa_counts.")
+    else:
+        st.info("No manifest next to the export, so export QA cannot be reported.")
+elif view == "Legacy parity · workbench":
+    # Parity with the legacy :8501 workbench (#263): the same filters, the same nine per-record tabs and
+    # the same nine aggregate tabs, on the reprocessed export. Read-only on purpose — where a researcher's
+    # decision lands is the open decision in #263 §4, and inventing a second write path would be worse than
+    # one increment of a reader that cannot yet record a judgement.
+    st.subheader("Legacy parity · researcher workbench")
+    st.caption("Read-only. Review flags, cut/split and notes are not written here; see #263 §4.")
+    children = load_children(root, frame)
+    workbench = apply_filters(
+        frame,
+        countries=[str(scope.rsplit(" (", 1)[0])] if scope != "All countries" else [],
+    )
+    st.caption(f"{len(workbench):,} of {len(frame):,} records match the sidebar filters.")
+
+    record_view, aggregate_view = st.tabs(["Records", "Corpus"])
+    with record_view:
+        if workbench.empty:
+            st.info("No record matches the current filters.")
+        else:
+            labels = [f"{index + 1}. {str(value)[:90]}"
+                      for index, value in enumerate(workbench.get("video_id", workbench.index))]
+            chosen = st.selectbox("Record", labels, key="parity_record")
+            row = workbench.iloc[labels.index(chosen)].to_dict()
+            tabs = record_tabs(row, children)
+            names = list(tabs)
+            rendered = st.tabs(names)
+            for tab, panel in zip(rendered, names):
+                content_of = tabs[panel]
+                with tab:
+                    st.markdown(f"**{panel}**")
+                    if not content_of["available"]:
+                        st.warning(content_of["reason"] or "No source in the reprocessed export.")
+                        continue
+                    body = content_of["content"]
+                    if isinstance(body, list):
+                        st.write(", ".join(body) if body else "—")
+                    elif isinstance(body, dict):
+                        for key, value in body.items():
+                            text_value = "" if value is None else str(value)
+                            st.markdown(f"*{key}*: {text_value or '—'}")
+                    else:
+                        st.write(str(body) if body else "—")
+
+    with aggregate_view:
+        legacy = st.columns(2)
+        with legacy[0]:
+            st.markdown("**Frequency**")
+            st.dataframe(frequency_by(workbench), hide_index=True, use_container_width=True)
+            st.dataframe(duration_by(workbench), hide_index=True, use_container_width=True)
+        with legacy[1]:
+            st.markdown("**Sentiments** (records with a non-zero score)")
+            st.dataframe(sentiment_counts(workbench), hide_index=True, use_container_width=True)
+            st.markdown("**Languages**")
+            st.dataframe(language_counts(workbench), hide_index=True, use_container_width=True)
+
+        st.markdown("**Entities** (top labels) and **Themes**")
+        pair = st.columns(2)
+        with pair[0]:
+            st.dataframe(child_counts(children, "postprocess_entities"), hide_index=True,
+                         use_container_width=True)
+        with pair[1]:
+            st.dataframe(child_counts(children, "postprocess_themes"), hide_index=True,
+                         use_container_width=True)
+
+        st.markdown("**Statistics** — records by country, preference and source type")
+        st.dataframe(frequency_by(workbench, "country"), hide_index=True, use_container_width=True)
+        st.dataframe(frequency_by(workbench, "source_type"), hide_index=True, use_container_width=True)
+
+        over_time = st.tabs(["Themes over time", "Persons over time"])
+        with over_time[0]:
+            st.dataframe(child_counts_over_time(children, workbench, "postprocess_themes"),
+                         hide_index=True, use_container_width=True)
+        with over_time[1]:
+            st.dataframe(child_counts_over_time(children, workbench, "postprocess_entities"),
+                         hide_index=True, use_container_width=True)
+
+    with st.expander("Parity matrix — every legacy tab, and why one is unavailable"):
+        st.dataframe(parity_rows(), hide_index=True, use_container_width=True)
+        missing = unsupported_tabs()
+        if missing:
+            st.caption("Unavailable in the reprocessed export: " + ", ".join(missing)
+                       + " (see the matrix note for each).")
 elif view == "Data & methods":
     st.subheader("Export manifest and stage coverage")
     if not manifest:
