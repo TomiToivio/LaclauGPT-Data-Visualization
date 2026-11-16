@@ -155,7 +155,8 @@ def unsupported_tabs() -> list[str]:
     return [row["tab"] for row in parity_rows() if row["available"] == "no"]
 
 
-def _child_values(children: pd.DataFrame | None, source_key: str, field: str) -> list[str]:
+def _child_values(children: pd.DataFrame | None, source_key: str, field: str,
+                  country: str = "") -> list[str]:
     """Entities or themes for one record, from the export's child tables."""
     if children is None or children.empty:
         return []
@@ -182,11 +183,11 @@ def record_tabs(row: Mapping[str, Any], children: pd.DataFrame | None = None) ->
             tabs[tab] = {"available": False, "content": "", "reason": NO_SOURCE_REASON.get(tab, "")}
             continue
         if columns == ("__child__:postprocess_themes",):
-            values = _child_values(children, source_key, "postprocess_themes")
+            values = _child_values(children, source_key, "postprocess_themes", str(row.get("country") or ""))
             tabs[tab] = {"available": True, "content": values, "reason": ""}
             continue
         if columns == ("__child__:postprocess_entities",):
-            values = _child_values(children, source_key, "postprocess_entities")
+            values = _child_values(children, source_key, "postprocess_entities", str(row.get("country") or ""))
             tabs[tab] = {"available": True, "content": values, "reason": ""}
             continue
         content = {column: row.get(column) for column in columns if column in row}
@@ -281,14 +282,37 @@ def language_counts(data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame({"language": counts.index, "records": counts.values})
 
 
+
+def scope_children(children: pd.DataFrame | None, parents: pd.DataFrame) -> pd.DataFrame:
+    """Join children only to uniquely identified filtered parents."""
+    if children is None or children.empty or "source_key" not in children:
+        return pd.DataFrame(columns=list(children.columns) if children is not None else [])
+    if "source_key" not in parents or parents.empty:
+        return children.iloc[0:0].copy()
+    parent = parents[["source_key"] + (["country"] if "country" in parents else [])].copy()
+    parent["source_key"] = parent["source_key"].astype(str)
+    incoming = children.copy()
+    incoming["source_key"] = incoming["source_key"].astype(str)
+    if "country" in incoming and "country" in parent:
+        keys = ["source_key", "country"]
+        parent["country"] = parent["country"].astype(str).str.casefold()
+        incoming["country"] = incoming["country"].astype(str).str.casefold()
+    else:
+        keys = ["source_key"]
+    unique = parent.loc[~parent.duplicated(keys, keep=False), keys]
+    return incoming.merge(unique, on=keys, how="inner", validate="many_to_one")
+
+
 def child_counts(children: pd.DataFrame | None, field: str, *, limit: int = 20) -> pd.DataFrame:
     """Top entities or themes across the filtered records."""
-    if children is None or children.empty or not {"field", "item.label"} <= set(children.columns):
+    if children is None or children.empty or not {"field", "item.label", "source_key"} <= set(children.columns):
         return pd.DataFrame(columns=["label", "records"])
     subset = children[children["field"] == field]
     if subset.empty:
         return pd.DataFrame(columns=["label", "records"])
-    counts = subset["item.label"].astype(str).value_counts().head(limit)
+    counts = (subset.dropna(subset=["item.label", "source_key"])
+              .drop_duplicates(["source_key", "item.label"])["item.label"]
+              .astype(str).value_counts().head(limit))
     return pd.DataFrame({"label": counts.index, "records": counts.values})
 
 
@@ -305,7 +329,7 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     dates = dates.dropna(subset=["month"])
     if dates.empty:
         return empty
-    subset = children[children["field"] == field][["source_key", "item.label"]]
+    subset_fields = ["source_key", "item.label"]\n    if "country" in children:\n        subset_fields.append("country")\n    subset = children[children["field"] == field][subset_fields].drop_duplicates()
     merged = subset.merge(dates[["source_key", "month"]], on="source_key", how="inner")
     if merged.empty:
         return empty
@@ -342,7 +366,10 @@ def load_children(root: str | Any, parents: pd.DataFrame) -> pd.DataFrame:
                 continue
             seen.add(path)
             try:
-                frames.append(pd.read_csv(path, low_memory=False))
+                data = pd.read_csv(path, low_memory=False)
+                if folder.parent.name in ("finland", "poland", "portugal") and "country" not in data:
+                    data["country"] = folder.parent.name
+                frames.append(data)
             except (OSError, pd.errors.ParserError):
                 continue
     if not frames:
