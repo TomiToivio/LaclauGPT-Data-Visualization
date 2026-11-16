@@ -41,7 +41,7 @@ def test_child_joins_are_country_scoped(tmp_path):
     target = tmp_path / "finland" / "children"
     target.mkdir(parents=True)
     (target / "themes.csv").write_text(
-        "source_record_id,name\\nID-1,justice\\nID-2,other\\n", encoding="utf-8"
+        "source_record_id,name\nID-1,justice\nID-2,other\n", encoding="utf-8"
     )
     source = {"country": "finland", "_storage_id": "ID-1"}
     assert child_labels(tmp_path, source, "themes") == ["justice"]
