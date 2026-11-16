@@ -329,7 +329,10 @@ def child_counts_over_time(children: pd.DataFrame | None, parents: pd.DataFrame,
     dates = dates.dropna(subset=["month"])
     if dates.empty:
         return empty
-    subset_fields = ["source_key", "item.label"]\n    if "country" in children:\n        subset_fields.append("country")\n    subset = children[children["field"] == field][subset_fields].drop_duplicates()
+    subset_fields = ["source_key", "item.label"]
+    if "country" in children:
+        subset_fields.append("country")
+    subset = children[children["field"] == field][subset_fields].drop_duplicates()
     merged = subset.merge(dates[["source_key", "month"]], on="source_key", how="inner")
     if merged.empty:
         return empty
