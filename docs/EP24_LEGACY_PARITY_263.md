@@ -84,6 +84,38 @@ Consequences worth naming:
   deduplicated on `(source_key, label)` and labelled `videos`, with the filtered frame as its denominator
   and `source_key` as its identity rule.
 
+## Acceptance 4: one layout, and the manifest proves it
+
+The export directory is verified against the manifest that travels with it, not against a README or a
+plausible row count (`ep24_manifest_verify.py`, `scripts/ep24/verify_export_manifest.py`).
+
+```bash
+python scripts/ep24/verify_export_manifest.py --root <export> [--json verdict.json] [--require-verified]
+```
+
+Five verdicts, kept apart because the remedies differ:
+
+| verdict | meaning |
+| --- | --- |
+| `verified` | every declared file exists with its declared size, hash and row count |
+| `unverified` | at least one file is missing, or its size/hash/row count disagrees — the file and the claim are named |
+| `layout mismatch` | the directory's shape is not the layout the manifest declares |
+| `layout ambiguous` | both a `combined.csv` and per-country files are present — two layouts of one dataset in one place, which is how they drift apart |
+| `no manifest` | unverifiable; a directory listing is not provenance |
+
+Two distinctions the table enforces, because both were live defects elsewhere:
+
+- **Undeclared files are listed, not hidden.** The cohort roster, `dictionary.json` and `qa.json` live
+  beside the export and are not in `files`; they are named in the verdict so "25 declared files exist" is
+  never mistaken for "the directory contains 25 files".
+- **Rows are counted by parsing CSV.** Transcripts contain quoted newlines; a 500-row export reads as
+  ~127 000 lines, and a line count would report a mismatch that does not exist.
+
+The dashboard renders the verdict in *Data & methods* (cached, since hashing a real export is tens of
+megabytes), and the workbench refuses to imply provenance it cannot prove: an unverified or absent
+manifest is a warning on screen, never a silent pass. Measured on the delivered snapshot: **25/25 declared
+files, 36,891 declared rows, layout `per-country` matching the directory**, three undeclared sidecars.
+
 ## Not implemented on purpose: the write path
 
 The legacy workbench records review decisions — `video_checked`, `delete_video`, `dubious_video`, `rerun_llm`,

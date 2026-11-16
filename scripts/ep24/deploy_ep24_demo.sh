@@ -19,6 +19,7 @@ APP_FILES=(
   "src/laclaugpt_visualization/demo_auth.py"
   "src/laclaugpt_visualization/ep24_reprocessed.py"
   "src/laclaugpt_visualization/ep24_legacy_parity.py"
+  "src/laclaugpt_visualization/ep24_manifest_verify.py"
   "src/laclaugpt_visualization/researcher_views.py"
   "src/laclaugpt_visualization/ep24_presentation.py"
   "src/laclaugpt_visualization/ep24_reprocessed_app.py"
