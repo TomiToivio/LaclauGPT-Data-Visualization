@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import networkx as nx
@@ -69,6 +70,14 @@ except ModuleNotFoundError:  # standalone deployment: only this module and its h
         value_counts,
     )
 
+from laclaugpt_visualization.researcher_export import (
+    RESEARCH_COLUMNS,
+    csv_bytes,
+    provenance,
+    provenance_json,
+    researcher_frame,
+    served_commit,
+)
 from laclaugpt_visualization.researcher_views import render_stage_explorer
 
 ROOT = (os.environ.get("LACLAUGPT_VIS_LIVE_STEPS_DATA")
@@ -190,6 +199,19 @@ def table(rows: list[dict], key: str, caption: str = ""):
 
 
 # -- sidebar: one filter path ------------------------------------------------------------------- #
+SERVED_COMMIT = served_commit(Path(__file__).resolve().parents[1])
+
+st.sidebar.markdown("### This deployment")
+st.sidebar.caption(
+    f"{manifest.get('dataset') or 'EP24 live pipeline'} · built "
+    f"{(manifest.get('generated_at') or 'unknown')[:10]} · "
+    f"{len(frame):,} videos · {SERVED_COMMIT[:7] if SERVED_COMMIT else 'commit unknown'}"
+)
+st.sidebar.caption(
+    "Read-only artifacts from the multimodal producer; nothing here writes back. Filters and "
+    "exports apply to this browser session only."
+)
+
 st.sidebar.markdown("### Corpus")
 st.sidebar.caption(f"{len(frame):,} videos in this export "
                    f"({', '.join(f'{k} {v}' for k, v in frame['country'].value_counts().items())})")
@@ -207,7 +229,8 @@ filtered = filter_records(frame, countries=countries, platforms=platforms, polit
 st.caption(f"{len(filtered):,} of {len(frame):,} videos match the filters.")
 
 tabs = st.tabs(["Overview", "Steps & coverage", "Search", "Record browser", "Discourse · DNA",
-                "Network · SNA", "Problems", "Aggregates", "Data quality", "Methods", "Stage explorer"])
+                "Network · SNA", "Problems", "Aggregates", "Data quality", "Methods",
+                "Stage explorer", "Export"])
 
 with tabs[0]:
     columns = st.columns(4)
@@ -572,3 +595,47 @@ with tabs[9]:
 
 with tabs[10]:
     render_stage_explorer(ROOT, filtered)
+
+
+with tabs[11]:
+    st.subheader("Export this selection")
+    st.caption(
+        "The export carries the researcher fields only: identity, source metadata, stage statuses, "
+        "findings and your own annotations. Runtime, prompt and persistence plumbing is excluded, and "
+        "the provenance file names every dropped column with the reason it was dropped."
+    )
+    available = [column for column in RESEARCH_COLUMNS if column in filtered.columns]
+    chosen = st.multiselect(
+        "Columns to include",
+        available,
+        default=available,
+        key="live_export_columns",
+        help="A column has to be on the researcher allowlist to appear here.",
+    )
+    projection = researcher_frame(filtered, chosen)
+    st.caption(f"{len(projection):,} rows · {len(projection.columns):,} columns")
+    st.dataframe(projection.head(200), width="stretch")
+
+    selection_provenance = provenance(
+        manifest, frame=frame, selection=filtered, commit=SERVED_COMMIT
+    )
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    downloads = st.columns(2)
+    with downloads[0]:
+        st.download_button(
+            "Download CSV",
+            data=csv_bytes(projection),
+            file_name=f"ep24_selection_{stamp}.csv",
+            mime="text/csv",
+            key="live_export_csv",
+        )
+    with downloads[1]:
+        st.download_button(
+            "Download provenance (JSON)",
+            data=provenance_json(selection_provenance),
+            file_name=f"ep24_selection_{stamp}.provenance.json",
+            mime="application/json",
+            key="live_export_provenance",
+        )
+    with st.expander("What the provenance records"):
+        st.json(selection_provenance, expanded=False)
