@@ -339,62 +339,6 @@ def check_coverage(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return results or [check("coverage", False, "the manifest reports no stage coverage")]
 
 
-def check_approved_cohort(data_root: Path, roster_path: Path) -> list[dict[str, Any]]:
-    """Check exact membership against the private approved Monday500 roster.
-
-    Count-only verification is insufficient: an arbitrary 500-row slice can pass
-    while containing different videos. The cleaned country CSVs preserve the
-    producer's canonical _storage_id; the serving index intentionally does not.
-    Never expose these IDs in the researcher interface or exports.
-    """
-    countries = ("finland", "poland", "portugal")
-    try:
-        with roster_path.open("r", encoding="utf-8-sig") as handle:
-            lines = [line.strip() for line in handle if line.strip() and not line.lstrip().startswith("#")]
-    except OSError as error:
-        return [check("approved roster", False, str(error))]
-    approved = {country: set() for country in countries}
-    for value in lines:
-        parts = value.split(":", 2)
-        if len(parts) != 3 or parts[0] != "monday500" or parts[1] not in approved or not parts[2]:
-            return [check("approved roster", False, "invalid namespace in approved roster")]
-        approved[parts[1]].add(value)
-    results = [check(
-        "approved roster",
-        len(lines) == 1500 and all(len(approved[country]) == 500 for country in countries),
-        "expected exactly 500 distinct namespaced identities per country",
-    )]
-    if results[0]["status"] == STATUS_FAIL:
-        return results
-    for country in countries:
-        cleaned = data_root / "cleaned" / f"{country}_clean.csv"
-        if not cleaned.is_file():
-            results.append(check(f"approved membership · {country}", False, f"missing {cleaned}"))
-            continue
-        actual: list[str] = []
-        try:
-            with cleaned.open("r", encoding="utf-8-sig", newline="") as handle:
-                reader = csv.DictReader(handle)
-                if "_storage_id" not in (reader.fieldnames or []):
-                    results.append(check(f"approved membership · {country}", False, "missing canonical _storage_id"))
-                    continue
-                for row in reader:
-                    actual.append((row.get("_storage_id") or "").strip())
-        except (OSError, csv.Error) as error:
-            results.append(check(f"approved membership · {country}", False, f"unreadable CSV: {error}"))
-            continue
-        observed = set(actual)
-        missing = len(approved[country] - observed)
-        extra = len(observed - approved[country])
-        duplicates = len(actual) - len(observed)
-        results.append(check(
-            f"approved membership · {country}",
-            len(actual) == 500 and not missing and not extra and not duplicates,
-            f"rows={len(actual)} missing={missing} unapproved={extra} duplicates={duplicates}",
-        ))
-    return results
-
-
 def check_checkout(served_dir: Path | None, expected_commit: str | None) -> list[dict[str, Any]]:
     """The served directory is a git checkout, and the commit it is on is reported."""
     if served_dir is None:
@@ -462,9 +406,6 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
         results.extend(check_coverage(manifest))
     results.extend(check_checkout(Path(args.served_dir).expanduser() if args.served_dir else None,
                                   args.expected_commit))
-    roster = getattr(args, "approved_roster", None)
-    if roster:
-        results.extend(check_approved_cohort(data_root, Path(roster).expanduser()))
     results.extend(check_http(args.url))
     return results
 
@@ -478,14 +419,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--url", default=None, help="dashboard base URL, e.g. http://100.115.95.109:8502")
     parser.add_argument("--expected-commit", default=None,
                         help="commit the deployment is supposed to be serving (prefix is enough)")
-    parser.add_argument("--approved-roster", type=Path, default=None,
-                        help="require exact private Monday500 membership using cleaned country dataframes")
     parser.add_argument("--allowlist", choices=("auto", "research", "display"), default="auto",
                         help="which researcher allowlist the column check applies (default: auto)")
+    parser.add_argument("--approved-roster", type=Path, default=None,
+                        help="optional: also verify the export's approval record (digest, 500/country)")
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of lines")
     args = parser.parse_args(argv)
 
     results = run(args)
+    if getattr(args, "approved_roster", None):
+        # Optional: the dashboard no longer requires approval to open (issue #242, 2026-11-16), but an
+        # operator who wants the export's own approval record verified can ask for it.
+        roster_manifest, _ = check_manifest(args.data_root)
+        results.extend(check_roster(args.data_root, roster_manifest))
     failures = [item for item in results if item["status"] == STATUS_FAIL]
     if args.json:
         print(json.dumps({"checks": results, "failures": len(failures)}, indent=2, sort_keys=True))
