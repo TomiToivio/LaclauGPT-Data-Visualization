@@ -5,9 +5,13 @@ import streamlit as st
 
 from laclaugpt_visualization.app import _load_default_frame
 from laclaugpt_visualization.config import get_settings
+from laclaugpt_visualization.demo_auth import require_login
 from laclaugpt_visualization.multimethod_page import render_ai26_multimethod_workspace
 
 st.set_page_config(page_title="AI26 multi-method Explore", layout="wide")
+# Security gate (#263): the multipage nav reaches every script directly, so each page gates itself before it
+# reads anything. A session that authenticated on the main page stays authenticated here.
+require_login()
 st.title("LaclauGPT Data Visualization")
 settings = get_settings()
 settings.ensure_local_directories()
