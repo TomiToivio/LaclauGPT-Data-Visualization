@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from laclaugpt_visualization.config import get_settings
+from laclaugpt_visualization.demo_auth import require_login
 from laclaugpt_visualization.query_backends import (
     BackendUnavailable,
     ContextRequest,
@@ -19,8 +20,10 @@ from laclaugpt_visualization.query_backends import (
 )
 from laclaugpt_visualization.storage import load_local_frame
 
-
 st.set_page_config(page_title="LaclauGPT Graph + Context Explorer", layout="wide")
+# Security gate (#263): the multipage nav reaches every script directly, so each page gates itself before it
+# reads anything. A session that authenticated on the main page stays authenticated here.
+require_login()
 st.title("Graph + Context Explorer")
 st.caption(
     "Bounded graph browsing and optional vector context over the same research-query contract. "

@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from laclaugpt_visualization.config import get_settings
+from laclaugpt_visualization.demo_auth import require_login
 from laclaugpt_visualization.rdf import (
     THEORY_CAVEAT,
     RDFLimits,
@@ -22,6 +23,9 @@ from laclaugpt_visualization.rdf import (
 )
 
 st.set_page_config(page_title="LaclauGPT RDF Explorer", layout="wide")
+# Security gate (#263): the multipage nav reaches every script directly, so each page gates itself before it
+# reads anything. A session that authenticated on the main page stays authenticated here.
+require_login()
 st.title("RDF knowledge-graph explorer")
 settings = get_settings()
 policy = load_project_policy(settings.data_dir, settings.project_id)
