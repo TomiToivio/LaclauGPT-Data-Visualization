@@ -39,12 +39,19 @@ def test_whitespace_around_the_configured_password_is_ignored(monkeypatch):
     assert password_matches("secret", configured_password()) is True
 
 
-def test_the_gate_never_reads_a_password_from_a_file():
-    """The password comes from the environment only, so it cannot be committed by accident."""
+def test_the_env_gate_never_reads_a_password_from_a_file():
+    """The single-password gate compares an environment value; it does not open anything.
+
+    Since #263 the module also resolves a `streamlit-authenticator` config path, and that file is read once
+    inside `authenticator_from` — it holds a bcrypt *hash*, never a password the app compares itself. So the
+    invariant is narrower and checkable: exactly one file read, and it is that one.
+    """
     source = (Path(__file__).resolve().parents[1]
               / "src/laclaugpt_visualization/demo_auth.py").read_text(encoding="utf-8")
     assert "open(" not in source
-    assert "Path(" not in source
+    assert source.count("read_text(") == 1
+    reader = source[source.index("def authenticator_from"):source.index("def render_login_gate")]
+    assert "read_text(" in reader
 
 
 def test_the_comparison_is_constant_time():
@@ -57,6 +64,6 @@ def test_the_app_gates_before_it_reads_any_data():
     """A gate placed after read_records() would still load the corpus into memory."""
     app = (Path(__file__).resolve().parents[1]
            / "src/laclaugpt_visualization/ep24_reprocessed_app.py").read_text(encoding="utf-8")
-    gate = app.index("require_demo_password()")
+    gate = app.index("require_login()")
     first_read = app.index("read_records(")
     assert gate < first_read, "the password gate must run before the export is loaded"

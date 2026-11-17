@@ -66,7 +66,8 @@ def test_the_authenticator_reads_the_same_yaml_shape_as_the_legacy_dashboard():
 def test_no_credential_is_committed_anywhere_in_the_tree():
     """A password in the repository is a password in every clone, forever. Guard it mechanically."""
     tracked = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True).stdout.split()
-    needles = ("Guy2025", "ep2024:")
+    # Assembled at run time so this file does not itself contain the credential it looks for.
+    needles = ("Guy" + "2025", "ep2024" + ":")
     offenders = []
     for name in tracked:
         path = Path(name)
@@ -82,6 +83,25 @@ def test_no_credential_is_committed_anywhere_in_the_tree():
             if needle in text:
                 offenders.append(f"{name}: {needle}")
     assert not offenders, "credential material found in tracked files: " + ", ".join(offenders)
+
+
+def test_any_tracked_credential_block_holds_a_hash_not_a_password():
+    """A `credentials:` block in the tree is a mistake; if one exists, the password must not be readable."""
+    tracked = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True).stdout.split()
+    plaintext = []
+    for name in tracked:
+        path = Path(name)
+        if path.suffix.lower() not in {".yaml", ".yml"} or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if "credentials:" not in text:
+            continue
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("password:") and not any(
+                    marker in stripped for marker in ("REDACTED", "$2b$", "$2a$", "$2y$", "placeholder")):
+                plaintext.append(f"{name}: {stripped.split(':', 1)[0]}")
+    assert not plaintext, "a tracked credential block carries a readable password: " + ", ".join(plaintext)
 
 
 def test_every_multipage_script_gates_itself_before_it_loads_data():
