@@ -17,9 +17,11 @@ from laclaugpt_visualization.ep24_legacy_parity import (
     AGGREGATE_SOURCES,
     AGGREGATE_TABS,
     FILTERS,
+    LEGACY_REVIEW_FIELDS,
     NO_SOURCE_REASON,
     RECORD_SOURCES,
     RECORD_TABS,
+    REVIEW_FIELDS_PRESENT,
     UNSUPPORTED_FILTERS,
     apply_filters,
     child_counts,
@@ -30,6 +32,8 @@ from laclaugpt_visualization.ep24_legacy_parity import (
     load_children,
     parity_rows,
     record_tabs,
+    review_fields_absent,
+    review_state,
     scope_children,
     sentiment_counts,
     unsupported_tabs,
@@ -399,3 +403,31 @@ def test_mixed_date_columns_use_timestamp_only_for_missing_created_at():
         {"month": "2024-05", "label": "justice", "videos": 1},
         {"month": "2024-06", "label": "justice", "videos": 1},
     ]
+
+
+def test_the_legacy_review_schema_is_declared_and_narrowed_to_what_exists():
+    """Sixteen fields were written to Mongo; the export carries two. The other fourteen are named, not implied."""
+    assert len(LEGACY_REVIEW_FIELDS) == 16
+    assert set(REVIEW_FIELDS_PRESENT) <= set(LEGACY_REVIEW_FIELDS)
+    absent = review_fields_absent(["researcher_note", "needs_resplit", "video_id"])
+    assert "video_checked" in absent and "researcher_note" not in absent
+    assert len(absent) == 14
+
+
+def test_review_coverage_names_its_denominator():
+    """`368 flagged` is a statement about how much of the corpus was reviewed, so the denominator travels with it."""
+    frame = pd.DataFrame({"source_key": ["a", "b"], "needs_resplit": ["True", "false"],
+                          "researcher_note": ["look again", ""]})
+    coverage = review_state(frame)
+    row = coverage.set_index("field").loc["needs_resplit"]
+    assert row["records_with_a_value"] == 1 and row["of_records"] == 2 and row["share"] == "50.0%"
+
+
+def test_an_empty_frame_reports_no_coverage_rather_than_zero_rows(parents):
+    assert review_state(parents.iloc[0:0]).empty
+
+
+def test_the_researcher_tab_shows_both_review_fields_and_their_labels():
+    tabs = record_tabs({"needs_resplit": "True", "researcher_note": "check the cut"})
+    blocks = {block["label"]: block["value"] for block in tabs["Report Problems / Researcher Notes"]["blocks"]}
+    assert blocks == {"Flagged for re-split": "True", "Researcher note": "check the cut"}

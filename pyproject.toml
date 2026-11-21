@@ -18,6 +18,7 @@ dependencies = [
   "plotly>=5.24,<7",
   "PyYAML>=6.0,<7",
   "streamlit>=1.57,<2",
+  "streamlit-authenticator>=0.3,<1",
 ]
 
 [project.optional-dependencies]
@@ -45,3 +46,8 @@ addopts = "-ra"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+# Streamlit multipage scripts are named for the navigation label (`1_AI26_Multimethod_Explore.py`), which is
+# not a valid Python module name by construction.
+"src/laclaugpt_visualization/pages/*.py" = ["N999"]

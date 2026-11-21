@@ -14,9 +14,10 @@ Two rules keep it honest:
 * **Every count names its denominator.** The repository's existing rule (#205): two exports legitimately
   disagree on totals, so a "records" figure without its identity rule and its filter scope is not a claim.
 
-Read-only by design: the legacy write path (review flags, cut/split, notes to MongoDB) is deliberately not
-implemented here. Where a researcher's decision lands is the open decision in #263 §4, and inventing a second
-write path would be worse than leaving the workbench read-only for one increment.
+Read-only over the corpus. A researcher's decision does **not** go into MongoDB and does not edit the export:
+it is an append-only review event (`ep24_review_log.py`, #263 §4 option b), written only when the deployment
+names a review directory. This module stays the view model; the log owns the write, and the fold it produces
+is what the notes tab shows.
 """
 from __future__ import annotations
 
@@ -69,7 +70,7 @@ RECORD_SOURCES: dict[str, tuple[str, ...] | None] = {
                  "formula_of_populism_frontier", "laclau_abstention_reason"),
     "Themes": ("__child__:postprocess_themes",),
     "Persons": ("__child__:postprocess_entities",),
-    "Report Problems / Researcher Notes": ("researcher_note",),
+    "Report Problems / Researcher Notes": ("needs_resplit", "researcher_note"),
 }
 
 AGGREGATE_SOURCES: dict[str, tuple[str, ...] | None] = {
@@ -132,6 +133,66 @@ class Parity:
         }
 
 
+#: The sixteen review fields the legacy workbench wrote to `spectacleScraper.ep24_dataframe`, keyed by
+#: `new_id` (dashboard backup, `add_to_mongo`). Two of them survive into the reprocessed export as read-only
+#: residue; the rest are declared absent so a reader knows the difference between "nobody flagged this" and
+#: "this dashboard cannot see the flag".
+LEGACY_REVIEW_FIELDS = (
+    "video_checked",
+    "delete_video",
+    "dubious_video",
+    "rerun_llm",
+    "rerun_ocr",
+    "rerun_whisper",
+    "cut_video",
+    "cut_at",
+    "cut_keep",
+    "split_video",
+    "split_at",
+    "new_persons",
+    "new_themes",
+    "wrong_language",
+    "researcher_note",
+    "needs_resplit",
+)
+
+#: The review fields this export actually carries, with the label the tab shows.
+REVIEW_FIELDS_PRESENT = {
+    "researcher_note": "Researcher note",
+    "needs_resplit": "Flagged for re-split",
+}
+
+
+def review_fields_absent(columns: Sequence[str] | None = None) -> list[str]:
+    """Legacy review fields this export does not carry, in registry order."""
+    carried = set(columns) if columns is not None else set(REVIEW_FIELDS_PRESENT)
+    return [field for field in LEGACY_REVIEW_FIELDS if field not in carried]
+
+
+def review_state(frame: pd.DataFrame) -> pd.DataFrame:
+    """Coverage of each review field that is present: how many records carry a judgement, and the denominator.
+
+    A review field is never reported as a bare count. "368 flagged" is not a finding about the corpus; it is a
+    statement about how much of it a human has looked at, and the denominator is what makes that readable.
+    """
+    if frame.empty:
+        return pd.DataFrame(columns=["field", "label", "records_with_a_value", "of_records", "share"])
+    output = []
+    for field, label in REVIEW_FIELDS_PRESENT.items():
+        if field not in frame.columns:
+            continue
+        values = frame[field]
+        if field == "needs_resplit":
+            marked = values.astype(str).str.strip().str.casefold().isin({"true", "1", "yes", "y"})
+        else:
+            text = values.astype(str).str.strip()
+            marked = ~text.isin({"", "nan", "none", "nat", "false", "0", "[]", "{}"})
+        count = int(marked.sum())
+        output.append({"field": field, "label": label, "records_with_a_value": count,
+                       "of_records": len(frame), "share": f"{count / len(frame):.1%}"})
+    return pd.DataFrame(output, columns=["field", "label", "records_with_a_value", "of_records", "share"])
+
+
 def parity_rows() -> list[dict[str, Any]]:
     """Every legacy tab, in legacy order, with its source and its availability."""
     rows: list[dict[str, Any]] = []
@@ -160,6 +221,7 @@ def unsupported_tabs() -> list[str]:
 
 PLATFORM_DERIVATION = "Derived from source_type and account_type; the export does not contain a platform observation."
 FIELD_LABELS = {
+    "needs_resplit": "Flagged for re-split",
     "asr_transcript": "Transcript (original)", "asr_translation": "Translation",
     "ocr_1": "Text visible in frame 1", "frame_analysis_1": "Frame 1 analysis",
     "video_duration_seconds": "Duration (seconds)",

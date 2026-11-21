@@ -118,16 +118,33 @@ megabytes), and the workbench refuses to imply provenance it cannot prove: an un
 manifest is a warning on screen, never a silent pass. Measured on the delivered snapshot: **25/25 declared
 files, 36,891 declared rows, layout `per-country` matching the directory**, three undeclared sidecars.
 
-## Not implemented on purpose: the write path
+## The write path (#263 §4): the mechanism exists, the decision does not
 
 The legacy workbench records review decisions — `video_checked`, `delete_video`, `dubious_video`, `rerun_llm`,
 `rerun_ocr`, `rerun_whisper`, `cut_video`/`cut_at`/`cut_keep`, `split_video`/`split_at`, `new_themes`,
-`new_persons`, `researcher_note` — in MongoDB. The reprocessed app is read-only by contract (its unit points at
-a read-only snapshot), so a decision is needed first: a MongoDB review collection (legacy behaviour, new write
-path), append-only review events in the private repository, or no write path in this iteration.
+`new_persons`, `researcher_note` — in MongoDB. Where a new judgement lands is the owner's decision, laid out
+with its costs in [`EP24_WRITE_PATH_DECISION_263.md`](EP24_WRITE_PATH_DECISION_263.md). That decision is still
+open, so **this deployment collects no judgements**: the notes tab shows what the export carries and, when no
+review directory is configured, offers no form at all rather than a field whose submit has nowhere to go.
 
-This increment is the third option: the reading half is delivered, and nothing invents a second place where
-research decisions live. See #263 §4.
+What exists is the mechanism for option (b), `ep24_review_log.py`, disabled unless a deployment names a
+directory (`LACLAUGPT_EP24_REVIEW_DIR`):
+
+| rule | why |
+| --- | --- |
+| **append-only** | a correction is a new event; the earlier decision is never rewritten or deleted, and the fold shows the newest value per field while the history stays auditable |
+| **explicit False is a decision** | "not dubious" clears a flag; it is a different claim from "never mentioned" |
+| **nothing is written unless the deployment says where** | unset → read-only, and the tab says so instead of discarding input |
+| **a public checkout is not a destination** | the store refuses a directory inside the code checkout: review events carry notes and identity |
+| **the log holds the decision, not the corpus** | record identity, reviewer and the decision fields; never a transcript or analysis copy |
+| **a corrupt line is skipped and reported** | a log that raises on one bad byte loses every decision after it |
+
+`cut_video`/`split_video` would be recorded as **decisions for the producer**, not performed: this build does
+not cut or move media. Committing shards to the private repository is a human step — the dashboard appends, it
+never runs `git commit`.
+
+Turning the mechanism on is the act that chooses option (b), so it belongs to whoever owns the decision, not to
+a deployment script.
 
 ## The data the dashboard reads
 
@@ -136,3 +153,31 @@ verified against its `manifest.json` by `scripts/ep24/verify_served_export.py` (
 disagreements). See `docs/EP24_SERVED_EXPORT_VERIFICATION.md` — before that check existed the host served a
 flat `combined.csv` build that matched no committed file, and the manifest was three sidecars short of its own
 tree.
+
+## Human review: what the export carries, and what it cannot (#263 §4)
+
+The legacy workbench wrote sixteen review fields to `spectacleScraper.ep24_dataframe`, keyed by `new_id`:
+`video_checked`, `delete_video`, `dubious_video`, `rerun_llm`, `rerun_ocr`, `rerun_whisper`, `cut_video`,
+`cut_at`, `cut_keep`, `split_video`, `split_at`, `new_persons`, `new_themes`, `wrong_language`,
+`researcher_note`, plus the tab that displayed them.
+
+The reprocessed export carries **two** of them, as read-only residue, measured over all 1,500 records:
+
+| field | records with a value | share |
+| --- | --- | --- |
+| `needs_resplit` (flagged) | 368 | 24.5% |
+| `researcher_note` | 91 | 6.1% |
+
+The other fourteen are **absent from the export entirely** — not empty, absent. So the workbench can show that
+someone flagged 368 videos for a re-split without being able to show why, and cannot show a single rerun, cut
+or split decision. Both states are now labelled in the "Report Problems / Researcher Notes" tab and in the
+corpus coverage table, because "nobody flagged this" and "this dashboard cannot see the flag" are different
+facts and a reader must be able to tell them apart.
+
+Where new judgements are written is the open decision in
+`docs/EP24_WRITE_PATH_DECISION_263.md` (§4). Until it is made, the dashboard does not
+collect judgements at all rather than inventing a second place where research decisions live unreviewed.
+
+The coverage figures are also a warning about the corpus: three quarters of the videos have never been
+flagged for re-split and 94% carry no note. That is not evidence that they are clean — it is a statement about
+how much of the corpus a human has actually looked at.

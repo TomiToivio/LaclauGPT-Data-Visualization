@@ -16,10 +16,14 @@ from laclaugpt_visualization.control_plane import (
     redact_config,
     secret_paths,
 )
+from laclaugpt_visualization.demo_auth import require_login
 from laclaugpt_visualization.task_status import task_status_rows
 from laclaugpt_visualization.worker_status import RedisOperationalStatus
 
 st.set_page_config(page_title="LaclauGPT Control Plane", layout="wide")
+# Security gate (#263): the multipage nav reaches every script directly, so each page gates itself before it
+# reads anything. A session that authenticated on the main page stays authenticated here.
+require_login()
 st.title("LaclauGPT Control Plane")
 st.caption(
     "Optional operational control plane. Redis carries shared configuration revisions, "
@@ -147,7 +151,7 @@ with config_tab:
     try:
         parsed = json.loads(editor or "{}")
         if not isinstance(parsed, dict):
-            raise ValueError("top-level configuration must be an object")
+            raise TypeError("top-level configuration must be an object")
         secrets = secret_paths(parsed)
         if secrets:
             raise ValueError("secret-like fields are not allowed in shared config: " + ", ".join(secrets))
