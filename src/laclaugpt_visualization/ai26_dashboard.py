@@ -567,17 +567,24 @@ def _records(frame: pd.DataFrame) -> None:
         if name in frame
     ]
     st.dataframe(frame[columns] if columns else frame, use_container_width=True, hide_index=True)
-    options = [str(value) for value in frame["source_url"] if str(value)]
+    options = [
+        value for value in frame["source_url"].astype(str).unique()
+        if value.strip() and value != "nan"
+    ]
     if not options:
         return
     source_url = st.selectbox("Close-read record", options)
     row = frame[frame["source_url"] == source_url].iloc[0]
     st.markdown("#### Text / metadata")
-    st.write(row.get("summary") or row.get("human_readable_summary") or "No summary")
+    summary = _readable_text(row.get("summary"), "") or _readable_text(
+        row.get("human_readable_summary"), "No summary"
+    )
+    st.write(summary)
     for field in ("source_text", "caption", "transcript", "whisper_transcript", "ocr"):
-        if row.get(field):
-            st.markdown(f"**{field}**")
-            st.write(row.get(field))
+        content = _readable_text(row.get(field), "")
+        if content:
+            st.markdown(f"**{field.replace('_', ' ').title()}**")
+            st.write(content)
     st.markdown("#### Analysis")
     st.json(
         {
@@ -617,7 +624,10 @@ def _reports(settings: Settings, frame: pd.DataFrame) -> None:
     report = reports[labels.index(st.selectbox("Periodic report", labels))]
     st.markdown(report.body)
     if report.source_urls:
-        linked = frame[frame["source_url"].isin(report.source_urls)]
+        linked = (
+            frame[frame["source_url"].isin(report.source_urls)]
+            if "source_url" in frame else frame.iloc[0:0]
+        )
         st.caption(f"Evidence links visible in current filtered view: {len(linked)}")
 
 
@@ -772,7 +782,15 @@ def run() -> None:
     )
     if st.sidebar.button("Refresh now"):
         st.cache_data.clear()
-    snapshot = load_ai26_snapshot(settings, limit=int(page_size))
+    try:
+        snapshot = load_ai26_snapshot(settings, limit=int(page_size))
+    except (OSError, RuntimeError, ValueError, TimeoutError) as exc:
+        st.error(
+            "The AI26 live data source is unavailable. Check the private MongoDB "
+            "connection, dashboard credentials and service logs."
+        )
+        st.caption(f"Error category: {type(exc).__name__}. No research records were loaded.")
+        return
     filtered, filters = _sidebar(snapshot.frame)
     st.sidebar.caption(f"Last load: {snapshot.loaded_at} · refresh target: {refresh}s")
     tabs = st.tabs(
