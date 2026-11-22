@@ -40,7 +40,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+# "src" as well as "." so `pytest` works in a plain checkout: the package lives under src/,
+# and without this a developer must `pip install -e .` before any test can import it -- which
+# PEP 668 blocks on a managed interpreter. CI installs the package anyway, so this only
+# removes the local-only failure.
+pythonpath = [".", "src"]
 addopts = "-ra"
 
 [tool.ruff]
