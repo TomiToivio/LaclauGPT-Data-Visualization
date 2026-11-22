@@ -39,13 +39,11 @@ LACLAUGPT_VIS_STORAGE_BACKEND=mongodb
 LACLAUGPT_VIS_DATA_BACKEND=mongodb
 LACLAUGPT_VIS_CACHE_BACKEND=redis
 LACLAUGPT_VIS_MESSAGING_BACKEND=redis
-LACLAUGPT_VIS_OBJECT_BACKEND=s3
+LACLAUGPT_VIS_OBJECT_BACKEND=local
 LACLAUGPT_VIS_SERVER_HOST=127.0.0.1
 LACLAUGPT_VIS_SERVER_PORT=8501
 LACLAUGPT_VIS_MONGODB_URI=<private>
 LACLAUGPT_REDIS_URL=<private>
-LACLAUGPT_VIS_S3_ENDPOINT_URL=<private>
-LACLAUGPT_VIS_S3_BUCKET=<private>
 ```
 
 Start with:
@@ -85,11 +83,11 @@ Current coordinated filters cover text search, source/platform, language, countr
 
 The current implementation uses bounded near-real-time durable reads from MongoDB and optional Redis operational signals. It deliberately favors correctness and reconnect simplicity over making Redis a data store. The loaded live window defaults to 500 and is capped at 5,000 records in the UI.
 
-The UI exposes a refresh target and explicit refresh control. A later optimization may add MongoDB change streams when the private deployment topology guarantees replica-set/change-stream support. Until then, durable bounded reads avoid making deployment depend on that feature.
+The UI exposes an explicit manual Refresh now control. The former refresh-seconds selector did not actually schedule polling and was removed; the page also re-reads data on a normal Streamlit rerun. A later optimization may add MongoDB change streams when the private deployment topology guarantees replica-set/change-stream support. Until then, durable bounded reads avoid making deployment depend on that feature.
 
 ## Multimodal boundary
 
-No image, video or audio blobs are fetched for display. Textual metadata and upstream-derived multimodal analysis may be shown because those are analysis outputs, not media viewing. Allas/S3 remains available to the wider stack for canonical artifacts, but this dashboard does not download media merely to render it.
+No image, video or audio blobs are fetched for display. Textual metadata and upstream-derived multimodal analysis may be shown because those are analysis outputs, not media viewing. Allas/S3 remains available to other projects for canonical artifacts, but the AI26 text-only Visualization profile can run without S3 credentials or media storage.
 
 ## Configuration safety
 
@@ -106,7 +104,7 @@ Publishing creates a project-scoped `config-events` stream message. The receivin
 
 ## Performance and data volume
 
-- MongoDB reads are project-scoped and bounded.
+- MongoDB reads are project-scoped and bounded. The displayed total counts are full-corpus counts, whereas plots and filters use only the loaded window (not a random representative sample).
 - Durable collection totals use MongoDB counts rather than loading the whole corpus.
 - Tables and graph projections are capped by the loaded window and existing graph limits.
 - Redis is used only for small operational/config/RAG messages.
