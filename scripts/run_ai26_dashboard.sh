@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+PY="$ROOT_DIR/.venv/bin/python"
+[[ -x "$PY" ]] || { echo "AI26 dashboard virtualenv missing: $PY" >&2; exit 2; }
+
 : "${LACLAUGPT_VIS_MONGODB_URI:?Set private MongoDB URI outside the repository}"
 : "${LACLAUGPT_REDIS_URL:?Set private Redis URL outside the repository}"
 
@@ -22,7 +26,8 @@ if [[ "$LACLAUGPT_VIS_PROJECT_ID" != "ai26" ]]; then
   exit 2
 fi
 
-exec streamlit run src/laclaugpt_visualization/ai26_dashboard.py \
+cd "$ROOT_DIR"
+exec "$PY" -m streamlit run src/laclaugpt_visualization/ai26_dashboard.py \
   --server.address "$LACLAUGPT_VIS_SERVER_HOST" \
   --server.port "$LACLAUGPT_VIS_SERVER_PORT" \
   --server.headless true \
