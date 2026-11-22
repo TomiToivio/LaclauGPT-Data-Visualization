@@ -251,7 +251,7 @@ def filter_frame(
     result = frame
     if query.strip():
         needle = query.casefold()
-        result = result[result["searchable_text"].str.casefold().str.contains(needle, na=False)]
+        result = result[result["searchable_text"].str.casefold().str.contains(needle, na=False, regex=False)]
     scalar_filters = {
         "source_platform": platforms,
         "source_country": countries,
