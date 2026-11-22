@@ -777,8 +777,9 @@ def run() -> None:
         value=DEFAULT_PAGE_SIZE,
         step=100,
     )
-    refresh = st.sidebar.number_input(
-        "Refresh seconds", min_value=5, max_value=300, value=30, step=5
+    st.sidebar.caption(
+        "Live data is read when the page reruns. Use Refresh now to request "
+        "a new snapshot; automatic background polling is not enabled."
     )
     if st.sidebar.button("Refresh now"):
         st.cache_data.clear()
@@ -792,7 +793,7 @@ def run() -> None:
         st.caption(f"Error category: {type(exc).__name__}. No research records were loaded.")
         return
     filtered, filters = _sidebar(snapshot.frame)
-    st.sidebar.caption(f"Last load: {snapshot.loaded_at} · refresh target: {refresh}s")
+    st.sidebar.caption(f"Last loaded: {snapshot.loaded_at} · manual refresh")
     tabs = st.tabs(
         [
             "Monitor",
