@@ -56,6 +56,56 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _as_utc_timestamp(value: Any) -> datetime | None:
+    """Parse legacy epoch, BSON datetime, and ISO timestamps safely."""
+    try:
+        if isinstance(value, datetime):
+            dt = value
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            dt = datetime.fromtimestamp(float(value), tz=UTC)
+        elif isinstance(value, str) and value.strip():
+            dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        else:
+            return None
+        return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).astimezone(UTC)
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
+
+
+def _readable_text(value: Any, fallback: str = "Not available") -> str:
+    """Keep missing pandas values and nested text from breaking close reading."""
+    if value is None or value is pd.NA:
+        return fallback
+    if isinstance(value, str):
+        return value.strip() or fallback
+    if isinstance(value, (list, tuple, dict)):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    try:
+        if bool(pd.isna(value)):
+            return fallback
+    except (ValueError, TypeError):
+        pass
+    return str(value)
+
+
+def _ranked_bar(table: pd.DataFrame, label_column: str, title: str):
+    """Horizontal bars ordered so the most frequent item is prominent."""
+    subset = table.head(15).copy()
+    subset[label_column] = subset[label_column].astype(str)
+    subset = subset.iloc[::-1]
+    figure = px.bar(
+        subset, x="count", y=label_column, orientation="h", title=title,
+        labels={"count": "Records", label_column: "Label"}, text="count",
+    )
+    figure.update_layout(
+        height=max(280, min(620, 115 + len(subset) * 30)),
+        margin=dict(l=12, r=20, t=48, b=28),
+        yaxis_title=None, showlegend=False,
+    )
+    figure.update_traces(textposition="outside", cliponaxis=False)
+    return figure
+
+
 def _decode(value: Any) -> str:
     return value.decode("utf-8") if isinstance(value, bytes) else str(value)
 
@@ -193,22 +243,18 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
         if str(_first(item, ("status", "state", "task_status")) or "").lower()
         in {"failed", "error", "dead_letter", "dead-letter"}
     )
-    newest_analyzed_at = None
-    analyzed_age_hours = None
-    if newest_analyzed and newest_analyzed.get("created_at"):
-        value = newest_analyzed["created_at"]
-        if isinstance(value, datetime):
-            dt = value if value.tzinfo else value.replace(tzinfo=UTC)
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            # MongoDB persists created_at as a UTC epoch float in the AI26
-            # collections, so a numeric value is a normal case, not a malformed one.
-            dt = datetime.fromtimestamp(float(value), tz=UTC)
-        else:
-            dt = datetime.fromisoformat(str(value))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)
-        newest_analyzed_at = dt.astimezone(UTC).isoformat()
-        analyzed_age_hours = max(0.0, (datetime.now(UTC) - dt.astimezone(UTC)).total_seconds() / 3600)
+    # MongoDB compares BSON types before values: mixed legacy epoch floats
+    # and BSON datetimes cannot be ordered reliably by one created_at sort.
+    # Supplement the queried newest row with the bounded analysis window.
+    candidates = [newest_analyzed.get("created_at")] if newest_analyzed else []
+    candidates.extend(row.get("created_at") for row in analyses)
+    valid = [dt for value in candidates if (dt := _as_utc_timestamp(value)) is not None]
+    newest = max(valid, default=None)
+    newest_analyzed_at = newest.isoformat() if newest else None
+    analyzed_age_hours = (
+        max(0.0, (datetime.now(UTC) - newest).total_seconds() / 3600)
+        if newest is not None else None
+    )
 
     return LiveSnapshot(
         frame=normalize_frame(pd.DataFrame(merged)),
