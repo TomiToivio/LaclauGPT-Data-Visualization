@@ -64,7 +64,7 @@ def _as_utc_timestamp(value: Any) -> datetime | None:
         elif isinstance(value, (int, float)) and not isinstance(value, bool):
             dt = datetime.fromtimestamp(float(value), tz=UTC)
         elif isinstance(value, str) and value.strip():
-            dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(value.strip())
         else:
             return None
         return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).astimezone(UTC)
@@ -99,7 +99,7 @@ def _ranked_bar(table: pd.DataFrame, label_column: str, title: str):
     )
     figure.update_layout(
         height=max(280, min(620, 115 + len(subset) * 30)),
-        margin=dict(l=12, r=20, t=48, b=28),
+        margin={"l": 12, "r": 20, "t": 48, "b": 28},
         yaxis_title=None, showlegend=False,
     )
     figure.update_traces(textposition="outside", cliponaxis=False)
@@ -447,10 +447,10 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
             "exist for one source, so stored analyses are not unique sources."
         )
     if snapshot.analyzed_age_hours is None:
-        st.warning("Analysis freshness unknown: no valid timestamp was found in the loaded results.")
+        st.warning("Analysis freshness unavailable: no durable analysis result with a valid timestamp was found.")
     elif snapshot.analyzed_age_hours >= FRESHNESS_WARNING_HOURS:
         st.warning(
-            f"Newest visible stored analysis is {snapshot.analyzed_age_hours:.1f} hours old "
+            f"Analysis is stale: newest visible stored analysis is {snapshot.analyzed_age_hours:.1f} hours old "
             f"({snapshot.newest_analyzed_at}). Inspect the worker before concluding the pipeline stopped."
         )
     else:
