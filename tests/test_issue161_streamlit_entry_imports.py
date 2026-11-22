@@ -77,8 +77,16 @@ def test_entry_script_executes_as_main() -> None:
     The script requires a project id and private settings, so it is expected to
     stop later with a configuration error — never with an ImportError.
     """
+    import os
     import subprocess
     import sys
+
+    # This asserts the entry script resolves its own imports, not that the package is
+    # installed. pytest's `pythonpath` only affects this process, so the child needs src/
+    # on its path explicitly -- otherwise the test fails in any checkout without
+    # `pip install -e .`, which PEP 668 blocks on a managed interpreter.
+    child_env = dict(os.environ)
+    child_env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + child_env.get("PYTHONPATH", "")
 
     result = subprocess.run(
         [
@@ -100,6 +108,7 @@ def test_entry_script_executes_as_main() -> None:
         capture_output=True,
         text=True,
         timeout=180,
+        env=child_env,
         cwd=str(REPO_ROOT),
         check=False,
     )
