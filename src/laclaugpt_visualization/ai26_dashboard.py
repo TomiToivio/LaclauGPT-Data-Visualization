@@ -411,10 +411,17 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
         strict=True,
     ):
         column.metric(label, value, help=hint)
+    # Tolerant reads: `monitor()` is a transform that may grow or shed keys, and a partial
+    # result should degrade a caption, not blank the tab.
+    documents = int(values.get("documents", len(frame)))
+    analyzed = int(values.get("analyzed", 0))
+    awaiting = int(values.get("awaiting_analysis", max(documents - analyzed, 0)))
+    errors = int(values.get("errors", 0))
+    awaiting_review = int(values.get("awaiting_review", 0))
     st.caption(
-        f"This page: {int(values['documents']):,} records · {int(values['analyzed']):,} analysed · "
-        f"{int(values['awaiting_analysis']):,} awaiting analysis · {int(values['errors']):,} errors · "
-        f"awaiting review {int(values['awaiting_review']):,} · loaded in {snapshot.query_ms:,} ms"
+        f"This page: {documents:,} records · {analyzed:,} analysed · "
+        f"{awaiting:,} awaiting analysis · {errors:,} errors · "
+        f"awaiting review {awaiting_review:,} · loaded in {snapshot.query_ms:,} ms"
     )
     if snapshot.counts["processing"] or snapshot.failures:
         st.caption(
