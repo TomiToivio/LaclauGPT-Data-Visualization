@@ -261,7 +261,9 @@ def test_issue165_monitor_renders_only_one_freshness_indicator(monkeypatch):
     monkeypatch.setattr(ai26_dashboard, "timeline_counts", lambda frame: pd.DataFrame())
 
     class Column:
-        def metric(self, label, value):
+        # The real st.column.metric accepts help=; the stub must accept what the dashboard passes,
+        # otherwise the test asserts the stub rather than the page.
+        def metric(self, label, value, **kwargs):
             pass
 
     monkeypatch.setattr(ai26_dashboard.st, "columns", lambda count: [Column() for _ in range(count)])

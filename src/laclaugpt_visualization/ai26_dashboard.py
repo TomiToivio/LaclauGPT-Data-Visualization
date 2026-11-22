@@ -396,31 +396,39 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
         )
     values = monitor(frame)
     cols = st.columns(6)
-    for column, (label, value) in zip(
+    for column, (label, value, explanation) in zip(
         cols,
         (
-            ("Collected", snapshot.counts["records"]),
-            ("Analyzed", snapshot.counts["analyzed"]),
-            ("Legacy processing", snapshot.counts["processing"]),
-            ("Loaded", len(frame)),
-            ("Query", f"{snapshot.query_ms} ms"),
-            ("Legacy failures in page", len(snapshot.failures)),
+            ("Collected", snapshot.counts["records"], "Documents collected for AI26, all time."),
+            ("Analyzed", snapshot.counts["analyzed"], "Documents with at least one durable analysis result."),
+            ("Legacy processing", snapshot.counts["processing"], "Documents the legacy pipeline has touched."),
+            ("Loaded", len(frame), "Records in this page — the denominator for every chart below."),
+            ("Query", f"{snapshot.query_ms} ms", "Time this page spent querying storage, not time to analyse."),
+            ("Legacy failures in page", len(snapshot.failures), "Legacy failures among the loaded records."),
         ),
         strict=True,
     ):
-        column.metric(label, value)
+        column.metric(label, value, help=explanation)
+    collected = snapshot.counts["records"] or 0
+    analyzed = snapshot.counts["analyzed"] or 0
+    if collected:
+        st.caption(
+            f"Coverage: {analyzed:,} of {collected:,} collected documents have an analysis result "
+            f"({analyzed / collected:.1%}). The charts below describe the {len(frame):,} loaded records, "
+            "not the whole corpus."
+        )
     timeline = timeline_counts(frame)
     if not timeline.empty:
         st.plotly_chart(
             px.line(timeline, x="period", y="documents", color="time_kind", markers=True),
-            use_container_width=True,
+            width="stretch",
         )
     for key, title in (("formations", "Formations"), ("signifiers", "Signifiers"), ("actors", "Actors")):
         table = values[key]
         if not table.empty:
             st.plotly_chart(
                 px.bar(table.head(20), x="count", y=table.columns[0], orientation="h", title=title),
-                use_container_width=True,
+                width="stretch",
             )
     st.caption(CAVEAT)
 
@@ -453,7 +461,7 @@ def _explore(frame: pd.DataFrame) -> None:
                 markers=True,
                 title="Source, collection, analysis and event clocks",
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
     targets = ("formations", "topics", "entities", "signifiers")
@@ -470,16 +478,16 @@ def _explore(frame: pd.DataFrame) -> None:
                 y=target,
                 orientation="h",
             ),
-            use_container_width=True,
+            width="stretch",
         )
-        column.dataframe(table.head(40), use_container_width=True, hide_index=True)
+        column.dataframe(table.head(40), width="stretch", hide_index=True)
 
     cross = views["formation_signifier"]
     st.markdown("#### Formation × signifier")
     if cross.empty:
         st.info("No formation/signifier overlap is available in the current view.")
     else:
-        st.dataframe(cross.head(100), use_container_width=True, hide_index=True)
+        st.dataframe(cross.head(100), width="stretch", hide_index=True)
     st.caption(CAVEAT)
 
 
@@ -489,13 +497,13 @@ def _networks(frame: pd.DataFrame) -> None:
     a.metric("Nodes", len(projection["nodes"]))
     b.metric("Edges", len(projection["edges"]))
     if projection["nodes"]:
-        st.dataframe(pd.DataFrame(projection["nodes"]).head(500), use_container_width=True)
+        st.dataframe(pd.DataFrame(projection["nodes"]).head(500), width="stretch")
     if projection["edges"]:
-        st.dataframe(pd.DataFrame(projection["edges"]).head(1000), use_container_width=True)
+        st.dataframe(pd.DataFrame(projection["edges"]).head(1000), width="stretch")
     relation_table = relations(frame, require_evidence=True)
     if not relation_table.empty:
         st.markdown("#### Evidence-bearing relations")
-        st.dataframe(relation_table.head(1000), use_container_width=True, hide_index=True)
+        st.dataframe(relation_table.head(1000), width="stretch", hide_index=True)
     st.caption(CAVEAT)
 
 
@@ -515,7 +523,7 @@ def _records(frame: pd.DataFrame) -> None:
         )
         if name in frame
     ]
-    st.dataframe(frame[columns] if columns else frame, use_container_width=True, hide_index=True)
+    st.dataframe(frame[columns] if columns else frame, width="stretch", hide_index=True)
     options = [str(value) for value in frame["source_url"] if str(value)]
     if not options:
         return
