@@ -395,40 +395,60 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
             f"({snapshot.newest_analyzed_at})."
         )
     values = monitor(frame)
-    cols = st.columns(6)
-    for column, (label, value) in zip(
-        cols,
+    # Scope is the point. The corpus counts and the page counts are different denominators, and
+    # putting them side by side in one row (12,148 next to 494) is how the old row misled: the
+    # headline is corpus-level, the caption is this page.
+    corpus_records = int(snapshot.counts["records"])
+    corpus_analyzed = int(snapshot.counts["analyzed"])
+    corpus_coverage = (corpus_analyzed / corpus_records * 100.0) if corpus_records else 0.0
+    for column, (label, value, hint) in zip(
+        st.columns(3),
         (
-            ("Collected", snapshot.counts["records"]),
-            ("Analyzed", snapshot.counts["analyzed"]),
-            ("Legacy processing", snapshot.counts["processing"]),
-            ("Loaded", len(frame)),
-            ("Query", f"{snapshot.query_ms} ms"),
-            ("Legacy failures in page", len(snapshot.failures)),
+            ("Collected", f"{corpus_records:,}", "Documents in the AI26 corpus"),
+            ("Analysed", f"{corpus_analyzed:,}", "Records carrying a durable analysis result"),
+            ("Analysed coverage", f"{corpus_coverage:.1f}%", "Analysed ÷ collected, whole corpus"),
         ),
         strict=True,
     ):
-        column.metric(label, value)
+        column.metric(label, value, help=hint)
+    st.caption(
+        f"This page: {int(values['documents']):,} records · {int(values['analyzed']):,} analysed · "
+        f"{int(values['awaiting_analysis']):,} awaiting analysis · {int(values['errors']):,} errors · "
+        f"awaiting review {int(values['awaiting_review']):,} · loaded in {snapshot.query_ms:,} ms"
+    )
+    if snapshot.counts["processing"] or snapshot.failures:
+        st.caption(
+            f"Legacy pipeline counts kept for comparability: processing "
+            f"{snapshot.counts['processing']:,} · failures in page {len(snapshot.failures):,}"
+        )
     timeline = timeline_counts(frame)
     if not timeline.empty:
         st.plotly_chart(
             px.line(timeline, x="period", y="documents", color="time_kind", markers=True),
-            use_container_width=True,
+            width="stretch",
         )
-    for key, title in (("formations", "Formations"), ("signifiers", "Signifiers"), ("actors", "Actors")):
-        table = values[key]
-        if not table.empty:
+    # Three narrow charts beat three full-width ones stacked: formations, signifiers and actors
+    # become comparable in one glance instead of three scrolls.
+    for column, (key, title) in zip(
+        st.columns(3),
+        (("formations", "Formations"), ("signifiers", "Signifiers"), ("actors", "Actors")),
+        strict=True,
+    ):
+        with column:
+            table = values[key]
+            if table.empty:
+                st.caption(f"{title}: none on this page")
+                continue
             st.plotly_chart(
-                px.bar(table.head(20), x="count", y=table.columns[0], orientation="h", title=title),
-                use_container_width=True,
+                px.bar(table.head(12), x="count", y=table.columns[0], orientation="h", title=title),
+                width="stretch",
+                height=360,
             )
-    st.caption(CAVEAT)
 
 
 def _explore(frame: pd.DataFrame) -> None:
     if frame.empty:
         st.info("No records match the current filters.")
-        st.caption(CAVEAT)
         return
 
     try:
@@ -436,7 +456,6 @@ def _explore(frame: pd.DataFrame) -> None:
             views = canonical_explore(frame)
     except (KeyError, TypeError, ValueError) as exc:
         st.error(f"Explore view could not be built: {exc}")
-        st.caption(CAVEAT)
         return
 
     timeline = views["timeline"]
@@ -453,7 +472,7 @@ def _explore(frame: pd.DataFrame) -> None:
                 markers=True,
                 title="Source, collection, analysis and event clocks",
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
     targets = ("formations", "topics", "entities", "signifiers")
@@ -470,17 +489,16 @@ def _explore(frame: pd.DataFrame) -> None:
                 y=target,
                 orientation="h",
             ),
-            use_container_width=True,
+            width="stretch",
         )
-        column.dataframe(table.head(40), use_container_width=True, hide_index=True)
+        column.dataframe(table.head(40), width="stretch", hide_index=True)
 
     cross = views["formation_signifier"]
     st.markdown("#### Formation × signifier")
     if cross.empty:
         st.info("No formation/signifier overlap is available in the current view.")
     else:
-        st.dataframe(cross.head(100), use_container_width=True, hide_index=True)
-    st.caption(CAVEAT)
+        st.dataframe(cross.head(100), width="stretch", hide_index=True)
 
 
 def _networks(frame: pd.DataFrame) -> None:
@@ -489,14 +507,13 @@ def _networks(frame: pd.DataFrame) -> None:
     a.metric("Nodes", len(projection["nodes"]))
     b.metric("Edges", len(projection["edges"]))
     if projection["nodes"]:
-        st.dataframe(pd.DataFrame(projection["nodes"]).head(500), use_container_width=True)
+        st.dataframe(pd.DataFrame(projection["nodes"]).head(500), width="stretch")
     if projection["edges"]:
-        st.dataframe(pd.DataFrame(projection["edges"]).head(1000), use_container_width=True)
+        st.dataframe(pd.DataFrame(projection["edges"]).head(1000), width="stretch")
     relation_table = relations(frame, require_evidence=True)
     if not relation_table.empty:
         st.markdown("#### Evidence-bearing relations")
-        st.dataframe(relation_table.head(1000), use_container_width=True, hide_index=True)
-    st.caption(CAVEAT)
+        st.dataframe(relation_table.head(1000), width="stretch", hide_index=True)
 
 
 def _records(frame: pd.DataFrame) -> None:
@@ -515,7 +532,7 @@ def _records(frame: pd.DataFrame) -> None:
         )
         if name in frame
     ]
-    st.dataframe(frame[columns] if columns else frame, use_container_width=True, hide_index=True)
+    st.dataframe(frame[columns] if columns else frame, width="stretch", hide_index=True)
     options = [str(value) for value in frame["source_url"] if str(value)]
     if not options:
         return
