@@ -56,6 +56,56 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _as_utc_timestamp(value: Any) -> datetime | None:
+    """Parse legacy epoch, BSON datetime, and ISO timestamps safely."""
+    try:
+        if isinstance(value, datetime):
+            dt = value
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            dt = datetime.fromtimestamp(float(value), tz=UTC)
+        elif isinstance(value, str) and value.strip():
+            dt = datetime.fromisoformat(value.strip())
+        else:
+            return None
+        return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).astimezone(UTC)
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
+
+
+def _readable_text(value: Any, fallback: str = "Not available") -> str:
+    """Keep missing pandas values and nested text from breaking close reading."""
+    if value is None or value is pd.NA:
+        return fallback
+    if isinstance(value, str):
+        return value.strip() or fallback
+    if isinstance(value, (list, tuple, dict)):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    try:
+        if bool(pd.isna(value)):
+            return fallback
+    except (ValueError, TypeError):
+        pass
+    return str(value)
+
+
+def _ranked_bar(table: pd.DataFrame, label_column: str, title: str):
+    """Horizontal bars ordered so the most frequent item is prominent."""
+    subset = table.head(15).copy()
+    subset[label_column] = subset[label_column].astype(str)
+    subset = subset.iloc[::-1]
+    figure = px.bar(
+        subset, x="count", y=label_column, orientation="h", title=title,
+        labels={"count": "Records", label_column: "Label"}, text="count",
+    )
+    figure.update_layout(
+        height=max(280, min(620, 115 + len(subset) * 30)),
+        margin={"l": 12, "r": 20, "t": 48, "b": 28},
+        yaxis_title=None, showlegend=False,
+    )
+    figure.update_traces(textposition="outside", cliponaxis=False)
+    return figure
+
+
 def _decode(value: Any) -> str:
     return value.decode("utf-8") if isinstance(value, bytes) else str(value)
 
@@ -193,22 +243,18 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
         if str(_first(item, ("status", "state", "task_status")) or "").lower()
         in {"failed", "error", "dead_letter", "dead-letter"}
     )
-    newest_analyzed_at = None
-    analyzed_age_hours = None
-    if newest_analyzed and newest_analyzed.get("created_at"):
-        value = newest_analyzed["created_at"]
-        if isinstance(value, datetime):
-            dt = value if value.tzinfo else value.replace(tzinfo=UTC)
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            # MongoDB persists created_at as a UTC epoch float in the AI26
-            # collections, so a numeric value is a normal case, not a malformed one.
-            dt = datetime.fromtimestamp(float(value), tz=UTC)
-        else:
-            dt = datetime.fromisoformat(str(value))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)
-        newest_analyzed_at = dt.astimezone(UTC).isoformat()
-        analyzed_age_hours = max(0.0, (datetime.now(UTC) - dt.astimezone(UTC)).total_seconds() / 3600)
+    # MongoDB compares BSON types before values: mixed legacy epoch floats
+    # and BSON datetimes cannot be ordered reliably by one created_at sort.
+    # Supplement the queried newest row with the bounded analysis window.
+    candidates = [newest_analyzed.get("created_at")] if newest_analyzed else []
+    candidates.extend(row.get("created_at") for row in analyses)
+    valid = [dt for value in candidates if (dt := _as_utc_timestamp(value)) is not None]
+    newest = max(valid, default=None)
+    newest_analyzed_at = newest.isoformat() if newest else None
+    analyzed_age_hours = (
+        max(0.0, (datetime.now(UTC) - newest).total_seconds() / 3600)
+        if newest is not None else None
+    )
 
     return LiveSnapshot(
         frame=normalize_frame(pd.DataFrame(merged)),
@@ -382,54 +428,71 @@ def _sidebar(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
 
 
 def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
+    st.markdown("### Corpus overview")
+    st.caption(
+        "Collected and analyzed totals refer to all project documents in MongoDB. "
+        "Charts and filters use only the most recently loaded records; the window "
+        f"is capped at {snapshot.page_size:,} per collection and is not a representative sample."
+    )
+    totals = st.columns(3)
+    totals[0].metric(
+        "Collected records · corpus", snapshot.counts["records"],
+        help="Project-wide collected source records in MongoDB.",
+    )
+    totals[1].metric(
+        "Stored analyses · corpus", snapshot.counts["analyzed"],
+        help="Project-wide durable result documents, including possible reruns of a source.",
+    )
+    totals[2].metric(
+        "Filtered records · loaded window", len(frame),
+        help="Current view after filters. This is the denominator for the charts below.",
+    )
+    if snapshot.counts["records"]:
+        st.caption(
+            f"Storage ratio: {snapshot.counts['analyzed']:,} analysis results / "
+            f"{snapshot.counts['records']:,} collected records. "
+            "This is not unique-source coverage because a source may have multiple analyses."
+        )
+    with st.expander("Operational details and data coverage"):
+        st.caption(
+            f"Loaded up to {snapshot.page_size:,} documents per collection. "
+            f"Database query: {snapshot.query_ms} ms. Legacy processing entries: "
+            f"{snapshot.counts['processing']:,}; legacy failures in page: "
+            f"{len(snapshot.failures):,}. Multiple versions of an analysis can "
+            "exist for one source, so stored analyses are not unique sources."
+        )
     if snapshot.analyzed_age_hours is None:
-        st.warning("Analysis freshness unavailable: no durable analysis result with created_at was found.")
+        st.warning("Analysis freshness unavailable: no durable analysis result with a valid timestamp was found.")
     elif snapshot.analyzed_age_hours >= FRESHNESS_WARNING_HOURS:
         st.warning(
-            f"Analysis is stale: newest durable analysis result is {snapshot.analyzed_age_hours:.1f} hours old "
-            f"({snapshot.newest_analyzed_at})."
+            f"Analysis is stale: newest visible stored analysis is {snapshot.analyzed_age_hours:.1f} hours old "
+            f"({snapshot.newest_analyzed_at}). Inspect the worker before concluding the pipeline stopped."
         )
     else:
         st.caption(
-            f"Analysis freshness: newest analyzed record is {snapshot.analyzed_age_hours:.1f} hours old "
-            f"({snapshot.newest_analyzed_at})."
+            f"Analysis freshness: newest analyzed record is {snapshot.analyzed_age_hours:.1f} "
+            f"hours old ({snapshot.newest_analyzed_at})."
         )
     values = monitor(frame)
-    cols = st.columns(6)
-    for column, (label, value, explanation) in zip(
-        cols,
-        (
-            ("Collected", snapshot.counts["records"], "Documents collected for AI26, all time."),
-            ("Analyzed", snapshot.counts["analyzed"], "Documents with at least one durable analysis result."),
-            ("Legacy processing", snapshot.counts["processing"], "Documents the legacy pipeline has touched."),
-            ("Loaded", len(frame), "Records in this page — the denominator for every chart below."),
-            ("Query", f"{snapshot.query_ms} ms", "Time this page spent querying storage, not time to analyse."),
-            ("Legacy failures in page", len(snapshot.failures), "Legacy failures among the loaded records."),
-        ),
-        strict=True,
-    ):
-        column.metric(label, value, help=explanation)
-    collected = snapshot.counts["records"] or 0
-    analyzed = snapshot.counts["analyzed"] or 0
-    if collected:
-        st.caption(
-            f"Coverage: {analyzed:,} of {collected:,} collected documents have an analysis result "
-            f"({analyzed / collected:.1%}). The charts below describe the {len(frame):,} loaded records, "
-            "not the whole corpus."
-        )
     timeline = timeline_counts(frame)
     if not timeline.empty:
+        st.markdown("#### Records across time")
+        st.caption("Source, collection, analysis and event clocks describe different timestamps.")
         st.plotly_chart(
-            px.line(timeline, x="period", y="documents", color="time_kind", markers=True),
+            px.line(
+                timeline, x="period", y="documents", color="time_kind", markers=True,
+                labels={"period": "Date", "documents": "Records", "time_kind": "Clock"},
+            ),
             width="stretch",
         )
-    for key, title in (("formations", "Formations"), ("signifiers", "Signifiers"), ("actors", "Actors")):
+    st.markdown("#### Frequent labels in the loaded view")
+    for key, title in (("formations", "Political formations"), ("signifiers", "Signifiers"),
+                       ("actors", "Actors")):
         table = values[key]
-        if not table.empty:
-            st.plotly_chart(
-                px.bar(table.head(20), x="count", y=table.columns[0], orientation="h", title=title),
-                width="stretch",
-            )
+        if table.empty:
+            st.caption(f"No {title.lower()} in the current filtered window.")
+        else:
+            st.plotly_chart(_ranked_bar(table, table.columns[0], title), width="stretch")
     st.caption(CAVEAT)
 
 
@@ -464,23 +527,18 @@ def _explore(frame: pd.DataFrame) -> None:
             width="stretch",
         )
 
-    targets = ("formations", "topics", "entities", "signifiers")
-    for target, column in zip(targets, st.columns(4), strict=True):
+    for target in ("formations", "topics", "entities", "signifiers"):
         table = views[target]
-        column.markdown(f"#### {target.title()}")
+        st.markdown(f"#### {target.title()}")
         if table.empty:
-            column.info("No values")
+            st.info(f"No {target} in the current filtered window.")
             continue
-        column.plotly_chart(
-            px.bar(
-                table.head(20),
-                x="count",
-                y=target,
-                orientation="h",
-            ),
+        st.plotly_chart(
+            _ranked_bar(table, target, f"Frequent {target}"),
             width="stretch",
         )
-        column.dataframe(table.head(40), width="stretch", hide_index=True)
+        with st.expander(f"View {target} counts"):
+            st.dataframe(table.head(100), width="stretch", hide_index=True)
 
     cross = views["formation_signifier"]
     st.markdown("#### Formation × signifier")
@@ -524,17 +582,24 @@ def _records(frame: pd.DataFrame) -> None:
         if name in frame
     ]
     st.dataframe(frame[columns] if columns else frame, width="stretch", hide_index=True)
-    options = [str(value) for value in frame["source_url"] if str(value)]
+    options = [
+        value for value in frame["source_url"].astype(str).unique()
+        if value.strip() and value != "nan"
+    ]
     if not options:
         return
     source_url = st.selectbox("Close-read record", options)
     row = frame[frame["source_url"] == source_url].iloc[0]
     st.markdown("#### Text / metadata")
-    st.write(row.get("summary") or row.get("human_readable_summary") or "No summary")
+    summary = _readable_text(row.get("summary"), "") or _readable_text(
+        row.get("human_readable_summary"), "No summary"
+    )
+    st.write(summary)
     for field in ("source_text", "caption", "transcript", "whisper_transcript", "ocr"):
-        if row.get(field):
-            st.markdown(f"**{field}**")
-            st.write(row.get(field))
+        content = _readable_text(row.get(field), "")
+        if content:
+            st.markdown(f"**{field.replace('_', ' ').title()}**")
+            st.write(content)
     st.markdown("#### Analysis")
     st.json(
         {
@@ -574,7 +639,10 @@ def _reports(settings: Settings, frame: pd.DataFrame) -> None:
     report = reports[labels.index(st.selectbox("Periodic report", labels))]
     st.markdown(report.body)
     if report.source_urls:
-        linked = frame[frame["source_url"].isin(report.source_urls)]
+        linked = (
+            frame[frame["source_url"].isin(report.source_urls)]
+            if "source_url" in frame else frame.iloc[0:0]
+        )
         st.caption(f"Evidence links visible in current filtered view: {len(linked)}")
 
 
@@ -724,14 +792,23 @@ def run() -> None:
         value=DEFAULT_PAGE_SIZE,
         step=100,
     )
-    refresh = st.sidebar.number_input(
-        "Refresh seconds", min_value=5, max_value=300, value=30, step=5
+    st.sidebar.caption(
+        "Live data is read when the page reruns. Use Refresh now to request "
+        "a new snapshot; automatic background polling is not enabled."
     )
     if st.sidebar.button("Refresh now"):
         st.cache_data.clear()
-    snapshot = load_ai26_snapshot(settings, limit=int(page_size))
+    try:
+        snapshot = load_ai26_snapshot(settings, limit=int(page_size))
+    except (OSError, RuntimeError, ValueError, TimeoutError) as exc:
+        st.error(
+            "The AI26 live data source is unavailable. Check the private MongoDB "
+            "connection, dashboard credentials and service logs."
+        )
+        st.caption(f"Error category: {type(exc).__name__}. No research records were loaded.")
+        return
     filtered, filters = _sidebar(snapshot.frame)
-    st.sidebar.caption(f"Last load: {snapshot.loaded_at} · refresh target: {refresh}s")
+    st.sidebar.caption(f"Last loaded: {snapshot.loaded_at} · manual refresh")
     tabs = st.tabs(
         [
             "Monitor",
