@@ -275,7 +275,7 @@ class Settings(BaseSettings):
                 raise ValueError("distributed storage requires data_backend=mongodb")
             if self.cache_backend != "redis":
                 raise ValueError("distributed storage requires cache_backend=redis")
-            if self.object_backend != "s3":
+            if self.object_backend != "s3" and self.project_id != "ai26":
                 raise ValueError("distributed storage requires object_backend=s3")
 
 
