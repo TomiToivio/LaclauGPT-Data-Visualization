@@ -71,6 +71,16 @@ def test_a_directory_inside_the_code_checkout_is_refused(tmp_path):
         store.append("k1", "finland", {"video_checked": True})
 
 
+def test_the_checkout_root_itself_is_not_a_review_destination(tmp_path):
+    repository = tmp_path / "LaclauGPT-Data-Visualization"
+    repository.mkdir()
+    store = ReviewStore(repository, application_root=repository)
+    assert "inside the code checkout" in store.unsafe_reason()
+    with pytest.raises(ReviewError, match="inside the code checkout"):
+        store.append("k1", "finland", {"video_checked": True})
+    assert not list(repository.glob("events-*.jsonl"))
+
+
 def test_an_unknown_field_is_refused_rather_than_stored(tmp_path):
     store = _store(tmp_path)
     with pytest.raises(ReviewError, match="unknown review field"):
