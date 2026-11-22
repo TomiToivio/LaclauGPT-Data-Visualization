@@ -435,9 +435,24 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
         f"is capped at {snapshot.page_size:,} per collection and is not a representative sample."
     )
     totals = st.columns(3)
-    totals[0].metric("Collected records · corpus", snapshot.counts["records"])
-    totals[1].metric("Stored analyses · corpus", snapshot.counts["analyzed"])
-    totals[2].metric("Filtered records · loaded window", len(frame))
+    totals[0].metric(
+        "Collected records · corpus", snapshot.counts["records"],
+        help="Project-wide collected source records in MongoDB.",
+    )
+    totals[1].metric(
+        "Stored analyses · corpus", snapshot.counts["analyzed"],
+        help="Project-wide durable result documents, including possible reruns of a source.",
+    )
+    totals[2].metric(
+        "Filtered records · loaded window", len(frame),
+        help="Current view after filters. This is the denominator for the charts below.",
+    )
+    if snapshot.counts["records"]:
+        st.caption(
+            f"Storage ratio: {snapshot.counts['analyzed']:,} analysis results / "
+            f"{snapshot.counts['records']:,} collected records. "
+            "This is not unique-source coverage because a source may have multiple analyses."
+        )
     with st.expander("Operational details and data coverage"):
         st.caption(
             f"Loaded up to {snapshot.page_size:,} documents per collection. "
@@ -468,7 +483,7 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
                 timeline, x="period", y="documents", color="time_kind", markers=True,
                 labels={"period": "Date", "documents": "Records", "time_kind": "Clock"},
             ),
-            use_container_width=True,
+            width="stretch",
         )
     st.markdown("#### Frequent labels in the loaded view")
     for key, title in (("formations", "Political formations"), ("signifiers", "Signifiers"),
@@ -477,7 +492,7 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
         if table.empty:
             st.caption(f"No {title.lower()} in the current filtered window.")
         else:
-            st.plotly_chart(_ranked_bar(table, table.columns[0], title), use_container_width=True)
+            st.plotly_chart(_ranked_bar(table, table.columns[0], title), width="stretch")
     st.caption(CAVEAT)
 
 
@@ -509,7 +524,7 @@ def _explore(frame: pd.DataFrame) -> None:
                 markers=True,
                 title="Source, collection, analysis and event clocks",
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
     for target in ("formations", "topics", "entities", "signifiers"):
@@ -520,17 +535,17 @@ def _explore(frame: pd.DataFrame) -> None:
             continue
         st.plotly_chart(
             _ranked_bar(table, target, f"Frequent {target}"),
-            use_container_width=True,
+            width="stretch",
         )
         with st.expander(f"View {target} counts"):
-            st.dataframe(table.head(100), use_container_width=True, hide_index=True)
+            st.dataframe(table.head(100), width="stretch", hide_index=True)
 
     cross = views["formation_signifier"]
     st.markdown("#### Formation × signifier")
     if cross.empty:
         st.info("No formation/signifier overlap is available in the current view.")
     else:
-        st.dataframe(cross.head(100), use_container_width=True, hide_index=True)
+        st.dataframe(cross.head(100), width="stretch", hide_index=True)
     st.caption(CAVEAT)
 
 
@@ -540,13 +555,13 @@ def _networks(frame: pd.DataFrame) -> None:
     a.metric("Nodes", len(projection["nodes"]))
     b.metric("Edges", len(projection["edges"]))
     if projection["nodes"]:
-        st.dataframe(pd.DataFrame(projection["nodes"]).head(500), use_container_width=True)
+        st.dataframe(pd.DataFrame(projection["nodes"]).head(500), width="stretch")
     if projection["edges"]:
-        st.dataframe(pd.DataFrame(projection["edges"]).head(1000), use_container_width=True)
+        st.dataframe(pd.DataFrame(projection["edges"]).head(1000), width="stretch")
     relation_table = relations(frame, require_evidence=True)
     if not relation_table.empty:
         st.markdown("#### Evidence-bearing relations")
-        st.dataframe(relation_table.head(1000), use_container_width=True, hide_index=True)
+        st.dataframe(relation_table.head(1000), width="stretch", hide_index=True)
     st.caption(CAVEAT)
 
 
@@ -566,7 +581,7 @@ def _records(frame: pd.DataFrame) -> None:
         )
         if name in frame
     ]
-    st.dataframe(frame[columns] if columns else frame, use_container_width=True, hide_index=True)
+    st.dataframe(frame[columns] if columns else frame, width="stretch", hide_index=True)
     options = [
         value for value in frame["source_url"].astype(str).unique()
         if value.strip() and value != "nan"
