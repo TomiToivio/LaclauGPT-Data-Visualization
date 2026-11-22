@@ -131,7 +131,7 @@ class ReviewStore:
         if self.directory is None:
             return "no review directory configured"
         target = self.directory.resolve()
-        if self.application_root is not None and self.application_root in target.parents:
+        if self.application_root is not None and (target == self.application_root or self.application_root in target.parents):
             return ("the configured review directory is inside the code checkout; review events must not "
                     "be written into a repository that is published")
         return ""
