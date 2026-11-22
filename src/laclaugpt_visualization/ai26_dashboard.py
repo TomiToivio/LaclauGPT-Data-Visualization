@@ -428,46 +428,56 @@ def _sidebar(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
 
 
 def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
+    st.markdown("### Corpus overview")
+    st.caption(
+        "Collected and analyzed totals refer to all project documents in MongoDB. "
+        "Charts and filters use only the most recently loaded records; the window "
+        f"is capped at {snapshot.page_size:,} per collection and is not a representative sample."
+    )
+    totals = st.columns(3)
+    totals[0].metric("Collected records · corpus", snapshot.counts["records"])
+    totals[1].metric("Stored analyses · corpus", snapshot.counts["analyzed"])
+    totals[2].metric("Filtered records · loaded window", len(frame))
+    with st.expander("Operational details and data coverage"):
+        st.caption(
+            f"Loaded up to {snapshot.page_size:,} documents per collection. "
+            f"Database query: {snapshot.query_ms} ms. Legacy processing entries: "
+            f"{snapshot.counts['processing']:,}; legacy failures in page: "
+            f"{len(snapshot.failures):,}. Multiple versions of an analysis can "
+            "exist for one source, so stored analyses are not unique sources."
+        )
     if snapshot.analyzed_age_hours is None:
-        st.warning("Analysis freshness unavailable: no durable analysis result with created_at was found.")
+        st.warning("Analysis freshness unknown: no valid timestamp was found in the loaded results.")
     elif snapshot.analyzed_age_hours >= FRESHNESS_WARNING_HOURS:
         st.warning(
-            f"Analysis is stale: newest durable analysis result is {snapshot.analyzed_age_hours:.1f} hours old "
-            f"({snapshot.newest_analyzed_at})."
+            f"Newest visible stored analysis is {snapshot.analyzed_age_hours:.1f} hours old "
+            f"({snapshot.newest_analyzed_at}). Inspect the worker before concluding the pipeline stopped."
         )
     else:
         st.caption(
-            f"Analysis freshness: newest analyzed record is {snapshot.analyzed_age_hours:.1f} hours old "
-            f"({snapshot.newest_analyzed_at})."
+            f"Analysis freshness: newest analyzed record is {snapshot.analyzed_age_hours:.1f} "
+            f"hours old ({snapshot.newest_analyzed_at})."
         )
     values = monitor(frame)
-    cols = st.columns(6)
-    for column, (label, value) in zip(
-        cols,
-        (
-            ("Collected", snapshot.counts["records"]),
-            ("Analyzed", snapshot.counts["analyzed"]),
-            ("Legacy processing", snapshot.counts["processing"]),
-            ("Loaded", len(frame)),
-            ("Query", f"{snapshot.query_ms} ms"),
-            ("Legacy failures in page", len(snapshot.failures)),
-        ),
-        strict=True,
-    ):
-        column.metric(label, value)
     timeline = timeline_counts(frame)
     if not timeline.empty:
+        st.markdown("#### Records across time")
+        st.caption("Source, collection, analysis and event clocks describe different timestamps.")
         st.plotly_chart(
-            px.line(timeline, x="period", y="documents", color="time_kind", markers=True),
+            px.line(
+                timeline, x="period", y="documents", color="time_kind", markers=True,
+                labels={"period": "Date", "documents": "Records", "time_kind": "Clock"},
+            ),
             use_container_width=True,
         )
-    for key, title in (("formations", "Formations"), ("signifiers", "Signifiers"), ("actors", "Actors")):
+    st.markdown("#### Frequent labels in the loaded view")
+    for key, title in (("formations", "Political formations"), ("signifiers", "Signifiers"),
+                       ("actors", "Actors")):
         table = values[key]
-        if not table.empty:
-            st.plotly_chart(
-                px.bar(table.head(20), x="count", y=table.columns[0], orientation="h", title=title),
-                use_container_width=True,
-            )
+        if table.empty:
+            st.caption(f"No {title.lower()} in the current filtered window.")
+        else:
+            st.plotly_chart(_ranked_bar(table, table.columns[0], title), use_container_width=True)
     st.caption(CAVEAT)
 
 
@@ -502,23 +512,18 @@ def _explore(frame: pd.DataFrame) -> None:
             use_container_width=True,
         )
 
-    targets = ("formations", "topics", "entities", "signifiers")
-    for target, column in zip(targets, st.columns(4), strict=True):
+    for target in ("formations", "topics", "entities", "signifiers"):
         table = views[target]
-        column.markdown(f"#### {target.title()}")
+        st.markdown(f"#### {target.title()}")
         if table.empty:
-            column.info("No values")
+            st.info(f"No {target} in the current filtered window.")
             continue
-        column.plotly_chart(
-            px.bar(
-                table.head(20),
-                x="count",
-                y=target,
-                orientation="h",
-            ),
+        st.plotly_chart(
+            _ranked_bar(table, target, f"Frequent {target}"),
             use_container_width=True,
         )
-        column.dataframe(table.head(40), use_container_width=True, hide_index=True)
+        with st.expander(f"View {target} counts"):
+            st.dataframe(table.head(100), use_container_width=True, hide_index=True)
 
     cross = views["formation_signifier"]
     st.markdown("#### Formation × signifier")
