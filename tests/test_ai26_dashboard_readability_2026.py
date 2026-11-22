@@ -104,4 +104,4 @@ def test_ranked_bar_is_readable_and_bounded():
     figure = ai26_dashboard._ranked_bar(data, "formations", "Formations")
     assert figure.layout.height >= 280
     assert list(figure.data[0].y) == ["C", "B", "A"]
-    assert list(figure.data[0].text) == ["2", "5", "10"]
+    assert [int(value) for value in figure.data[0].text] == [2, 5, 10]
