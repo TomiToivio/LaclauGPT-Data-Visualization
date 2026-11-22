@@ -89,6 +89,14 @@ except ModuleNotFoundError:  # standalone deployment: only this module was shipp
         text,
         unpack,
     )
+    from ep24_researcher_parity import (  # type: ignore[no-redef]
+        absent_tabs,
+        aggregate_tab_parity,
+        counts,
+        denominator_caption,
+        record_tab_parity,
+        record_values,
+    )
 
 from laclaugpt_visualization.ep24_presentation import (
     readable,
@@ -180,6 +188,7 @@ view = st.sidebar.radio("Research view", [
     "Laclaudian discourse · Step 6", "DNA · Step 7",
     "Social network · Step 8", "Combined multilayer", "RDF · Step 9",
     "Legacy parity · workbench", "Legacy / QA", "Data & methods",
+    "Researcher reader · parity", "Aggregates · parity",
 ])
 data = rows(frame)
 st.caption(f"{len(data)} records match current filters. All graph views are bounded and evidence-linked.")
@@ -612,6 +621,35 @@ elif view == "Legacy parity · workbench":
         if missing:
             st.caption("Unavailable in the reprocessed export: " + ", ".join(missing)
                        + " (see the matrix note for each).")
+elif view == "Researcher reader · parity":
+    st.subheader("One record, read in the legacy tab order (#263)")
+    st.caption("Read-only by design: the curation write path is a separate decision (§4 of #263).")
+    parity = record_tab_parity(frame.columns)
+    record = pick_record()
+    mapped = [tab for tab in parity if tab.status == "mapped"]
+    if record and mapped:
+        for definition, panel in zip(mapped, st.tabs([tab.legacy_tab for tab in mapped])):
+            with panel:
+                values = record_values(record, definition.source)
+                st.json(values if values else {"availability": "not exported"})
+    for tab in absent_tabs(frame.columns):
+        st.caption(f"Not rendered: {tab.legacy_tab} — {tab.reason}")
+    inspect(record)
+elif view == "Aggregates · parity":
+    st.subheader("Legacy aggregate tabs on the reprocessed data (#263)")
+    for tab in aggregate_tab_parity(frame.columns):
+        if tab.status != "mapped":
+            st.caption(f"Not rendered: {tab.legacy_tab} — {tab.reason}")
+            continue
+        st.markdown(f"**{tab.legacy_tab}**")
+        for column in tab.source:
+            tally = counts(frame, column, top=25)
+            st.caption(denominator_caption(tally, column))
+            if tally.empty:
+                st.caption("No source column in this export — nothing is drawn.")
+            else:
+                st.dataframe(tally, use_container_width=True, key=f"agg_{tab.legacy_tab}_{column}")
+    inspect(pick_record())
 elif view == "Data & methods":
     st.subheader("Export verification")
     verification = export_verification(str(root))

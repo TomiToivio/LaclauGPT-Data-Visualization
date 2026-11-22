@@ -71,6 +71,7 @@ def test_a_directory_inside_the_code_checkout_is_refused(tmp_path):
         store.append("k1", "finland", {"video_checked": True})
 
 
+
 def test_the_checkout_root_itself_is_not_a_review_destination(tmp_path):
     repository = tmp_path / "LaclauGPT-Data-Visualization"
     repository.mkdir()

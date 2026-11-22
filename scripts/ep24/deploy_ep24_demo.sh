@@ -17,7 +17,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP_FILES=(
   "src/laclaugpt_visualization/__init__.py"
   "src/laclaugpt_visualization/demo_auth.py"
-  "src/laclaugpt_visualization/ep24_reprocessed.py"
+  "src/laclaugpt_visualization/ep24_reprocessed.py
+    src/laclaugpt_visualization/ep24_researcher_parity.py"
   "src/laclaugpt_visualization/ep24_legacy_parity.py"
   "src/laclaugpt_visualization/ep24_manifest_verify.py"
   "src/laclaugpt_visualization/ep24_review_log.py"
