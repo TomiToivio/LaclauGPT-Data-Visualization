@@ -265,17 +265,21 @@ def test_issue165_monitor_renders_only_one_freshness_indicator(monkeypatch):
             # Mirror st.metric's signature: the Monitor row labels its scope with `help=`.
             pass
 
+        # The chart grid renders inside `with column:` and labels each chart with
+        # column.markdown, so the stub needs the container protocol and those calls.
         def __enter__(self):
-            # st.columns() supports `with column:`; the chart grid relies on it.
             return self
 
         def __exit__(self, *exc_info):
             return False
 
-        def plotly_chart(self, *args, **kwargs):
+        def markdown(self, *args, **kwargs):
             pass
 
         def caption(self, *args, **kwargs):
+            pass
+
+        def plotly_chart(self, *args, **kwargs):
             pass
 
     monkeypatch.setattr(ai26_dashboard.st, "columns", lambda count: [Column() for _ in range(count)])
