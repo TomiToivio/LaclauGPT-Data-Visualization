@@ -321,6 +321,13 @@ The deployments are the documented two on Laskin and can be overridden:
 branch, so a detached HEAD there is correct. The same rule inverted applies — a *secondary*
 deployment found on `main` is reported as the #236 layout defect.
 
+Two operational details, both learned the hard way (#293). The variable is `LACLAUGPT_VIS_DEPLOYMENTS`;
+the script prints its own name in the error when it is unset, which is the only reason a wrong spelling
+is diagnosable. And run the unit **once by hand** after installing it: the service is deliberately
+`SuccessExitStatus=0 1 2`, because "drift" and "could not inspect" are reportable outcomes rather than
+unit failures — so an unset variable looks exactly like a healthy run in `systemctl status`. The log is
+the evidence, not the unit state.
+
 ### Install the hourly report
 
 `deploy/laskin-served-drift.service.example` and `.timer.example` run it hourly and append to
