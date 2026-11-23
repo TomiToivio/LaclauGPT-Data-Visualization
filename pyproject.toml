@@ -55,3 +55,6 @@ line-length = 100
 # Streamlit multipage scripts are named for the navigation label (`1_AI26_Multimethod_Explore.py`), which is
 # not a valid Python module name by construction.
 "src/laclaugpt_visualization/pages/*.py" = ["N999"]
+# dashboards/pledge/pledge_dashboard.py is a verbatim copy of the script deployed from the
+# presentation host. Restyling it here would make the backup differ from the code that runs.
+"dashboards/pledge/pledge_dashboard.py" = ["C408", "BLE001"]
