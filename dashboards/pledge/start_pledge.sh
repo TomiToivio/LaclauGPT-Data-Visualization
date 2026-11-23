@@ -9,7 +9,7 @@ set -u
 
 PORT="${1:-8501}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY=/usr/bin/python3.10
+PY="${PYTHON:-python3}"
 
 owner_pid() {
   ss -ltnp 2>/dev/null | awk -v port=":${PORT} " '$0 ~ port {print}' \
@@ -29,7 +29,7 @@ fi
 cd "${DIR}" || exit 1
 setsid nohup "${PY}" -m streamlit run pledge_dashboard.py \
   --server.port "${PORT}" --server.headless true --server.address 0.0.0.0 \
-  --browser.gatherUsageStats false > "/tmp/pledge_app.log" 2>&1 < /dev/null &
+  --browser.gatherUsageStats false > "pledge_app.log" 2>&1 < /dev/null &
 
 for _ in $(seq 1 30); do
   sleep 1
@@ -40,5 +40,5 @@ for _ in $(seq 1 30); do
 done
 
 echo "pledge dashboard did not become healthy; last log lines:"
-tail -5 /tmp/pledge_app.log
+tail -5 pledge_app.log
 exit 1

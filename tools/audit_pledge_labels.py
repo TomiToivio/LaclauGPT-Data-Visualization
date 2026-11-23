@@ -25,7 +25,6 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "dashboards" / "pledge"))
 import pledge_entities as pe
 
-DEFAULT_CSV = Path("/home/tomi/work/LaclauGPT-Private/analysis/pledge/ep24_pledge_clean_v2.csv")
 COLUMNS = ("entities", "topics", "persons", "themes")
 
 
@@ -40,7 +39,7 @@ def aggressive_key(label: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("csv", nargs="?", type=Path, default=DEFAULT_CSV)
+    parser.add_argument("csv", type=Path, help="the workbook, e.g. ep24_pledge_clean_v2.csv")
     parser.add_argument("--show", type=int, default=8, help="groups to print per column")
     args = parser.parse_args()
 

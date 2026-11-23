@@ -7,19 +7,20 @@ sentiment, and the per-topic / entity / theme rankings.
 
 It is deployed **from its data directory**, not from this repository:
 
+It runs from the dashboard's data directory on the presentation host:
+
 ```
-<presentation-host>:<data-root>/laclaugpt/pledge_dashboard/
-    pledge_dashboard.py      this directory's file, unchanged
-    pledge_search.py         ├─ copied alongside it
-    pledge_entities.py       ┘
-    ep24_pledge_clean_v2.csv the data (backed up in the private repository: analysis/pledge/)
+pledge_dashboard.py      this directory's file, unchanged
+pledge_search.py         ├─ copied alongside it
+pledge_entities.py       ┘
+ep24_pledge_clean_v2.csv the data (archived in LaclauGPT-Private: analysis/pledge/)
 ```
 
 ```bash
-cd <data-root>/laclaugpt/pledge_dashboard
+cd <dashboard-data-dir>
 setsid nohup python3 -m streamlit run pledge_dashboard.py \
   --server.port 8501 --server.headless true --server.address 0.0.0.0 \
-  --browser.gatherUsageStats false > <log-dir>/pledge_app.log 2>&1 < /dev/null &
+  --browser.gatherUsageStats false > pledge_app.log 2>&1 < /dev/null &
 ```
 
 Use `setsid` + `nohup`: a plain `&` in an SSH one-liner dies with the session, and the app then
@@ -47,7 +48,7 @@ before it is copied over.
 ### Checking it
 
 ```bash
-python tools/audit_pledge_labels.py path/to/ep24_pledge_clean_v2.csv
+python tools/audit_pledge_labels.py ep24_pledge_clean_v2.csv
 ```
 
 The audit groups tokens under a deliberately *aggressive* key (accents, case, punctuation and all
