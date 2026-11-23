@@ -8,18 +8,18 @@ sentiment, and the per-topic / entity / theme rankings.
 It is deployed **from its data directory**, not from this repository:
 
 ```
-SpectacleScraper:/home/ubuntu/LaclauGPT-Data-Storage/laclaugpt/pledge_dashboard/
+<presentation-host>:<data-root>/laclaugpt/pledge_dashboard/
     pledge_dashboard.py      this directory's file, unchanged
     pledge_search.py         ├─ copied alongside it
     pledge_entities.py       ┘
-    ep24_pledge_clean_v2.csv the data (backed up in LaclauGPT-Private: analysis/pledge/)
+    ep24_pledge_clean_v2.csv the data (backed up in the private repository: analysis/pledge/)
 ```
 
 ```bash
-cd /home/ubuntu/LaclauGPT-Data-Storage/laclaugpt/pledge_dashboard
-setsid nohup /usr/bin/python3.10 -m streamlit run pledge_dashboard.py \
+cd <data-root>/laclaugpt/pledge_dashboard
+setsid nohup python3 -m streamlit run pledge_dashboard.py \
   --server.port 8501 --server.headless true --server.address 0.0.0.0 \
-  --browser.gatherUsageStats false > /tmp/pledge_app.log 2>&1 < /dev/null &
+  --browser.gatherUsageStats false > <log-dir>/pledge_app.log 2>&1 < /dev/null &
 ```
 
 Use `setsid` + `nohup`: a plain `&` in an SSH one-liner dies with the session, and the app then

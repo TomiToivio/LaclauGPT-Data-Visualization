@@ -137,3 +137,23 @@ def test_a_deployment_that_names_no_unit_keeps_its_old_verdict():
         served_unit=IMPOSTOR,
     )
     assert state.ok, "a spec that names no unit must not start guessing which unit is right"
+
+
+# ------------------------------------------------------------------ the installer cannot be silent
+
+
+def test_the_service_example_configures_the_variable_the_script_reads():
+    """A template without it installs a oneshot that inspects nothing and still shows `success`.
+
+    That is how the hourly report ran 184 times without observing anything: the unit set a
+    differently spelled variable, the script exited 2, and SuccessExitStatus made 2 a success.
+    """
+    example = Path(__file__).resolve().parents[1] / "deploy" / "laskin-served-drift.service.example"
+    text = example.read_text(encoding="utf-8")
+    assert f"Environment={drift.DEPLOYMENTS_ENV}=" in text
+    assert "#laclaugpt-visualization-ai26.service" in text
+
+
+def test_the_runbook_names_the_variable_the_script_reads():
+    runbook = Path(__file__).resolve().parents[1] / "docs" / "AI26_LASKIN_DASHBOARD.md"
+    assert drift.DEPLOYMENTS_ENV in runbook.read_text(encoding="utf-8")
