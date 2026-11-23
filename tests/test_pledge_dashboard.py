@@ -42,8 +42,11 @@ def test_a_query_with_pattern_characters_is_matched_literally() -> None:
 
 def test_same_meaning_entities_merge_and_institutions_do_not() -> None:
     entities = _load("pledge_entities")
-    assert entities.merge_cell("european union eu, politician") == "european union, politicians"
-    assert entities.merge_labels(["eu", "european union", "european commission"]) == [
+    forms = entities.build_forms(
+        ["european union"] * 9 + ["eu", "european union eu", "politician", "politicians", "politicians"]
+    )
+    assert entities.merge_cell("european union eu, politician", forms) == "european union, politicians"
+    assert entities.merge_labels(["eu", "european union", "european commission"], forms) == [
         "european union",
         "european commission",
     ]

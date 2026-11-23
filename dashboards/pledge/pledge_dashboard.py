@@ -23,7 +23,7 @@ except ImportError:
 try:
     from .pledge_entities import merge_cell
 except ImportError:
-    from pledge_entities import merge_cell
+    from pledge_entities import build_forms, merge_cell
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -107,7 +107,8 @@ def load_data() -> pd.DataFrame:
     # Union, "politician" is "politicians". Merging happens on load, so every tab, filter and
     # count sees one tag per referent; the CSV on disk stays as the tagging model wrote it.
     for column in MERGED_LABEL_COLUMNS:
-        dataframe[column] = dataframe[column].map(merge_cell)
+        forms = build_forms(dataframe[column])
+        dataframe[column] = dataframe[column].map(lambda value, f=forms: merge_cell(value, f))
 
     # Assign any empty (OT) political_alignment rows to their country's
     # underrepresented alignment and rewrite the OT token in video_id.
