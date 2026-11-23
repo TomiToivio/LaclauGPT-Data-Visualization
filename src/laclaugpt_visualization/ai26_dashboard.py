@@ -485,21 +485,29 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
             ),
             width="stretch",
         )
-    st.markdown("#### Frequent labels in the loaded view")
-    for key, title in (("formations", "Political formations"), ("signifiers", "Signifiers"),
-                       ("actors", "Actors")):
+    # Side by side rather than stacked: formations, signifiers and actors are read as a set, and
+    # three full-width charts meant three scrolls to compare them.
+    for column, (key, title) in zip(
+        st.columns(3),
+        (("formations", "Formations"), ("signifiers", "Signifiers"), ("actors", "Actors")),
+        strict=True,
+    ):
         table = values[key]
-        if table.empty:
-            st.caption(f"No {title.lower()} in the current filtered window.")
-        else:
-            st.plotly_chart(_ranked_bar(table, table.columns[0], title), width="stretch")
-    st.caption(CAVEAT)
+        column.markdown(f"#### {title}")
+        if not isinstance(table, pd.DataFrame) or table.empty:
+            # main's wording (#290): name what is missing from *this window*, not "none".
+            column.caption(f"No {title.lower()} in the current filtered window.")
+            continue
+        column.plotly_chart(
+            px.bar(table.head(12), x="count", y=table.columns[0], orientation="h"),
+            width="stretch",
+            height=340,
+        )
 
 
 def _explore(frame: pd.DataFrame) -> None:
     if frame.empty:
         st.info("No records match the current filters.")
-        st.caption(CAVEAT)
         return
 
     try:
@@ -507,7 +515,6 @@ def _explore(frame: pd.DataFrame) -> None:
             views = canonical_explore(frame)
     except (KeyError, TypeError, ValueError) as exc:
         st.error(f"Explore view could not be built: {exc}")
-        st.caption(CAVEAT)
         return
 
     timeline = views["timeline"]
@@ -546,7 +553,6 @@ def _explore(frame: pd.DataFrame) -> None:
         st.info("No formation/signifier overlap is available in the current view.")
     else:
         st.dataframe(cross.head(100), width="stretch", hide_index=True)
-    st.caption(CAVEAT)
 
 
 def _networks(frame: pd.DataFrame) -> None:
@@ -562,7 +568,6 @@ def _networks(frame: pd.DataFrame) -> None:
     if not relation_table.empty:
         st.markdown("#### Evidence-bearing relations")
         st.dataframe(relation_table.head(1000), width="stretch", hide_index=True)
-    st.caption(CAVEAT)
 
 
 def _records(frame: pd.DataFrame) -> None:
