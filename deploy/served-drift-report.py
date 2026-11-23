@@ -61,6 +61,10 @@ class Deployment:
     path: Path
     #: ``branch``: this checkout owns ``main``. ``detached``: it must serve a commit, not a branch.
     mode: str = "branch"
+    #: The systemd unit that is supposed to own the port. Empty means "not checked".
+    #: Two units enabled for one port race for it at the next start (#293); a healthy port
+    #: proves nothing unless the listener belongs to the unit the docs name.
+    unit: str = ""
 
 
 @dataclass
@@ -73,6 +77,8 @@ class DeploymentState:
     behind: int = 0
     ahead: int = 0
     listener_cwd: str = ""
+    #: The unit that owns the listening process, from its cgroup. Empty when not under systemd.
+    served_unit: str = ""
     problems: list[str] = field(default_factory=list)
 
     @property
@@ -81,18 +87,20 @@ class DeploymentState:
 
 
 def parse_deployment(spec: str) -> Deployment:
-    """``name=port:path[@detached]`` -> Deployment. Strict: a typo must not silently scan nothing."""
+    """``name=port:path[@detached][#unit]`` -> Deployment. Strict: a typo must not scan nothing."""
     match = re.fullmatch(
-        r"(?P<name>[^=]+)=(?P<port>\d+):(?P<path>[^@]+)(?:@(?P<mode>branch|detached))?",
+        r"(?P<name>[^=]+)=(?P<port>\d+):(?P<path>[^@#]+)"
+        r"(?:@(?P<mode>branch|detached))?(?:#(?P<unit>[^#]+))?",
         spec.strip(),
     )
     if not match:
-        raise ValueError(f"deployment spec must be name=port:path[@detached], got {spec!r}")
+        raise ValueError(f"deployment spec must be name=port:path[@detached][#unit], got {spec!r}")
     return Deployment(
         name=match.group("name").strip(),
         port=int(match.group("port")),
         path=Path(match.group("path").strip()),
         mode=match.group("mode") or "branch",
+        unit=(match.group("unit") or "").strip(),
     )
 
 
@@ -167,6 +175,7 @@ def evaluate(
     behind: int,
     listener_cwd: str,
     serving: bool,
+    served_unit: str = "",
 ) -> DeploymentState:
     """Turn one deployment's observations into a state with named problems. Pure."""
     state = DeploymentState(
@@ -176,10 +185,19 @@ def evaluate(
         ahead=ahead,
         behind=behind,
         listener_cwd=listener_cwd,
+        served_unit=served_unit,
     )
     if not serving:
         state.problems.append(f"nothing is listening on port {deployment.port}")
         return state
+    if deployment.unit and served_unit != deployment.unit:
+        # #293: two units were enabled for :8501 and the undocumented one won the port while the
+        # documented one stayed dead — and every check above still passed, because the checkout,
+        # the branch and the commit were all correct. The unit is the missing question.
+        state.problems.append(
+            f"port {deployment.port} is served by {served_unit or '<no unit>'}, "
+            f"not the documented {deployment.unit}"
+        )
     if Path(listener_cwd).resolve() != deployment.path.resolve():
         state.problems.append(
             f"port {deployment.port} is served from {listener_cwd or '<unknown>'}, "
@@ -225,12 +243,39 @@ def _listener_cwd(pid: int) -> str:
         return ""
 
 
+def _unit_from_cgroup(text: str) -> str:
+    """Parse ``/proc/<pid>/cgroup`` -> unit name; '' when nothing owns the process.
+
+    Both layouts put the unit at the end of the path:
+    cgroup v2 ``0::/user.slice/.../app.slice/laclaugpt-visualization-ai26.service``
+    and v1 ``4:memory:/user.slice/.../laclaugpt-visualization-ai26.service``.
+    """
+    for line in text.splitlines():
+        path = line.rsplit(":", 1)[-1].strip()
+        if path.endswith(".service"):
+            return path.rsplit("/", 1)[-1]
+    return ""
+
+
+def _unit_of_pid(pid: int) -> str:
+    """The systemd unit that owns ``pid``, read from its cgroup; '' when nothing owns it.
+
+    Read from ``/proc`` rather than from ``systemctl``: the cgroup is the fact, it needs no
+    manager round-trip, and it works for user and system units alike (#293).
+    """
+    try:
+        return _unit_from_cgroup(Path(f"/proc/{pid}/cgroup").read_text(encoding="utf-8"))
+    except OSError:
+        return ""
+
+
 def collect(
     deployment: Deployment,
     *,
     fetch: bool = False,
     listeners: Callable[[], str] = _listeners,
     cwd_of: Callable[[int], str] = _listener_cwd,
+    unit_of: Callable[[int], str] = _unit_of_pid,
     git: Callable[..., subprocess.CompletedProcess[str]] = _git,
 ) -> DeploymentState:
     """Observe one deployment. Injectable so the tests need no server, port or repository."""
@@ -266,6 +311,7 @@ def collect(
         behind=int(behind or 0),
         listener_cwd=cwd_of(port_pid) if port_pid else "",
         serving=port_pid is not None,
+        served_unit=unit_of(port_pid) if port_pid else "",
     )
 
 
@@ -286,10 +332,11 @@ def render(
     for state in states:
         marker = "ok   " if state.ok else "DRIFT"
         position = state.branch if state.deployment.mode == "branch" else f"detached@{(state.head or '?')[:7]}"
+        unit = f" unit={state.served_unit}" if state.served_unit else ""
         lines.append(
             f"{marker} {state.deployment.name:<16} :{state.deployment.port:<5} "
             f"{position:<20} {(state.head or '?')[:7]:<8} "
-            f"{state.ahead} ahead / {state.behind} behind"
+            f"{state.ahead} ahead / {state.behind} behind{unit}"
         )
         for problem in state.problems:
             lines.append(f"      - {problem}")
@@ -358,6 +405,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                             "ahead": state.ahead,
                             "behind": state.behind,
                             "listener_cwd": state.listener_cwd,
+                            "served_unit": state.served_unit,
+                            "expected_unit": state.deployment.unit,
                             "ok": state.ok,
                             "problems": state.problems,
                         }
