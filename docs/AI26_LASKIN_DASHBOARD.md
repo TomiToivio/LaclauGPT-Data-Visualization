@@ -147,6 +147,32 @@ journalctl -u laclaugpt-visualization-ai26.service -n 200 --no-pager
 
 A user-service installation is also valid. Remove `User=` and `Group=`, install under `~/.config/systemd/user/`, use `WantedBy=default.target`, and run the equivalent `systemctl --user` commands.
 
+### One unit owns :8501 (#293)
+
+`laclaugpt-visualize serve` launches `ai26_dashboard.py` through Streamlit — the same page a hand-written
+`streamlit run src/laclaugpt_visualization/ai26_dashboard.py` unit would serve. The difference is what the
+packaged entry point adds around it: the readiness check in `ExecStartPre`, the effective browser-data
+contract, and the settings the CLI validates. A second unit that calls Streamlit directly therefore buys
+nothing and loses all three.
+
+Two units that both name `--server.port 8501` can both be `enabled`: the one that starts first wins the
+port and the other dies, so a reboot can silently change which service answers. A healthy port proves
+only that *something* serves it.
+
+After install, or whenever the endpoint looks wrong, check all three facts — port, checkout, unit:
+
+```bash
+ss -ltnp | grep ':8501'                         # which pid owns the port
+readlink /proc/<pid>/cwd                        # which checkout it runs from
+grep -o '[^/]*\.service' /proc/<pid>/cgroup     # which unit owns it
+systemctl --user is-enabled laclaugpt-visualization-ai26.service
+```
+
+Exactly one enabled unit may name `:8501`, and it must be the one above. `deploy/served-drift-report.py`
+reports a listener owned by any other unit as drift when the deployment spec names the expected one
+(`--deployment 'ai26=8501:/path#laclaugpt-visualization-ai26.service'`), and it also reports a listener
+that no unit owns.
+
 ## Retire the legacy split deployment
 
 The legacy JSONL dashboard/export path from the former monolithic deployment is not part of the supported visualization service. Before enabling the unified service, retire those units if present:
@@ -154,6 +180,16 @@ The legacy JSONL dashboard/export path from the former monolithic deployment is 
 ```bash
 systemctl --user disable --now ai26-dashboard.service ai26-export.service ai26-export.timer 2>/dev/null || true
 ```
+
+A direct-Streamlit unit is the same retired shape under a new name — on Laskin it appeared as
+`laclaugpt-ai26-dashboard.service`, which is why the command above also has to name it explicitly:
+
+```bash
+systemctl --user disable --now laclaugpt-ai26-dashboard.service 2>/dev/null || true
+```
+
+Disable it rather than only stopping it: `stop` leaves it `enabled`, so the next login starts two units
+for one port and the outcome depends on the race.
 
 Do not re-enable an obsolete exporter merely to feed the dashboard. If a portable export is introduced later, write it through a temporary file plus atomic rename rather than truncating a live file before replacement.
 
@@ -263,7 +299,10 @@ while the unit stayed `active` and the port kept answering 200.
 ```
 
 For every deployment it ties the port to the checkout: the listening process's `/proc/<pid>/cwd`
-must be the configured path, the branch must be `main`, and HEAD must equal `origin/main`. It also
+must be the configured path, the branch must be `main`, and HEAD must equal `origin/main`. When the
+spec names a unit, it also ties the port to **that unit** through the listener's cgroup, and reports
+a listener owned by any other unit — or by no unit at all — as drift (#293: the port was healthy and
+the unit was wrong). It also
 reports a branch claimed by **two deployments**, the #236 layout defect that makes the documented
 refresh impossible to run non-interactively. A duplicate claim held only by a transient scratch
 worktree is reported as a note, not a failure.
@@ -272,9 +311,9 @@ The deployments are the documented two on Laskin and can be overridden:
 
 ```bash
 # The deployment paths are host state, not repository content: name them here or in
-# LACLAUGPT_VIS_DEPLOYMENTS (comma separated, NAME=PORT:PATH).
+# LACLAUGPT_VIS_DEPLOYMENTS (comma separated, NAME=PORT:PATH[#UNIT]).
 .venv/bin/python deploy/served-drift-report.py \
-  --deployment "ai26-dashboard=8501:$LACLAUGPT_VIS_REPO_ROOT" \
+  --deployment "ai26-dashboard=8501:$LACLAUGPT_VIS_REPO_ROOT#laclaugpt-visualization-ai26.service" \
   --deployment "live-steps=8503:$LIVE_STEPS_WORKTREE@detached"
 ```
 
