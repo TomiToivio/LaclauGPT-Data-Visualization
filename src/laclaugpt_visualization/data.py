@@ -7,6 +7,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+
+from .label_aliases import canonicalize_frame
 import pandas as pd
 
 from .canonical import flatten_canonical, reconstruct_canonical
@@ -110,6 +112,10 @@ def normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
             normalized[column] = [[] for _ in range(len(normalized))]
         else:
             normalized[column] = normalized[column].map(_as_list)
+
+    # One surface form per label: "EU" and "European Union" are one actor, and counting them
+    # apart splits that actor's standing in two. The folding map is kept in attrs for audit.
+    normalized = canonicalize_frame(normalized)
 
     for column in ("source_timestamp", "collection_timestamp", "analysis_timestamp"):
         if column in normalized:
