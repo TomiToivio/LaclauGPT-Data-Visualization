@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --bg:#0d0b18; --card:#1b1430; --edge:#4a2a7a; --ink:#f2e9ff; --dim:#a99cc9; --hot:#06ffa5; }
+  body { margin:0; font:13px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  .board { display:flex; gap:10px; padding:8px; flex-wrap:wrap; min-height:120px; }
+  .card { background:var(--card); border:1px solid var(--edge); border-radius:10px; padding:8px 10px;
+          cursor:grab; min-width:120px; user-select:none; transition:transform .12s ease, box-shadow .12s; }
+  .card:hover { transform:translateY(-1px); }
+  .card.dragging { opacity:.45; }
+  .card.over { box-shadow:0 0 0 2px var(--hot); }
+  .card .name { font-weight:600; }
+  .card .meta { color:var(--dim); font-size:11px; margin-top:2px; }
+  .cluster { border-style:dashed; }
+  .row { display:flex; gap:8px; align-items:center; padding:8px 8px 0; flex-wrap:wrap; }
+  button { background:var(--card); color:var(--ink); border:1px solid var(--edge); border-radius:8px;
+           padding:5px 10px; cursor:pointer; }
+  button.primary { border-color:var(--hot); color:var(--hot); }
+  .bar { height:6px; background:#241a3d; border-radius:4px; overflow:hidden; margin:8px; }
+  .bar > i { display:block; height:100%; background:var(--hot); width:0; }
+  .hint { color:var(--dim); padding:0 8px 8px; }
+</style>
+</head>
+<body>
+<div class="row">
+  <strong id="title">Merge review</strong>
+  <span class="hint" id="hint">Drag a card onto another to propose a merge. Shift+click to select several.</span>
+  <button id="confirm" class="primary">Confirm merge</button>
+  <button id="keep">Keep separate</button>
+  <button id="undo">Undo</button>
+</div>
+<div class="bar"><i id="progress"></i></div>
+<div class="board" id="board"></div>
+<script>
+// Minimal Streamlit component protocol (no build step, no credentials).
+const Streamlit = {
+  ready() { window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:componentReady", apiVersion: 1 }, "*"); },
+  height() { window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:setFrameHeight",
+                                         height: document.body.scrollHeight }, "*"); },
+  send(value) { window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:setComponentValue", value }, "*"); },
+};
+
+let state = { args: { cards: [], reviewed: 0, total: 0 }, selected: [], history: [], pending: null };
+
+function cardEl(card) {
+  const el = document.createElement("div");
+  el.className = "card" + (card.aliases && card.aliases.length ? " cluster" : "");
+  el.draggable = true;
+  el.dataset.id = card.id;
+  el.innerHTML = `<div class="name">${escapeHtml(card.label)}</div>
+    <div class="meta">${card.count} mentions · ${(card.confidence ?? 1).toFixed(2)}</div>`;
+  if (state.selected.includes(card.id)) el.style.borderColor = "var(--hot)";
+
+  el.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", card.id); el.classList.add("dragging"); });
+  el.addEventListener("dragend", () => el.classList.remove("dragging"));
+  el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("over"); });
+  el.addEventListener("dragleave", () => el.classList.remove("over"));
+  el.addEventListener("drop", (e) => {
+    e.preventDefault(); el.classList.remove("over");
+    const source = e.dataTransfer.getData("text/plain");
+    if (source && source !== card.id) propose([source, card.id]);
+  });
+  // Keyboard-accessible alternative to dragging.
+  if (card.button !== false) {
+    el.tabIndex = 0;
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(card.id); }
+      if (e.key === "m" && state.selected.length) propose([...state.selected]);
+    });
+    el.addEventListener("click", (e) => { if (e.shiftKey) toggle(card.id); });
+  }
+  return el;
+}
+
+function toggle(id) {
+  state.selected = state.selected.includes(id) ? state.selected.filter((x) => x !== id) : [...state.selected, id];
+  render();
+}
+
+function propose(ids) {
+  const labels = ids.map((id) => (state.args.cards.find((c) => c.id === id) || {}).label).filter(Boolean);
+  state.pending = { action: "propose", ids, labels };
+  state.history.push(state.pending);
+  state.selected = [];
+  render();
+  Streamlit.send({ action: "propose", ids, labels });
+}
+
+function render() {
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+  (state.args.cards || []).forEach((card) => board.appendChild(cardEl(card)));
+  document.getElementById("title").textContent = state.args.category ? `Merge review — ${state.args.category}` : "Merge review";
+  const total = state.args.total || 1;
+  document.getElementById("progress").style.width = `${Math.min(100, (100 * (state.args.reviewed || 0)) / total)}%`;
+  Streamlit.height();
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+document.getElementById("confirm").onclick = () => {
+  const ids = state.pending ? state.pending.ids : state.selected;
+  if (!ids.length) return;
+  Streamlit.send({ action: "confirm", ids });
+};
+document.getElementById("keep").onclick = () => {
+  const ids = state.pending ? state.pending.ids : state.selected;
+  if (!ids.length) return;
+  Streamlit.send({ action: "keep_separate", ids });
+};
+document.getElementById("undo").onclick = () => {
+  state.history.pop();
+  state.pending = null;
+  state.selected = [];
+  render();
+  Streamlit.send({ action: "undo" });
+};
+
+window.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || data.type !== "streamlit:render") return;
+  state.args = data.args || state.args;
+  state.selected = [];
+  render();
+});
+
+Streamlit.ready();
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,202 @@
+"""Legacy EP24 Merge Lab — gamified researcher curation for label merging (issue #300).
+
+Deliverable 2 of #300: a Streamlit page whose merge interaction is a real JavaScript drag-and-drop
+component (``frontend/index.html``), not a graph or a dropdown. Every frontend merge is validated
+here, and the researcher's decisions are persisted to the private working area with a revision log.
+
+Run from a checkout that has the private working area beside it:
+
+    LACLAUGPT_LEGACY_DIR=../LaclauGPT-Private/analysis/ep24_legacy_curation \
+    streamlit run dashboards/legacy_curation/app.py
+
+The app never writes into a source export and never stores credentials in the browser.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+# Streamlit runs this file as a script, so the package under src/ is on no import path by default.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
+from laclaugpt_visualization.legacy_curation import CATEGORIES, curate, read_labels
+
+WORK_DIR = Path(os.environ.get("LACLAUGPT_LEGACY_DIR", "analysis/ep24_legacy_curation"))
+DECISIONS = WORK_DIR / "decisions.json"
+HISTORY = WORK_DIR / "decisions_history.jsonl"
+COMPONENT_DIR = Path(__file__).resolve().parent / "frontend"
+
+CATEGORY_LABELS = {
+    "persons": ("Persons", "One person, one card: titles and bare surnames fold only when unambiguous."),
+    "entities": ("Entities", "Institutions, countries, organisations."),
+    "themes": ("Themes", "Equivalent wording only — relatedness is not sameness."),
+    "topics": ("Topics", "Equivalent wording only."),
+    "sentiments": ("Sentiments", "One polarity per card; opposites are never merged."),
+}
+
+
+def _component():
+    return st.components.v1.declare_component("legacy_merge_board", path=str(COMPONENT_DIR))
+
+
+def _load_decisions() -> dict:
+    if DECISIONS.exists():
+        return json.loads(DECISIONS.read_text(encoding="utf-8"))
+    return {"merge": {}, "keep_separate": []}
+
+
+def _save_decisions(decisions: dict, action: dict) -> None:
+    """Persist decisions and append a revision record, so concurrent sessions can be reconciled."""
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    DECISIONS.write_text(json.dumps(decisions, indent=2, sort_keys=True), encoding="utf-8")
+    record = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "action": action}
+    with HISTORY.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _cards(category: str, counts: dict[str, int], result: dict) -> list[dict]:
+    """Unresolved clusters first — they are the work — then the confirmed ones for context."""
+    cards: list[dict] = []
+    for row in result["review"]:
+        if row["category"] != category:
+            continue
+        labels = [item.strip() for item in str(row["candidates"]).split(";") if item.strip()]
+        cards.append({
+            "id": f"review::{row['proposed_canonical']}",
+            "label": row["proposed_canonical"],
+            "aliases": labels,
+            "count": sum(counts.get(label, 0) for label in labels),
+            "confidence": float(row["confidence"]),
+            "status": "review",
+            "rationale": row["rationale"],
+        })
+    for row in result["canonical"]:
+        if row["category"] != category:
+            continue
+        cards.append({
+            "id": f"merged::{row['canonical']}",
+            "label": row["canonical"],
+            "aliases": [item.strip() for item in str(row["aliases"]).split(";") if item.strip()],
+            "count": int(row["occurrences"]),
+            "confidence": float(row["confidence"]),
+            "status": "merged",
+            "rationale": row["method"],
+        })
+    return sorted(cards, key=lambda card: (-len(card["aliases"]), -card["count"]))
+
+
+def _validate(action: dict, cards: list[dict]) -> tuple[bool, str]:
+    """Backend validation: never trust the browser's ids."""
+    known = {card["id"] for card in cards}
+    ids = [item for item in (action.get("ids") or []) if item in known]
+    if action.get("action") in {"confirm", "keep_separate", "propose"} and len(ids) < 1:
+        return False, "no known card selected"
+    if len(ids) > 40:
+        return False, "too many cards in one decision"
+    return True, ""
+
+
+def main() -> None:
+    st.set_page_config(page_title="Legacy EP24 Merge Lab", page_icon=":jigsaw:", layout="wide")
+    st.title("Legacy EP24 Merge Lab")
+    st.caption(
+        "Automatically proposed merges, reviewed by drag and drop. Decisions are saved to the private "
+        f"working area: `{WORK_DIR}`. The source export is never modified."
+    )
+
+    source = st.sidebar.text_input("Source export (CSV/JSON, read-only)", value=str(WORK_DIR / "source.csv"))
+    if not Path(source).exists():
+        st.info(
+            "Point the sidebar at the legacy export, or run the automatic pass first:\n\n"
+            "`python tools/legacy_curate.py --source export.csv --out analysis/ep24_legacy_curation`"
+        )
+        return
+
+    labelled = {category: read_labels(Path(source), category) for category in CATEGORIES}
+    labelled = {category: counts for category, counts in labelled.items() if counts}
+    decisions = _load_decisions()
+    result = curate(labelled, decisions=decisions)
+
+    stats = result["stats"]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Labels reviewed by rule", sum(item["labels"] for item in stats.values()))
+    c2.metric("Merges applied", sum(item["auto_merges"] for item in stats.values()))
+    c3.metric(
+        "Still to review",
+        sum(item["review_candidates"] for item in stats.values()) + len(decisions.get("keep_separate", [])),
+    )
+
+    component = _component()
+    tabs = st.tabs([CATEGORY_LABELS[category][0] for category in CATEGORIES])
+    for tab, category in zip(tabs, CATEGORIES):
+        with tab:
+            st.caption(CATEGORY_LABELS[category][1])
+            counts = labelled.get(category, {})
+            if not counts:
+                st.info("No labels for this category in the source.")
+                continue
+            cards = _cards(category, counts, result)
+            action = component(
+                cards=cards,
+                category=category,
+                reviewed=len(decisions.get("keep_separate", [])) + len(decisions.get("merge", {})),
+                total=max(1, len(cards)),
+                key=f"board-{category}",
+                default=None,
+            )
+            if not action:
+                continue
+
+            ok, error = _validate(action, cards)
+            if not ok:
+                st.error(f"Rejected: {error}")
+                continue
+
+            labels = [next(card["label"] for card in cards if card["id"] == card_id) for card_id in action["ids"]]
+            if action["action"] == "confirm":
+                canonical = labels[0]
+                for alias in labels[1:]:
+                    decisions.setdefault("merge", {})[alias] = canonical
+                _save_decisions(decisions, {"confirm": labels, "category": category})
+                st.success(f"Merged into **{canonical}** — saved.")
+            elif action["action"] == "keep_separate":
+                decisions.setdefault("keep_separate", []).extend(
+                    label for label in labels if label not in decisions["keep_separate"]
+                )
+                _save_decisions(decisions, {"keep_separate": labels, "category": category})
+                st.info("Kept separate — saved.")
+            elif action["action"] == "propose":
+                st.session_state["pending_preview"] = labels
+                st.warning(f"Proposed merge: {' + '.join(labels)} — press Confirm merge in the board to apply.")
+            else:
+                st.toast("Undone in the board; nothing was saved.")
+
+            preview = st.session_state.get("pending_preview")
+            if preview:
+                affected = sum(counts.get(label, 0) for label in preview)
+                st.markdown(
+                    f"**Preview:** {len(preview)} labels, {affected} occurrences would count as "
+                    f"`{preview[0]}`. The export changes only when you act."
+                )
+
+            with st.expander("Affected labels"):
+                st.dataframe(
+                    pd.DataFrame(
+                        [{"label": label, "mentions": counts.get(label, 0)} for label in preview or []]
+                    ),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+    st.sidebar.markdown("---")
+    st.sidebar.json(decisions, expanded=False)
+
+
+main()
