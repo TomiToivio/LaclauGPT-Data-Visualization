@@ -106,9 +106,20 @@ class Normalized:
         return " ".join(sorted(set(self.core_tokens)))
 
 
+def clean_label(text: str) -> str:
+    """Remove redundant parenthetical annotations and leading articles."""
+    value = unicodedata.normalize("NFC", text).strip()
+    while re.search(r"\([^()]*\)", value):
+        value = re.sub(r"\([^()]*\)", " ", value)
+    value = re.sub(r"\([^)]*$", "", value)
+    value = _SPACE.sub(" ", value.replace(")", " ")).strip(" ,;:-")
+    value = re.sub(r"^the\s+", "", value, flags=re.IGNORECASE)
+    return value.strip() or text.strip()
+
+
 def fold(text: str) -> str:
     """Unicode-normalize, case-fold, and collapse the whitespace/punctuation extractors add."""
-    normalized = unicodedata.normalize("NFKC", text).translate(_TRANSLATION).casefold()
+    normalized = unicodedata.normalize("NFKC", clean_label(text)).translate(_TRANSLATION).casefold()
     normalized = _PUNCTUATION.sub(" ", normalized)
     normalized = normalized.replace("_", " ")
     normalized = _APOSTROPHE_TAIL.sub("", normalized.strip())
