@@ -14,6 +14,7 @@ The app never writes into a source export and never stores credentials in the br
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import sys
@@ -24,10 +25,21 @@ import pandas as pd
 import streamlit as st
 import yaml
 
-# Streamlit runs this file as a script, so the package under src/ is on no import path by default.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+# Load the curation module by path, not through the package. Importing the package runs its
+# __init__, which pulls in the whole settings/config stack (pydantic-settings and friends) — none of
+# which this page needs, and which is not installed on every host that serves a dashboard. Loading
+# the one module keeps the lab runnable wherever Streamlit and pandas exist.
+_MODULE_PATH = Path(__file__).resolve().parents[2] / "src" / "laclaugpt_visualization" / "legacy_curation.py"
+_spec = importlib.util.spec_from_file_location("legacy_curation", _MODULE_PATH)
+if _spec is None or _spec.loader is None:  # pragma: no cover - a broken checkout, not a code path
+    raise ImportError(f"cannot load the curation module from {_MODULE_PATH}")
+_legacy = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = _legacy  # dataclasses resolves cls.__module__ through sys.modules
+_spec.loader.exec_module(_legacy)
 
-from laclaugpt_visualization.legacy_curation import CATEGORIES, curate, read_labels
+CATEGORIES = _legacy.CATEGORIES
+curate = _legacy.curate
+read_labels = _legacy.read_labels
 
 WORK_DIR = Path(os.environ.get("LACLAUGPT_LEGACY_DIR", "analysis/ep24_legacy_curation"))
 DECISIONS = WORK_DIR / "decisions.json"
