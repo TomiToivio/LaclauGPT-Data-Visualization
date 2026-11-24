@@ -20,6 +20,7 @@ from typing import Any
 
 import streamlit as st
 import streamlit.components.v1 as components
+import yaml
 
 try:  # the package is importable when this file is run from the repository root
     from ep24_merge_lab import curation, export
@@ -316,8 +317,51 @@ def commit(root: Path, review: sessions.Session, actions: list[sessions.Action])
 # ------------------------------------------------------------------ page
 
 
+def _login_gate() -> bool:
+    """Opt-in authentication, so the same page can be served on a public port.
+
+    Set LACLAUGPT_AUTH_YAML to a streamlit-authenticator config; unset means no gate, which is how it
+    is run locally and how the tests run it. The page reads research decisions, so an unauthenticated
+    public deployment would expose them.
+    """
+    auth_yaml = os.environ.get("LACLAUGPT_AUTH_YAML", "").strip()
+    if not auth_yaml:
+        return True
+
+    config_path = Path(auth_yaml).expanduser()
+    if not config_path.exists():
+        st.error(f"LACLAUGPT_AUTH_YAML points at a missing file: {config_path}")
+        return False
+
+    import streamlit_authenticator as stauth
+
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    authenticator = stauth.Authenticate(
+        config["credentials"],
+        config["cookie"]["name"],
+        config["cookie"]["key"],
+        config["cookie"]["expiry_days"],
+    )
+    try:
+        authenticator.login()
+    except Exception as exc:  # noqa: BLE001 — the authenticator raises its own types on bad config
+        st.error(exc)
+
+    status = st.session_state.get("authentication_status")
+    if status:
+        authenticator.logout("Logout", "sidebar")
+        return True
+    if status is False:
+        st.error("Username/password is incorrect")
+    else:
+        st.warning("Please enter your username and password")
+    return False
+
+
 def main() -> None:
     st.set_page_config(page_title="EP24 Merge Lab", layout="wide")
+    if not _login_gate():
+        return
     st.title("EP24 Merge Lab")
     st.caption(
         "Legacy label curation · every action is validated here and written to the private "
