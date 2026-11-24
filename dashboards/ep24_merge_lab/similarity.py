@@ -336,6 +336,45 @@ def resolve(
     blocked: set[frozenset[str]] | None = None,
     forced_methods: dict[str, str] | None = None,
 ) -> MergeResult:
+    """Cluster one category's labels, keeping each polarity apart.
+
+    Polarity is part of a sentiment label's identity: the same phrase under *positive* and under
+    *negative* is two meanings, and a dict keyed by the label alone silently drops one of them.
+    The corpus really does contain such pairs (1,156 of 7,453 sentiment labels in the served EP24
+    table appear under two polarities), so the partitioning is not hypothetical bookkeeping.
+
+    Everything else — the precedence rules for human decisions — lives in `_resolve_group`.
+    """
+    by_polarity: dict[str, list[LabelStat]] = defaultdict(list)
+    for stat in stats:
+        by_polarity[stat.polarity].append(stat)
+    if len(by_polarity) <= 1:
+        return _resolve_group(
+            stats, rule, forced=forced, blocked=blocked, forced_methods=forced_methods
+        )
+
+    clusters: list[Cluster] = []
+    candidates: list[ReviewCandidate] = []
+    singletons: set[str] = set()
+    for polarity, group in sorted(by_polarity.items()):
+        part = _resolve_group(
+            group, rule, forced=forced, blocked=blocked, forced_methods=forced_methods
+        )
+        clusters.extend(replace(cluster, polarity=polarity) for cluster in part.clusters)
+        candidates.extend(replace(candidate, polarity=polarity) for candidate in part.candidates)
+        singletons.update(part.singletons)
+    candidates.sort(key=lambda candidate: (-candidate.alternatives[0][1], candidate.label))
+    return MergeResult(clusters=clusters, candidates=candidates, singletons=sorted(singletons))
+
+
+def _resolve_group(
+    stats: list[LabelStat],
+    rule: CategoryRule,
+    *,
+    forced: list[tuple[str, list[str]]] | None = None,
+    blocked: set[frozenset[str]] | None = None,
+    forced_methods: dict[str, str] | None = None,
+) -> MergeResult:
     """Cluster one category's labels, applying researcher decisions first.
 
     ``forced`` is a list of ``(canonical, members)`` from the decision log or a human workbook;

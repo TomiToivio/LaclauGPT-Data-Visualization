@@ -196,6 +196,7 @@ def _run(args: argparse.Namespace) -> int:
         coverage=coverage,
         registry_aliases=registry_aliases,
         workbook_inputs=workbook_info,
+        label_counts={category: len(stats) for category, stats in pooled.items()},
     )
     print(json.dumps({"run": str(run_dir), "summary": summary}, indent=2, sort_keys=True))
     return 0

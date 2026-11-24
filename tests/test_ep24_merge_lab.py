@@ -123,17 +123,24 @@ def test_a_related_topic_is_not_an_equivalent_topic():
     assert not result.clusters
 
 
-def test_opposing_sentiment_polarities_never_merge():
+def test_opposing_sentiment_polarities_never_merge() -> None:
+    """A phrase said positively and negatively is two labels; neither may displace the other."""
     positive = LabelStat(label="good housing policy", count=3, polarity="positive")
     negative = LabelStat(label="good housing policy", count=2, polarity="negative")
-    # The two live in different polarity groups: the caller resolves each separately.
     assert positive.group != negative.group
-    for polarity in ("positive", "negative"):
-        single = curation.resolve_category(
-            [LabelStat(label="good housing policy", count=1, polarity=polarity)],
-            "sentiment",
-        )
-        assert not single.clusters
+    # A spelling variant inside each polarity: before the partition, a dict keyed by the label
+    # alone kept one polarity and dropped the other without saying so.
+    variant_positive = LabelStat(label="Good housing policy", count=4, polarity="positive")
+    variant_negative = LabelStat(label="Good Housing Policy", count=5, polarity="negative")
+    result = curation.resolve_category(
+        [positive, variant_positive, negative, variant_negative], "sentiment"
+    )
+    by_polarity = {cluster.polarity: cluster for cluster in result.clusters}
+    assert set(by_polarity) == {"positive", "negative"}
+    assert by_polarity["positive"].count == 7
+    assert by_polarity["negative"].count == 7
+    assert by_polarity["positive"].members == ("Good housing policy", "good housing policy")
+    assert by_polarity["negative"].members == ("Good Housing Policy", "good housing policy")
 
 
 def test_containment_is_a_phrase_not_a_bag_of_words():
