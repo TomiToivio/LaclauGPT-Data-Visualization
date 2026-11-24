@@ -334,15 +334,26 @@ def resolve(
     *,
     forced: list[tuple[str, list[str]]] | None = None,
     blocked: set[frozenset[str]] | None = None,
+    forced_methods: dict[str, str] | None = None,
 ) -> MergeResult:
     """Cluster one category's labels, applying researcher decisions first.
 
-    ``forced`` is a list of ``(canonical, members)`` from the decision log; ``blocked`` holds
-    label pairs a researcher explicitly kept apart. Both survive re-runs, which is what makes
-    the run resumable without losing manual work.
+    ``forced`` is a list of ``(canonical, members)`` from the decision log or a human workbook;
+    ``blocked`` holds label pairs a researcher explicitly kept apart. Both survive re-runs, which
+    is what makes the run resumable without losing manual work.
+
+    Two precedence rules are enforced here rather than left to the caller:
+
+    * a human decision is applied **before** any similarity rule runs, so a matcher can never
+      re-derive — or contradict — a pair a researcher already settled;
+    * a human-decided label set is **sealed**: an unverified label may not be absorbed into it on
+      a similarity score alone. Only a spelling difference that is the same string (case, word
+      order, punctuation) may join, and anything else becomes a review candidate. This is what
+      stops an automatic union from attaching an unverified alias to a workbook cluster.
     """
     forced = forced or []
     blocked = blocked or set()
+    forced_methods = forced_methods or {}
     if not stats:
         return MergeResult()
 
@@ -365,6 +376,15 @@ def resolve(
     entries = sorted(normalized.values(), key=lambda item: item.raw.casefold())
     surname_targets = _surname_targets(entries) if rule.surname_merge else {}
 
+    #: Corpus spellings by folded form: a workbook writes "Javier Milei", the corpus writes
+    #: "javier milei", and both are the same label for the purpose of applying a decision.
+    fold_index: dict[str, list[str]] = defaultdict(list)
+    for label in normalized:
+        fold_index[" ".join(label.split()).casefold()].append(label)
+
+    def spellings(name: str) -> list[str]:
+        return sorted(fold_index.get(" ".join(name.split()).casefold(), []))
+
     uf = UnionFind([entry.raw for entry in entries])
     merged_pairs: set[frozenset[str]] = set()
     #: Pairs a researcher put together. The transitivity guard must not take them apart again:
@@ -372,13 +392,26 @@ def resolve(
     forced_pairs: set[frozenset[str]] = set()
     #: Member -> the name the researcher chose for its cluster.
     forced_canonical: dict[str, str] = {}
-    for canonical, members in forced:
-        for label in {canonical, *members}:
-            if label in normalized:
-                forced_canonical[label] = canonical
-        for left, right in combinations(sorted({canonical, *members}), 2):
-            if left in normalized and right in normalized:
-                forced_pairs.add(frozenset((left, right)))
+    #: Member -> which forced group it belongs to, so a group can be sealed as a unit.
+    sealed_group: dict[str, int] = {}
+    #: Member -> how the decision that fixed it should be named in the run's provenance.
+    forced_method_by_label: dict[str, str] = {}
+
+    # Decisions first. Everything below this block is the matcher's opinion, and it may not
+    # overrule what the block already decided.
+    for number, (canonical, members) in enumerate(forced):
+        present = sorted({label for name in {canonical, *members} for label in spellings(name)})
+        if not present:
+            continue
+        method = forced_methods.get(canonical, "forced")
+        for label in present:
+            forced_canonical[label] = canonical
+            sealed_group.setdefault(label, number)
+            forced_method_by_label[label] = method
+        for left, right in combinations(present, 2):
+            forced_pairs.add(frozenset((left, right)))
+            uf.union(left, right)
+            merged_pairs.add(frozenset((left, right)))
 
     # Blocking: index every label under each of its tokens, so "orpo" meets "petteri orpo"
     # without comparing the whole corpus pairwise.
@@ -391,6 +424,8 @@ def resolve(
     buckets = {token: labels for token, labels in buckets.items() if len(labels) <= MAX_BUCKET}
 
     scored: dict[frozenset[str], tuple[float, str]] = {}
+    #: Pairs the sealing rule held back, with the sentence a reviewer will read.
+    sealed_holds: dict[frozenset[str], str] = {}
 
     def score_pair(left: str, right: str) -> tuple[float, str]:
         pair = frozenset((left, right))
@@ -407,6 +442,22 @@ def resolve(
             score, relation = score_pair(left, right)
             if score < rule.auto_merge:
                 continue
+            left_group, right_group = sealed_group.get(left), sealed_group.get(right)
+            if left_group is not None or right_group is not None:
+                # A human-decided set only grows by another human decision. The one exception is
+                # a pure spelling difference (same tokens, possibly another case or order), which
+                # is the same string rather than a new judgement — except across two different
+                # human clusters, where it would silently overrule both.
+                same_string = relation == "token-set"
+                if left_group != right_group and not (
+                    same_string and (left_group is None or right_group is None)
+                ):
+                    if score >= rule.review:
+                        sealed_holds[pair] = (
+                            "human-verified label set: an unverified label may not join on"
+                            " similarity alone"
+                        )
+                    continue
             if relation == "surname" and not _surname_pair_ok(
                 left_entry, right_entry, rule, surname_targets
             ):
@@ -414,15 +465,8 @@ def resolve(
             uf.union(left, right)
             merged_pairs.add(pair)
 
-    # Forced clusters win over whatever the matcher decided.
-    for canonical, members in forced:
-        present = [member for member in members if member in normalized]
-        if len(present) < 2:
-            continue
-        for member in present[1:]:
-            uf.union(present[0], member)
-        if canonical in normalized:
-            uf.union(present[0], canonical)
+    # Forced clusters were unioned before the matcher ran; re-asserting them here would let a
+    # later edit reintroduce the old ordering, so the absence of a second pass is deliberate.
 
     clusters: list[Cluster] = []
     singletons: list[str] = []
@@ -433,7 +477,15 @@ def resolve(
             entry = member_entries[0]
             name = forced_canonical.get(entry.raw, canonical_name(entry))
             if name != entry.raw and not any(entry.raw in pair for pair in blocked):
-                clusters.append(Cluster(name, (entry.raw,), 1.0, "normalization", counts[entry.raw]))
+                clusters.append(
+                    Cluster(
+                        name,
+                        (entry.raw,),
+                        1.0,
+                        forced_method_by_label.get(entry.raw, "normalization"),
+                        counts[entry.raw],
+                    )
+                )
             else:
                 singletons.append(entry.raw)
             continue
@@ -455,7 +507,7 @@ def resolve(
             score, relation = similarity(canonical_entry, entry, rule)
             forced_here = frozenset((canonical_entry.raw, entry.raw)) in forced_pairs
             if forced_here:
-                methods.add("forced")
+                methods.add(forced_method_by_label.get(entry.raw, "forced"))
             if forced_here or score >= rule.auto_merge or _surname_pair_ok(
                 canonical_entry, entry, rule, surname_targets
             ):
@@ -501,6 +553,11 @@ def resolve(
             continue
         left_entry, right_entry = normalized[left], normalized[right]
         score, relation = score_pair(left, right)
+        if pair in sealed_holds and score >= rule.review:
+            # A human decision covers one of these labels; the pair is a question for a person,
+            # not for a threshold, so it is queued even when the score is very high.
+            note(left, right, score, sealed_holds[pair])
+            continue
         if pair in blocked:
             note(left, right, 0.0, "kept apart by a researcher decision")
             continue
