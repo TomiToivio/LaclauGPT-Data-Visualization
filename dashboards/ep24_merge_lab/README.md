@@ -7,8 +7,9 @@ This is a **curation tool**, not an analysis tool. It does not read records, inf
 reinterpret anything the legacy pipeline produced: it counts the spellings that are already
 there, proposes merges, and refuses to decide the ones that need a person.
 
-The interactive Merge Lab (drag-and-drop review) is the second deliverable of #300 and is not
-part of this directory yet; the decisions log it will write is already the input this tool reads.
+The second deliverable is `ui/`: a Streamlit page with a real drag-and-drop review surface. It
+reads the same run the CLI writes and appends to the same `decisions.jsonl`, so a decision made by
+dragging and a decision made with `merge_labels.py decide` are the same act.
 
 ## Where the data lives
 
@@ -110,3 +111,32 @@ Three properties are deliberate:
 `tests/test_ep24_merge_lab.py` — synthetic only, including #300's Orpo example, a surname that
 matches two people, a multilingual spelling pair, themes that share a word, opposing sentiment
 polarities, the transitivity guard, and a decision surviving a second run.
+
+## Hosting the review surface
+
+The page must never be public: it shows private labels. Bind it to the host's private/tailnet
+address and give it the curation root through the environment — it refuses to guess one.
+
+```bash
+export LACLAUGPT_EP24_CURATION=<private>/analysis/ep24_legacy_curation
+.venv/bin/streamlit run dashboards/ep24_merge_lab/ui/app.py \
+    --server.address <private-address> --server.port 8504 --server.headless true
+```
+
+`deploy/laclaugpt-ep24-merge-lab.service.example` is the unit template. On Laskin it runs as
+`laclaugpt-ep24-merge-lab.service` on `:8504`, next to the AI26 dashboard on `:8501` and the two
+legacy EP24 services on `:8502` and `:8503`.
+
+What the page does and does not do:
+
+- it reads the **latest run** (`LATEST`) and nothing else — regenerate with the CLI to review a
+  new merge pass;
+- every action is validated in Python before it touches a file, and written to the session under
+  `<curation>/sessions/<id>.json` on the spot, so a closed tab loses nothing;
+- **Commit decisions** appends to `decisions.jsonl`; committing twice writes nothing twice;
+- if the session file changed elsewhere, the page refuses to save over it rather than pick a
+  winner;
+- it never writes to a legacy EP24 dashboard. Export and activation remain stage 3 and opt-in.
+
+A session is a review *of one run*: the page remembers which run it was opened against, and the
+CLI must be re-run before a new review round makes sense.

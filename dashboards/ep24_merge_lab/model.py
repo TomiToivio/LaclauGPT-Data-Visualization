@@ -57,10 +57,13 @@ class ReviewCandidate:
     label: str
     alternatives: tuple[tuple[str, float], ...]
     reason: str
+    #: How often the corpus contains this label — what makes a candidate high-impact.
+    count: int = 0
 
     def as_row(self) -> dict[str, object]:
         return {
             "label": self.label,
+            "occurrences": self.count,
             "alternatives": " | ".join(f"{name} ({score:.3f})" for name, score in self.alternatives),
             "reason": self.reason,
         }

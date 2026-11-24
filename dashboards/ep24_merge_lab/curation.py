@@ -41,6 +41,9 @@ class Decision:
     reviewer: str = ""
     at: str = ""
     note: str = ""
+    #: ``<session>:<action uid>`` when the decision came from the review UI, so re-committing a
+    #: session cannot write the same decision twice.
+    source_ref: str = ""
 
     def validate(self) -> None:
         if self.action not in ACTIONS:
@@ -78,6 +81,7 @@ def load_decisions(path: Path) -> list[Decision]:
             reviewer=payload.get("reviewer", ""),
             at=payload.get("at", ""),
             note=payload.get("note", ""),
+            source_ref=payload.get("source_ref", ""),
         )
         decision.validate()
         decisions.append(decision)
@@ -176,7 +180,7 @@ def write_run(
         )
         _write_csv(
             run_dir / f"review_{category}.csv",
-            ["label", "alternatives", "reason"],
+            ["label", "occurrences", "alternatives", "reason"],
             [candidate.as_row() for candidate in result.candidates],
         )
         for cluster in clusters:
