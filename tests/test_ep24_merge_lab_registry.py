@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "dashboards"))
 
 from ep24_merge_lab.registry import (
+    HumanReview,
     Registry,
     RegistryEntry,
     RegistryError,
@@ -227,3 +228,79 @@ def test_an_alias_with_a_scope_still_counts_as_present(tmp_path: Path) -> None:
     registry = Registry.load(path)
     assert registry.has_alias("entity", "Chega party") is True
     assert registry.latest("entity", "Chega party") is None  # no context, no guess
+
+
+# ------------------------------------------------------------------ human approval (#315)
+
+def _human_entry(**overrides) -> RegistryEntry:
+    payload = {
+        "category": "person",
+        "alias": "javier milei",
+        "canonical": "Javier Milei (La Libertad Avanza; Argentina)",
+        "status": "approved",
+        "reviewers": ("tomi",),
+        "evidence": ("persons.xlsx row 412",),
+        "method": "human-workbook",
+        "approval": "human",
+        "human_review": HumanReview(
+            reviewer="tomi",
+            at="2026-11-24T20:10:00+00:00",
+            snapshot="4d5d6f37e1e0",
+            session="merge-lab/7f3c2a",
+        ),
+    }
+    payload.update(overrides)
+    return RegistryEntry(**payload)
+
+
+def test_one_attested_human_reviewer_may_approve_a_mapping() -> None:
+    """Owner instruction 2026-11-24: one attributable human settles a mapping, no three AI votes."""
+    assert _human_entry().validate() == []
+
+
+def test_a_human_approval_without_an_attested_session_is_rejected() -> None:
+    problems = _human_entry(human_review=HumanReview(reviewer="tomi")).validate()
+    assert any("trusted review session" in problem for problem in problems)
+    assert any("frozen snapshot" in problem for problem in problems)
+
+
+def test_a_human_approval_must_name_a_recorded_reviewer() -> None:
+    problems = _human_entry(reviewers=("agent-a",)).validate()
+    assert any("must appear among the recorded reviewers" in problem for problem in problems)
+
+
+def test_one_ai_reviewer_still_may_not_approve() -> None:
+    """The human path must not become a loophole for a single model vote."""
+    problems = _entry(reviewers=("agent-a/run-1",)).validate()
+    assert any("three distinct reviewer IDs" in problem for problem in problems)
+
+
+def test_three_reviewer_unanimity_is_still_the_ai_rule() -> None:
+    assert _entry().validate() == []
+    assert _entry().approval == ""
+
+
+def test_an_unattested_human_session_does_not_rewrite_labels(tmp_path: Path) -> None:
+    from ep24_merge_lab.registry import HumanReview as Review
+
+    entry = _human_entry()
+    path = _write(tmp_path / "registry.jsonl", [entry])
+    registry = Registry.load(path)
+    assert registry.map_label("person", "javier milei") == "javier milei"
+    assert registry.map_label("person", "javier milei", trusted={}) == "javier milei"
+    assert registry.map_label(
+        "person", "javier milei", trusted={"merge-lab/7f3c2a": "tomi"}
+    ) == "Javier Milei (La Libertad Avanza; Argentina)"
+    # A session that authenticated somebody else is not attestation for this reviewer.
+    assert registry.map_label(
+        "person", "javier milei", trusted={"merge-lab/7f3c2a": "agent-x"}
+    ) == "javier milei"
+    assert registry.unattested_human_approvals({"merge-lab/7f3c2a": "agent-x"})
+
+    # A record that fails validation cannot be loaded at all; if one is loaded unvalidated, an
+    # unattested session still must not rewrite a label.
+    bad = _human_entry(human_review=Review(reviewer="tomi", session="forged"))
+    bad_path = _write(tmp_path / "bad.jsonl", [bad])
+    lenient = Registry.load(bad_path, validate=False)
+    assert lenient.map_label("person", "javier milei", trusted={"merge-lab/7f3c2a": "tomi"}) == "javier milei"
+    assert lenient.unattested_human_approvals({"merge-lab/7f3c2a": "tomi"})

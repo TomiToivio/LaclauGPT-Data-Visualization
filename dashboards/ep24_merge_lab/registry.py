@@ -28,10 +28,46 @@ from typing import Any
 
 CATEGORIES = ("entity", "person", "theme", "topic", "sentiment")
 STATUSES = ("approved", "proposed", "rejected", "keep_separate", "superseded")
+#: Who may settle a mapping. An AI panel needs three independent reviewers in unanimity; a human
+#: needs one attributable, snapshot-scoped, attested decision (owner instruction, 2026-11-24).
+APPROVALS = ("", "ai-panel", "human")
 
 
 class RegistryError(ValueError):
     """A registry file that cannot be trusted."""
+
+
+@dataclass(frozen=True)
+class HumanReview:
+    """Proof that a person, not a model, settled this mapping.
+
+    A reviewer *name* in a JSON file proves nothing — an agent can type one. What makes a human
+    decision checkable is that it cites the trusted review session that recorded it: the session id
+    is issued by the authenticated review workflow, and the registry only applies the mapping while
+    that session exists in the trusted ledger.
+    """
+
+    reviewer: str = ""
+    at: str = ""
+    #: Digest of the frozen input snapshot the person was looking at.
+    snapshot: str = ""
+    #: Session id issued by the trusted review workflow (Merge Lab / review UI).
+    session: str = ""
+    note: str = ""
+
+    def as_json(self) -> dict[str, str]:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, payload: dict[str, Any] | None) -> HumanReview:
+        payload = payload or {}
+        return cls(
+            reviewer=str(payload.get("reviewer") or ""),
+            at=str(payload.get("at") or ""),
+            snapshot=str(payload.get("snapshot") or ""),
+            session=str(payload.get("session") or ""),
+            note=str(payload.get("note") or ""),
+        )
 
 
 @dataclass(frozen=True)
@@ -77,6 +113,10 @@ class RegistryEntry:
     created_at: str = ""
     revision: int = 1
     supersedes: str = ""
+    #: ``ai-panel`` (three-reviewer unanimity) or ``human`` (one attested person). Empty means
+    #: ``ai-panel`` — the rule that existed before human approval was introduced.
+    approval: str = ""
+    human_review: HumanReview = field(default_factory=HumanReview)
 
     def validate(self) -> list[str]:
         """Everything that makes a record unusable, named. Empty means the record is sound."""
@@ -87,20 +127,44 @@ class RegistryEntry:
             problems.append("alias is empty")
         if self.status not in STATUSES:
             problems.append(f"unknown status {self.status!r}")
+        if self.approval not in APPROVALS:
+            problems.append(f"unknown approval {self.approval!r}; expected one of {APPROVALS}")
         if self.status in {"approved", "keep_separate"} and not self.canonical.strip():
             problems.append("approved/keep_separate needs a canonical label")
         if self.status == "keep_separate" and self.alias.strip() != self.canonical.strip():
             problems.append("keep_separate must point at itself")
         if not self.reviewers:
             problems.append("no reviewer recorded — a decision must be attributable")
-        if self.status == "approved" and len(set(self.reviewers)) < 3:
-            problems.append("approved mapping requires three distinct reviewer IDs")
         if self.status == "approved" and not self.evidence:
             problems.append("approved mapping carries no evidence")
         if self.category == "sentiment" and self.status in {"approved", "keep_separate"} and not self.polarity:
             problems.append("sentiment mapping must state its polarity")
         if self.wiki_title and not self.wiki_url:
             problems.append("wiki_title needs the verified URL that was actually read")
+        if self.approval == "human":
+            problems.extend(self._human_problems())
+        elif self.status == "approved" and len(set(self.reviewers)) < 3:
+            problems.append("approved mapping requires three distinct reviewer IDs")
+        return problems
+
+    def _human_problems(self) -> list[str]:
+        """What an attested human decision must carry before it may settle a mapping."""
+        problems: list[str] = []
+        if self.status not in {"approved", "keep_separate"}:
+            problems.append("a human approval must be an approved or keep_separate decision")
+        review = self.human_review
+        if not review.reviewer.strip():
+            problems.append("human approval must name the reviewer who gave it")
+        if not review.at.strip():
+            problems.append("human approval must record when it was given")
+        if not review.snapshot.strip():
+            problems.append("human approval must name the frozen snapshot it was given against")
+        if not review.session.strip():
+            problems.append("human approval must cite the trusted review session that recorded it")
+        if review.reviewer.strip() and review.reviewer.strip() not in {
+            reviewer.strip() for reviewer in self.reviewers
+        }:
+            problems.append("the human reviewer must appear among the recorded reviewers")
         return problems
 
     def identity(self) -> str:
@@ -110,6 +174,7 @@ class RegistryEntry:
     def as_json(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["scope"] = asdict(self.scope)
+        payload["human_review"] = asdict(self.human_review)
         payload["evidence"] = list(self.evidence)
         payload["reviewers"] = list(self.reviewers)
         return payload
@@ -136,6 +201,8 @@ class RegistryEntry:
             created_at=str(payload.get("created_at") or ""),
             revision=int(payload.get("revision") or 1),
             supersedes=str(payload.get("supersedes") or ""),
+            approval=str(payload.get("approval") or ""),
+            human_review=HumanReview.from_json(payload.get("human_review")),
         )
 
 
@@ -245,18 +312,62 @@ class Registry:
             counts[key] = counts.get(key, 0) + 1
         return {key: count for key, count in counts.items() if count > 1}
 
-    def map_label(self, category: str, alias: str, *, country: str = "", language: str = "", source: str = "", polarity: str = "") -> str:
+    def unattested_human_approvals(self, trusted: dict[str, str]) -> list[str]:
+        """Human approvals whose review session is not in the trusted ledger.
+
+        ``trusted`` maps a session id issued by the authenticated review workflow to the person it
+        authenticated. An approval that cites an unknown session is not evidence of a human
+        decision, so it is reported here rather than silently trusted.
+        """
+        missing: list[str] = []
+        for entry in self._latest.values():
+            if entry.approval != "human":
+                continue
+            session = entry.human_review.session.strip()
+            if not session or session not in trusted:
+                missing.append(f"{entry.category}/{entry.alias}: session {session!r} is not attested")
+            elif trusted[session].strip().casefold() != entry.human_review.reviewer.strip().casefold():
+                missing.append(
+                    f"{entry.category}/{entry.alias}: session {session!r} was authenticated as "
+                    f"{trusted[session]!r}, not {entry.human_review.reviewer!r}"
+                )
+        return sorted(missing)
+
+    def map_label(
+        self,
+        category: str,
+        alias: str,
+        *,
+        country: str = "",
+        language: str = "",
+        source: str = "",
+        polarity: str = "",
+        trusted: dict[str, str] | None = None,
+    ) -> str:
         """The canonical label for this alias, or the alias unchanged when nothing applies.
 
         ``keep_separate`` returns the alias itself, which is the point: an explicit non-merge must
         survive into every later run without being re-litigated.
+
+        A human approval also has to be attested: pass ``trusted`` (session id -> authenticated
+        person) and an entry whose session is absent from it is treated as unsettled. Without that
+        argument human approvals do not apply either, so a forgotten ledger fails closed instead of
+        letting a typed-in reviewer name rewrite the corpus.
         """
-        entry = self.latest(category, alias, country=country, language=language, source=source, polarity=polarity)
+        entry = self.latest(
+            category, alias, country=country, language=language, source=source, polarity=polarity
+        )
         # Only settled decisions rewrite output. A proposal is evidence for the review queue, not a
         # canonicalisation: applying unapproved mappings is how one reviewer silently reseals the whole
         # corpus.
         if entry is None or entry.status not in {"approved", "keep_separate"}:
             return alias
+        if entry.approval == "human":
+            session = entry.human_review.session.strip()
+            if not trusted or not session or session not in trusted:
+                return alias
+            if trusted[session].strip().casefold() != entry.human_review.reviewer.strip().casefold():
+                return alias
         return entry.canonical or alias
 
     # ------------------------------------------------------------------ writing
