@@ -22,6 +22,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -116,6 +117,10 @@ def split_labels(value: Any, separator: str) -> list[str]:
     # mean "one label per line" to the person who wrote it.
     if separator in {"\n", "\\n"} or separator.endswith("\n"):
         parts = text.splitlines()
+    elif len(separator) > 1 and not separator.startswith("\\"):
+        # Several separators in one column: legacy exports mix ";" and "," in the same field, so a
+        # single-character split silently keeps "a; b" as one label. Split on any of them.
+        parts = re.split(f"[{re.escape(separator)}]", text)
     else:
         parts = text.split(separator)
     return [part.strip() for part in parts if part and part.strip() and part.strip().lower() != "nan"]
