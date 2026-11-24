@@ -195,7 +195,9 @@ def merge_from_workbooks(
 
 
 def merge_from_sources(
-    pooled: dict[str, list[Any]], workbooks: dict[str, WorkbookMap]
+    pooled: dict[str, list[Any]],
+    workbooks: dict[str, WorkbookMap],
+    fallback: dict[str, dict[str, str]] | None = None,
 ) -> tuple[dict[str, list[WorkbookCluster]], dict[str, Any]]:
     """Merge the *raw* corpus labels through the workbooks.
 
@@ -208,9 +210,16 @@ def merge_from_sources(
     for category, workbook in workbooks.items():
         clusters: dict[str, WorkbookCluster] = {}
         covered = uncovered = 0
+        matcher_names = (fallback or {}).get(category, {})
         for stat in pooled.get(category, []):
-            canonical = workbook.canonical(stat.label)
             is_covered = workbook.covers(stat.label)
+            # A label the workbook does not know keeps the name the matcher already gave it —
+            # otherwise every uncovered label becomes its own cluster and the merge is undone.
+            canonical = (
+                workbook.canonical(stat.label)
+                if is_covered
+                else matcher_names.get(stat.label.casefold(), stat.label)
+            )
             covered += 1 if is_covered else 0
             uncovered += 0 if is_covered else 1
             cluster = clusters.get(canonical)

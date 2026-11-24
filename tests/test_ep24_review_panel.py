@@ -244,3 +244,76 @@ def test_a_release_carries_a_registry_and_a_manifest(tmp_path: Path):
     assert {row["alias"] for row in registry} == {"Petteri Orpo", "Orpo"}
     assert all(row["canonical"] == "Petteri Orpo" for row in registry)
     assert registry[0]["wikipedia_url"].startswith("https://en.wikipedia.org/wiki/")
+
+
+# ------------------------------------------------------------------ one contract, two writers (#315)
+
+
+def _shared_problems(result: dict, snapshot: str = "abc123"):
+    from ep24_merge_lab.review.runner import shared_problems
+
+    return shared_problems(_unit(), result, snapshot)
+
+
+def test_a_review_without_the_snapshot_hash_is_not_evidence():
+    result = {
+        "reviewer": "A", "decision": "merge", "canonical": "Petteri Orpo",
+        "wikipedia_title": "Petteri Orpo", "wikipedia_url": "https://en.wikipedia.org/wiki/x",
+        "confidence": 0.9, "rationale": "same person",
+    }
+    assert any("snapshot" in problem for problem in _shared_problems(result, snapshot=""))
+
+
+def test_a_merge_must_cite_a_url_or_say_why_there_is_none():
+    result = {
+        "reviewer": "A", "decision": "merge", "canonical": "Some concept",
+        "wikipedia_title": None, "wikipedia_url": "", "fallback_reason": "",
+        "confidence": 0.9, "rationale": "same concept",
+    }
+    problems = _shared_problems(result)
+    assert any("verified URL" in problem for problem in problems), problems
+
+
+def test_a_well_formed_review_passes_the_shared_contract():
+    result = {
+        "reviewer": "A", "decision": "merge", "canonical": "Petteri Orpo",
+        "wikipedia_title": "Petteri Orpo", "wikipedia_url": "https://en.wikipedia.org/wiki/Petteri_Orpo",
+        "confidence": 0.9, "rationale": "same person",
+    }
+    assert _shared_problems(result) == []
+
+
+def test_both_ledgers_refuse_two_reviewers_and_a_bare_majority():
+    """The shared ledger and the panel must agree, or the repository has two rules again."""
+    from ep24_merge_lab import ledger as shared
+
+    unit = _unit()
+    two = {"u1": [_review("A"), _review("B")]}
+    split = {
+        "u1": [
+            _review("A"), _review("B"),
+            _review("C", decision="keep", canonical="Orpo"),
+        ]
+    }
+    for reviews in (two, split):
+        approved, queue = reconcile.decide([unit], reviews, required=3)
+        assert not approved, "the panel approved on fewer than three agreeing reviewers"
+
+        entries = []
+        for index, (name, review) in enumerate(
+            (reviews["u1"][i]["reviewer"], review) for i, review in enumerate(reviews["u1"])
+        ):
+            entries.append(
+                shared.Review(
+                    batch_id="b1", label_id="u1", category="person", label="Petteri Orpo | Orpo",
+                    reviewer=name, decision=review["decision"], canonical=review["canonical"],
+                    wiki_title=review.get("wikipedia_title") or "",
+                    wiki_url="https://en.wikipedia.org/wiki/Petteri_Orpo"
+                    if review.get("wikipedia_title") else "",
+                    fallback_reason="" if review.get("wikipedia_title") else "no article",
+                    confidence=review["confidence"], reasoning=review["rationale"],
+                    snapshot_sha256="abc123",
+                )
+            )
+        result = shared.Ledger(entries).adjudicate(min_reviews=3)
+        assert not result.approved, "the shared ledger approved on fewer than three agreeing reviewers"

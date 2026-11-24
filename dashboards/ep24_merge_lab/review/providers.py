@@ -167,7 +167,34 @@ def review(
             "created_at_unix": response.get("created_at", ""),
         }
     )
+    _attach_citation(parsed)
     return parsed
+
+
+def _attach_citation(verdict: dict[str, Any]) -> None:
+    """A merge must cite a verified URL, or say why no article exists (§311, shared contract).
+
+    The title a model proposes is verified here rather than trusted, so the ledger records a page
+    that was actually read. When no title is proposed, the model's reason for that becomes the
+    fallback, which is what the contract asks for instead of a silent gap.
+    """
+    from . import wikipedia
+
+    title = verdict.get("wikipedia_title")
+    if title:
+        match = wikipedia.resolve(title)
+        if match.exists:
+            verdict["wikipedia_title"] = match.title
+            verdict["wikipedia_url"] = match.url
+            verdict["qid"] = match.qid
+            verdict["fallback_reason"] = ""
+            return
+        verdict["wikipedia_title"] = None
+    verdict["wikipedia_url"] = ""
+    verdict["qid"] = ""
+    verdict["fallback_reason"] = (
+        verdict.get("rationale") or "no equivalent English Wikipedia article"
+    )[:200]
 
 
 def adjudicate(
@@ -320,6 +347,7 @@ def review_batch(
                         "latency_s": round(time.time() - started, 2),
                     }
                 )
+                _attach_citation(verdict)
                 verdicts[unit_id] = verdict
             if not verdicts:
                 raise ValueError("no usable verdict in the batch reply")
