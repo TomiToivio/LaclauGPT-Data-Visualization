@@ -216,3 +216,14 @@ def test_conflicting_scopes_do_not_guess(tmp_path: Path) -> None:
 
 def test_approval_requires_three_distinct_reviewers() -> None:
     assert _entry(reviewers=("a", "a", "b")).validate()
+
+
+def test_an_alias_with_a_scope_still_counts_as_present(tmp_path: Path) -> None:
+    """Looking up a country-scoped decision without a country must not report it as absent."""
+    path = _write(
+        tmp_path / "registry.jsonl",
+        [_entry(alias="Chega party", canonical="Chega (political party)", scope=Scope(country="PT"))],
+    )
+    registry = Registry.load(path)
+    assert registry.has_alias("entity", "Chega party") is True
+    assert registry.latest("entity", "Chega party") is None  # no context, no guess

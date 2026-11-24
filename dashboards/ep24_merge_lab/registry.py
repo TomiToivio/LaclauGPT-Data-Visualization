@@ -216,6 +216,26 @@ class Registry:
             return None
         return best[0]
 
+    def has_alias(self, category: str, alias: str) -> bool:
+        """Whether any decision exists for this alias, whatever its scope.
+
+        A scoped decision still means the alias is spoken for: looking it up without a country must not
+        report it as absent and append a duplicate.
+        """
+        folded = alias.strip().casefold()
+        return any(
+            entry.category == category and entry.alias.strip().casefold() == folded
+            for entry in self._latest.values()
+        )
+
+    def duplicates(self) -> dict[tuple[str, str], int]:
+        """In-force decisions that collide on (category, alias) across scopes."""
+        counts: dict[tuple[str, str], int] = {}
+        for entry in self._latest.values():
+            key = (entry.category, entry.alias.strip().casefold())
+            counts[key] = counts.get(key, 0) + 1
+        return {key: count for key, count in counts.items() if count > 1}
+
     def map_label(self, category: str, alias: str, *, country: str = "", language: str = "", source: str = "", polarity: str = "") -> str:
         """The canonical label for this alias, or the alias unchanged when nothing applies.
 
