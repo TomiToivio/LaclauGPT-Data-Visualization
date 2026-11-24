@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Merge cards</title>
+<style>body{font:15px system-ui;color:#234}main{display:flex;gap:.5rem;flex-wrap:wrap;padding:.4rem}button{background:#eef5f5;border:1px solid #668683;border-radius:8px;padding:.6em;cursor:grab;text-align:left}button:hover,button:focus{background:#c8e7e1}button.over{transform:scale(1.04);outline:2px solid teal}small{display:block}</style>
+<main aria-label="Drag a cluster onto another to preview a merge"></main>
+<script>
+const main=document.querySelector('main');
+function send(type, data={}){parent.postMessage({isStreamlitMessage:true,type:'streamlit:'+type,...data},'*')}
+addEventListener('message',event=>{
+ if(event.source!==parent || event.data.type!=='streamlit:render')return;
+ const {cards,revision}=event.data.args;
+ main.replaceChildren();
+ for(const card of cards){
+  const b=document.createElement('button'),sub=document.createElement('small');
+  b.textContent=card.name;sub.textContent=card.detail;b.append(sub);b.draggable=true;
+  b.ondragstart=e=>e.dataTransfer.setData('text/plain',card.id);
+  b.ondragover=e=>{e.preventDefault();b.classList.add('over')};
+  b.ondragleave=()=>b.classList.remove('over');
+  b.ondrop=e=>{e.preventDefault();b.classList.remove('over');const from=e.dataTransfer.getData('text/plain');
+   if(from!==card.id && cards.some(c=>c.id===from))send('setComponentValue',{value:{ids:[card.id,from],revision,nonce:Date.now()},dataType:'json'})};
+  main.append(b)
+ }
+ send('setFrameHeight',{height:main.scrollHeight+24})
+});
+send('componentReady',{apiVersion:1})
+</script></html>
