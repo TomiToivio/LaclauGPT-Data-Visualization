@@ -6,32 +6,34 @@ drag-and-drop review of them.
 
 ## Live deployment
 
+It runs on the presentation host described in the private notes, on a port that host exposes
+publicly. Location-specific details — host, address, working directory, credentials path — are
+deliberately **not** recorded in this public repository; keep them in the private operations notes.
+
 | | |
 | --- | --- |
-| URL | http://86.50.228.141:8503/ |
-| Host | SpectacleScraper (`/home/ubuntu/LaclauGPT-Data-Visualization`) |
-| Working dir | `/home/ubuntu/legacy_lab` (`LACLAUGPT_LEGACY_DIR`) |
-| Source export | `/home/ubuntu/legacy_lab/source.csv` → the PLEDGE workbook (12,394 rows) |
-| Auth | `LACLAUGPT_AUTH_YAML` → the pledge dashboard's `auth.yaml` (same login, no new secret) |
-| Logs | `/tmp/legacy_lab.log` |
+| Working dir | set by `LACLAUGPT_LEGACY_DIR` |
+| Source export | `<working dir>/source.csv`, read-only |
+| Auth | set by `LACLAUGPT_AUTH_YAML` (a streamlit-authenticator config) |
+| Logs | streamlit's log file beside the working dir |
 
 ```bash
-cd ~/LaclauGPT-Data-Visualization
-LACLAUGPT_LEGACY_DIR=/home/ubuntu/legacy_lab \
-LACLAUGPT_AUTH_YAML=/home/ubuntu/LaclauGPT-Data-Storage/laclaugpt/pledge_dashboard/auth.yaml \
-setsid nohup python3.10 -m streamlit run dashboards/legacy_curation/app.py \
-  --server.port 8503 --server.headless true --server.address 0.0.0.0 \
-  --browser.gatherUsageStats false > /tmp/legacy_lab.log 2>&1 < /dev/null &
+cd <checkout>
+LACLAUGPT_LEGACY_DIR=<working dir> \
+LACLAUGPT_AUTH_YAML=<authenticator config> \
+setsid nohup python3 -m streamlit run dashboards/legacy_curation/app.py \
+  --server.port <port> --server.headless true --server.address 0.0.0.0 \
+  --browser.gatherUsageStats false > legacy_lab.log 2>&1 < /dev/null &
 ```
 
-### Three things that bit us here
+## Three things that bit us here
 
-1. **Only ports 8501–8503 are reachable from outside.** `ufw` is inactive and `iptables` accepts
-   everything, so the filtering is upstream of the host: 8504 and 8100 listen locally and return
-   nothing from the internet, while 8503 answers. Do not pick a port above 8503 for a public
-   dashboard on this machine.
-2. **`/_stcore/health` returning 200 does not mean the page renders.** Streamlit only executes the
-   script when a session connects; the first deployment health-checked clean while a first visitor
+1. **A dashboard port may be firewalled upstream even when the host firewalls nothing.** On the
+   deployment host `ufw` was inactive and `iptables` accepted everything, yet only some ports
+   answered from the internet. Probe with a throwaway listener before trusting a port; do not
+   assume "listening on 0.0.0.0" means reachable.
+2. **`/_stcore/health` returning 200 does not mean the page renders.** Streamlit executes the script
+   only when a session connects, so the first deployment health-checked clean while a first visitor
    would have hit `No module named 'pydantic_settings'`. Verify with a headless render:
    `AppTest.from_file("dashboards/legacy_curation/app.py").run()`.
 3. **The app loads `legacy_curation` by path, not through the package.** Importing
