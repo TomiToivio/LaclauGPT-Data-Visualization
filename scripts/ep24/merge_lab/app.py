@@ -9,8 +9,17 @@ from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
-
-from lab import CATEGORIES, FIELDS, connect, csv_bytes, curated_rows, current, read_rows, save, validate_export
+from lab import (
+    CATEGORIES,
+    FIELDS,
+    connect,
+    csv_bytes,
+    curated_rows,
+    current,
+    read_rows,
+    save,
+    validate_export,
+)
 
 st.set_page_config(page_title="Legacy EP24 Merge Lab", layout="wide")
 st.title("Legacy EP24 Merge Lab")
@@ -80,9 +89,9 @@ for tab, category in zip(st.tabs(CATEGORIES), CATEGORIES):
             pair = st.selectbox("Suggested pair", pairs, format_func=lambda pair: " ↔ ".join(names[g] for g in pair), key=category+"pair")
             if st.button("Preview suggested pair", key=category+"preview"):
                 st.session_state[category+"selected"] = list(pair)
-        items = [dict(id=g, name=names[g], detail=f"{len(rows[g][1])} records · {rows[g][0][0]['field']} · "
+        items = [{"id": g, "name": names[g], "detail": f"{len(rows[g][1])} records · {rows[g][0][0]['field']} · "
                       + ("review candidate" if g in priority else rows[g][0][0]["reason"])
-                      + f" · score {min(m['confidence'] for m in rows[g][0]):.2f} · " + ", ".join(sorted({m["label"] for m in rows[g][0]})[:3])) for g in visible]
+                      + f" · score {min(m['confidence'] for m in rows[g][0]):.2f} · " + ", ".join(sorted({m["label"] for m in rows[g][0]})[:3])} for g in visible]
         event = cards(cards=items, revision=revision, key=category+"cards")
         selection = category+"selected"
         if event and event.get("revision") == revision and event.get("nonce") != st.session_state.get(category+"last"):
@@ -109,7 +118,7 @@ for tab, category in zip(st.tabs(CATEGORIES), CATEGORIES):
                     st.table([{"Co-occurring cluster": n, "Shared records after merge": count}
                               for n, count in neighbors.most_common(5)])
             st.write(sorted({m["label"] for g in selected for m in rows[g][0]}))
-            st.table([dict(source=s, context=ctx[2][:300]) for s, ctx in list(refs.items())[:4]])
+            st.table([{"source": s, "context": ctx[2][:300]} for s, ctx in list(refs.items())[:4]])
             label = st.text_input("Canonical label", names[selected[0]], key=category+selected[0]+str(revision))
             if len(selected) > 1:
                 if st.button("Confirm merge", key=category+"merge"+str(revision)):
@@ -131,9 +140,9 @@ if st.button("Export approved version", disabled=not approved or destination.exi
     destination.parent.mkdir(exist_ok=True)
     temp = Path(tempfile.mkdtemp(dir=destination.parent))
     try:
-        manifest = dict(schema="legacy-ep24-dashboard-csv-v1", mapping_version=revision,
-                        source_sha256=state["inputs"], review_status="researcher-approved",
-                        remaining_candidates=len(pending), export_sha256={}, record_counts={})
+        manifest = {"schema": "legacy-ep24-dashboard-csv-v1", "mapping_version": revision,
+                        "source_sha256": state["inputs"], "review_status": "researcher-approved",
+                        "remaining_candidates": len(pending), "export_sha256": {}, "record_counts": {}}
         for name in state["inputs"]:
             source = root / "analysis/ep24/source" / name
             manifest["record_counts"][name] = sum(1 for _ in read_rows(source))

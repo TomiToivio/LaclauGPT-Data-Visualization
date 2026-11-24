@@ -50,7 +50,7 @@ to obtain verified CSV paths for a researcher-selected revision. Load those
 paths only in an explicitly configured legacy dashboard import. Roll back by
 selecting the previous revision or original source paths.
 
-Run the synthetic integration test with `python tests/test_ep24_merge_lab.py`.
+Run the synthetic integration test with `python tests/test_ep24_merge_lab_session.py`.
 
 For a separately configured legacy reader, call
 `pd.DataFrame.from_records(load_dashboard_rows(private_checkout, revision))`

@@ -67,7 +67,7 @@ def inventory(paths, threshold=0.88, equivalents=None):
                     if norm(label) in ("", "none", "nan"):
                         continue
                     key = oid(field, label, source)
-                    alias = aliases.setdefault(key, dict(field=field, label=label, refs={}))
+                    alias = aliases.setdefault(key, {"field": field, "label": label, "refs": {}})
                     alias["refs"][source] = [row.get("country", ""), row.get("whisper_language", ""), context]
     families = defaultdict(set)
     for alias in aliases.values():
@@ -100,7 +100,7 @@ def inventory(paths, threshold=0.88, equivalents=None):
         groups.setdefault(group, []).append(key)
         if reason == "ambiguous identity":
             candidates.update(tuple(sorted((group, digest([field, name])))) for name in possible)
-    names = {g: sorted(options, key=lambda x: (x.islower(), x))[0] for g, options in spellings.items()}
+    names = {g: min(options, key=lambda x: (x.islower(), x)) for g, options in spellings.items()}
     blocks = defaultdict(list)
     for group, name in names.items():
         blocks[aliases[groups[group][0]]["field"], norm(name)[:2]].append(group)
@@ -108,8 +108,8 @@ def inventory(paths, threshold=0.88, equivalents=None):
         for a, b in itertools.combinations(block, 2):
             if SequenceMatcher(None, norm(names[a]), norm(names[b])).ratio() >= threshold:
                 candidates.add(tuple(sorted((a, b))))
-    return dict(inputs=inputs, aliases=aliases, candidates=sorted(candidates),
-                groups=groups, names=names, separate=[], reviewed=0)
+    return {"inputs": inputs, "aliases": aliases, "candidates": sorted(candidates),
+                "groups": groups, "names": names, "separate": [], "reviewed": 0}
 
 
 def transition(state, action, ids, label="", member=None):
