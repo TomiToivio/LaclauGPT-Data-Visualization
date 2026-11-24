@@ -1,0 +1,24 @@
+[Unit]
+Description=LaclauGPT EP24 Merge Lab (label curation review)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Replace <visualization-root>, <private-curation-root>, <bind-address> and <port>.
+# The bind address is deliberately the host's private/tailnet address: this page shows private
+# research labels and must never be reachable from the public internet.
+WorkingDirectory=<visualization-root>
+Environment=LACLAUGPT_EP24_CURATION=<private-curation-root>
+Environment=LACLAUGPT_EP24_SESSION=default
+Environment=LACLAUGPT_EP24_REVIEWER=<reviewer-name>
+ExecStart=<visualization-root>/.venv/bin/streamlit run dashboards/ep24_merge_lab/ui/app.py \
+    --server.address <bind-address> --server.port <port> --server.headless true \
+    --browser.gatherUsageStats false
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

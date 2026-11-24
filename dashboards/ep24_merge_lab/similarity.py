@@ -432,6 +432,7 @@ def resolve(
             label=label,
             alternatives=tuple(sorted(options, key=lambda item: (-item[1], item[0]))[:MAX_ALTERNATIVES]),
             reason=reasons[label],
+            count=counts.get(label, 0),
         )
         for label, options in sorted(alternatives.items())
         if options
