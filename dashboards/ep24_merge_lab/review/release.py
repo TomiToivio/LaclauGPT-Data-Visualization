@@ -1,0 +1,213 @@
+"""Build an immutable, reproducible release from the approved panel decisions (#311).
+
+What a release contains, and why each part exists:
+
+``canonical_<category>.csv``
+    the reviewed clusters — the thing a dashboard or a pipeline reads;
+``alias_map.json``
+    every reviewed alias to its canonical name, with the English Wikipedia title, URL and QID
+    where one exists, so a consumer never has to guess;
+``registry.jsonl``
+    the reusable, versioned merge registry the issue asks for: one record per alias, carrying
+    status, evidence, reviewers and revision;
+``human_queue.jsonl``
+    what the panel could not settle — the residue a researcher should spend time on;
+``coverage.json`` / ``review_log.jsonl``
+    the coverage matrix and the attributed reviews themselves;
+``manifest.json``
+    the frozen inventory digest, the models and prompt versions that produced the decisions, the
+    counts before and after, and a hash of every file.
+
+Nothing here reads a private path it was not given, and nothing writes outside the release
+directory.
+"""
+from __future__ import annotations
+
+import csv
+import hashlib
+import json
+import shutil
+from collections import Counter
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+RELEASE_SCHEMA = "ep24.merge_lab.release/1"
+REGISTRY_SCHEMA = "ep24.merge_lab.registry/1"
+
+
+def _hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_csv(path: Path, fieldnames: list[str], rows: Iterable[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def build(
+    out_root: Path,
+    *,
+    approved: list[dict[str, Any]],
+    human_queue: list[dict[str, Any]],
+    coverage: dict[str, Any],
+    inventory_header: dict[str, Any],
+    reviews_path: Path,
+    reviewer_models: dict[str, str],
+) -> Path:
+    """Write ``<out_root>/releases/<release id>/`` and return it."""
+    release_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    path = out_root / "releases" / release_id
+    suffix = 1
+    while path.exists():
+        path = out_root / "releases" / f"{release_id}-{suffix}"
+        suffix += 1
+    path.mkdir(parents=True)
+
+    by_category: dict[str, list[dict[str, Any]]] = {}
+    for item in approved:
+        by_category.setdefault(item["category"], []).append(item)
+
+    registry: list[dict[str, Any]] = []
+    counts: list[dict[str, Any]] = []
+    for category in ("entity", "person", "theme", "topic", "sentiment"):
+        items = by_category.get(category, [])
+        rows = []
+        for item in sorted(items, key=lambda entry: (-entry.get("occurrences", 0), entry["canonical"])):
+            members = sorted({item["canonical"], *item["labels"]})
+            rows.append(
+                {
+                    "category": category,
+                    "canonical": item["canonical"],
+                    "member_count": len(members),
+                    "members": " | ".join(members),
+                    "occurrences": item.get("occurrences", 0),
+                    "confidence": f"{item.get('confidence', 0):.3f}",
+                    "method": item.get("method", ""),
+                    "wikipedia_title": item.get("wikipedia_title") or "",
+                }
+            )
+            for member in members:
+                registry.append(
+                    {
+                        "schema": REGISTRY_SCHEMA,
+                        "category": category,
+                        "alias": member,
+                        "canonical": item["canonical"],
+                        "wikipedia_title": item.get("wikipedia_title") or "",
+                        "wikipedia_url": (
+                            "https://en.wikipedia.org/wiki/"
+                            + (item.get("wikipedia_title") or "").replace(" ", "_")
+                            if item.get("wikipedia_title")
+                            else ""
+                        ),
+                        "qid": item.get("qid", ""),
+                        "countries": item.get("countries", []),
+                        "polarity": item.get("polarity", ""),
+                        "status": item.get("status", ""),
+                        "decision": item.get("decision", ""),
+                        "method": item.get("method", ""),
+                        "evidence": item.get("rationale", ""),
+                        "reviewers": [
+                            f"{review['reviewer']}@{review['model']}"
+                            for review in item.get("reviews", [])
+                        ],
+                        "release": path.name,
+                    }
+                )
+        _write_csv(
+            path / f"canonical_{category}.csv",
+            ["category", "canonical", "member_count", "members", "occurrences", "confidence",
+             "method", "wikipedia_title"],
+            rows,
+        )
+        counts.append(
+            {
+                "category": category,
+                "units_in": len(items) + sum(1 for q in human_queue if q["category"] == category),
+                "approved": len(items),
+                "labels": sum(row["member_count"] for row in rows),
+                "occurrences": sum(row["occurrences"] for row in rows),
+                "wikipedia_titles": sum(1 for row in rows if row["wikipedia_title"]),
+            }
+        )
+
+    _write_csv(
+        path / "counts.csv",
+        ["category", "units_in", "approved", "labels", "occurrences", "wikipedia_titles"],
+        counts,
+    )
+    (path / "registry.jsonl").write_text(
+        "".join(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n" for item in registry),
+        encoding="utf-8",
+    )
+    (path / "alias_map.json").write_text(
+        json.dumps(
+            {
+                "schema": REGISTRY_SCHEMA,
+                "release": path.name,
+                "mapping": [
+                    {
+                        "category": item["category"],
+                        "alias": item["alias"],
+                        "canonical": item["canonical"],
+                        "wikipedia_title": item["wikipedia_title"],
+                        "qid": item["qid"],
+                    }
+                    for item in registry
+                ],
+            },
+            indent=1,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with (path / "human_queue.jsonl").open("w", encoding="utf-8") as handle:
+        for item in human_queue:
+            handle.write(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n")
+    if reviews_path.exists():
+        shutil.copyfile(reviews_path, path / "review_log.jsonl")
+    (path / "coverage.json").write_text(
+        json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    methods = Counter(item.get("method", "") for item in approved)
+    manifest = {
+        "schema": RELEASE_SCHEMA,
+        "release": path.name,
+        "created_at": datetime.now(UTC).isoformat(),
+        "frozen_inventory": {
+            "digest": inventory_header.get("digest", ""),
+            "base_run": inventory_header.get("base_run", ""),
+            "total_units": inventory_header.get("total", 0),
+        },
+        "reviewers": reviewer_models,
+        "units": {
+            "frozen": inventory_header.get("total", 0),
+            "approved": len(approved),
+            "human_queue": len(human_queue),
+        },
+        "methods": dict(sorted(methods.items())),
+        "coverage": coverage,
+        "files": {},
+    }
+    files = {}
+    for item in sorted(path.glob("*")):
+        if item.name == "manifest.json":
+            continue
+        files[item.name] = {"sha256": _hash(item), "bytes": item.stat().st_size}
+    manifest["files"] = files
+    manifest["release_digest"] = hashlib.sha256(
+        json.dumps(files, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    (path / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    (out_root / "LATEST_RELEASE").write_text(path.name + "\n", encoding="utf-8")
+    return path
