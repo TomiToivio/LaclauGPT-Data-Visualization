@@ -144,7 +144,9 @@ def _run(args: argparse.Namespace) -> int:
         raise SystemExit("--require-registry was given but --registry was not")
     if registry_path:
         registry = Registry.load(registry_path)
-        applied, registry_aliases = _apply_registry(pooled, registry, loaded)
+        trusted = _trusted_sessions(getattr(args, "human_approvals", "") or "")
+        applied, registry_aliases = _apply_registry(pooled, registry, loaded, trusted)
+        unattested = registry.unattested_human_approvals(trusted)
         registry_info = {
             "pinned": True,
             "path": str(registry_path),
@@ -152,6 +154,10 @@ def _run(args: argparse.Namespace) -> int:
             "entries": len(registry.entries),
             "labels_rewritten": applied,
             "original_aliases_kept": sum(len(items) for by_original in registry_aliases.values() for items in by_original.values()),
+            # Human approvals only apply while the session that recorded them is attested; the
+            # count travels with the run so a release cannot pretend they were applied.
+            "trusted_sessions": len(trusted),
+            "unattested_human_approvals": len(unattested),
         }
     out_dir = Path(args.out).expanduser() if args.out else None
     decisions = curation.load_decisions(out_dir / "decisions.jsonl") if out_dir else []
@@ -251,10 +257,26 @@ def _workbook_coverage(
     return report
 
 
+def _trusted_sessions(path: str) -> dict[str, str]:
+    """Read the attested review sessions: ``{session_id: authenticated reviewer}``.
+
+    The file is written by the authenticated review workflow, never by an agent, and the registry
+    only applies a human approval whose session appears here with the same reviewer. A missing or
+    malformed file yields an empty ledger, which fails closed: human approvals then do not apply.
+    """
+    if not path:
+        return {}
+    payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise SystemExit(f"--human-approvals must be a JSON object of session id -> reviewer: {path}")
+    return {str(key): str(value) for key, value in payload.items()}
+
+
 def _apply_registry(
     pooled: dict[str, list[LabelStat]],
     registry: Registry,
     loaded: list[sources.Source],
+    trusted: dict[str, str] | None = None,
 ) -> tuple[int, dict[str, dict[str, list[dict[str, object]]]]]:
     """Rewrite labels through the shared registry before anything is clustered.
 
@@ -274,7 +296,9 @@ def _apply_registry(
         regrouped: dict[tuple[str, str], LabelStat] = {}
         for stat in stats:
             country = stat.countries[0] if len(stat.countries) == 1 else ""
-            canonical = registry.map_label(category, stat.label, country=country, source=single_source)
+            canonical = registry.map_label(
+                category, stat.label, country=country, source=single_source, trusted=trusted
+            )
             if canonical != stat.label:
                 rewritten += 1
                 kept.setdefault(category, {}).setdefault(canonical, []).append(
@@ -443,6 +467,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--review", type=float, default=None, help="override the review-candidate score")
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--registry", default="", help="shared merge registry (jsonl) to apply and record")
+    run.add_argument(
+        "--human-approvals",
+        default="",
+        help="JSON of attested review sessions (session id -> authenticated reviewer); a human "
+        "approval whose session is absent does not apply",
+    )
     run.add_argument(
         "--workbooks",
         default="",
