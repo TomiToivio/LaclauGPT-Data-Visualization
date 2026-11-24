@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import yaml
 
 # Streamlit runs this file as a script, so the package under src/ is on no import path by default.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
@@ -40,6 +41,47 @@ CATEGORY_LABELS = {
     "topics": ("Topics", "Equivalent wording only."),
     "sentiments": ("Sentiments", "One polarity per card; opposites are never merged."),
 }
+
+
+def _login_gate() -> bool:
+    """Opt-in authentication: set LACLAUGPT_AUTH_YAML to a streamlit-authenticator config.
+
+    The lab reads research records, so serving it on a public port without a gate would publish
+    them. Auth is opt-in because the same app is run locally with no auth at all.
+    """
+    auth_yaml = os.environ.get("LACLAUGPT_AUTH_YAML")
+    if not auth_yaml:
+        return True
+
+    config_path = Path(auth_yaml)
+    if not config_path.exists():
+        st.error(f"LACLAUGPT_AUTH_YAML points at a missing file: {config_path}")
+        return False
+
+    import streamlit_authenticator as stauth
+
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    authenticator = stauth.Authenticate(
+        config["credentials"],
+        config["cookie"]["name"],
+        config["cookie"]["key"],
+        config["cookie"]["expiry_days"],
+    )
+    try:
+        authenticator.login()
+    except Exception as exc:  # noqa: BLE001 — the authenticator raises its own types on bad config;
+        # surfacing the message beats a stack trace in the browser.
+        st.error(exc)
+
+    status = st.session_state.get("authentication_status")
+    if status:
+        authenticator.logout("Logout", "sidebar")
+        return True
+    if status is False:
+        st.error("Username/password is incorrect")
+    else:
+        st.warning("Please enter your username and password")
+    return False
 
 
 def _component():
@@ -105,6 +147,8 @@ def _validate(action: dict, cards: list[dict]) -> tuple[bool, str]:
 
 def main() -> None:
     st.set_page_config(page_title="Legacy EP24 Merge Lab", page_icon=":jigsaw:", layout="wide")
+    if not _login_gate():
+        return
     st.title("Legacy EP24 Merge Lab")
     st.caption(
         "Automatically proposed merges, reviewed by drag and drop. Decisions are saved to the private "
