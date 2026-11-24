@@ -22,9 +22,13 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .model import Cluster, LabelStat, MergeResult
 from .similarity import RULES, CategoryRule, resolve
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard for type checkers only
+    from .workbook_mappings import WorkbookMappings
 
 SCHEMA_VERSION = 1
 ACTIONS = ("merge", "keep_separate", "rename")
@@ -124,11 +128,24 @@ def resolve_category(
     decisions: Iterable[Decision] = (),
     *,
     rule: CategoryRule | None = None,
+    workbook: WorkbookMappings | None = None,
 ) -> MergeResult:
-    """Resolve one category with the researcher log applied; ``rule`` overrides the defaults."""
+    """Resolve one category with the researcher log and the human workbooks applied.
+
+    ``rule`` overrides the category defaults. ``workbook`` carries the human-verified Excel
+    mappings of #311: they are prepended to the researcher decisions, because a workbook row was
+    a decision before this run existed, and their provenance is recorded as ``workbook`` rather
+    than as a similarity method.
+    """
     rule = rule or RULES[category]
     forced, blocked, renames = decisions_for(decisions, category)
-    result = resolve(stats, rule, forced=forced, blocked=blocked)
+    forced_methods: dict[str, str] = {}
+    if workbook is not None:
+        extra = workbook.forced.get(category) or []
+        forced = [*extra, *forced]
+        blocked = blocked | (workbook.blocked.get(category) or set())
+        forced_methods = {canonical: "workbook" for canonical, _ in extra}
+    result = resolve(stats, rule, forced=forced, blocked=blocked, forced_methods=forced_methods)
     if renames:
         result.clusters = [
             Cluster(
@@ -159,6 +176,10 @@ def write_run(
     manifest_inputs: list[dict[str, object]] | None = None,
     profile_digest: str = "",
     registry: dict[str, object] | None = None,
+    workbook: dict[str, object] | None = None,
+    coverage: dict[str, object] | None = None,
+    registry_aliases: dict[str, dict[str, list[dict[str, object]]]] | None = None,
+    workbook_inputs: dict[str, object] | None = None,
 ) -> Path:
     """Write one immutable run directory and return its path."""
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -210,6 +231,36 @@ def write_run(
         ["category", "canonical", "alias", "occurrences", "confidence", "method"],
         sorted(alias_rows, key=lambda row: (row["category"], row["canonical"], row["alias"])),
     )
+    # A registry rewrite collapses a corpus spelling into a canonical name; without this file the
+    # alias it replaced exists nowhere in the run and the collapse cannot be audited or undone.
+    if registry_aliases:
+        registry_rows = [
+            {
+                "category": category,
+                "canonical": canonical,
+                "alias": str(item.get("alias", "")),
+                "occurrences": int(str(item.get("occurrences", 0) or 0)),
+                "polarity": item.get("polarity", ""),
+                "countries": item.get("countries", []),
+                "method": "registry",
+            }
+            for category, by_canonical in sorted(registry_aliases.items())
+            for canonical, items in sorted(by_canonical.items())
+            for item in items
+        ]
+        _write_csv(
+            run_dir / "registry_aliases.csv",
+            ["category", "canonical", "alias", "occurrences", "polarity", "countries", "method"],
+            registry_rows,
+        )
+    if workbook:
+        (run_dir / "workbook_mappings.json").write_text(
+            json.dumps(workbook, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    if coverage:
+        (run_dir / "workbook_coverage.json").write_text(
+            json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     (run_dir / "stats.json").write_text(
         json.dumps({"schema_version": SCHEMA_VERSION, "categories": stats}, indent=2, sort_keys=True)
         + "\n",
@@ -228,6 +279,8 @@ def write_run(
         "profile_sha256": profile_digest,
         # Which registry version produced this run: a result is only reproducible against a pin.
         "registry": registry or {"pinned": False},
+        # The human workbooks are an input like any other, so their hashes belong in the manifest.
+        "workbook": workbook_inputs or {"used": False},
         "inputs": manifest_inputs or [],
         "rules": {
             category: asdict(rule) for category, rule in sorted((rule_overrides or RULES).items())

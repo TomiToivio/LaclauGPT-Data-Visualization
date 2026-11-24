@@ -22,7 +22,7 @@ if __package__ in (None, ""):  # run as a script, as the README shows
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ep24_merge_lab import curation, export, sources
-from ep24_merge_lab.model import CATEGORIES, LabelStat
+from ep24_merge_lab.model import CATEGORIES, LabelStat, MergeResult
 from ep24_merge_lab.registry import Registry
 from ep24_merge_lab.similarity import RULES
 
@@ -110,19 +110,48 @@ def _run(args: argparse.Namespace) -> int:
 
     pooled = sources.extract(loaded, category=args.category)
 
+    # Human-verified Excel codebooks are read before anything is clustered (#311 section 8). A
+    # workbook row is a decision, so it is applied as a forced merge and its provenance is
+    # carried into the run; conflicts are queued instead of resolved.
+    workbook = None
+    workbook_info: dict[str, object] = {"used": False}
+    workbooks_dir = getattr(args, "workbooks", "") or ""
+    if workbooks_dir:
+        from ep24_merge_lab import workbook_evidence, workbook_mappings
+
+        evidence = workbook_evidence.inspect_workbooks(Path(workbooks_dir).expanduser())
+        workbook = workbook_mappings.from_evidence(evidence)
+        workbook_info = {
+            "used": True,
+            "directory": str(workbooks_dir),
+            "files": {
+                category: {
+                    "file": source["file"],
+                    "sha256": source["sha256"],
+                    "bytes": source["bytes"],
+                    "pairs": len(source["pairs"]),
+                }
+                for category, source in evidence["sources"].items()
+            },
+            "counts": workbook.counts,
+            "adjudication_open": len(workbook.adjudication),
+        }
+
     registry_info: dict[str, object] = {"pinned": False}
+    registry_aliases: dict[str, dict[str, list[dict[str, object]]]] = {}
     registry_path = getattr(args, "registry", "") or ""
     if not registry_path and getattr(args, "require_registry", False):
         raise SystemExit("--require-registry was given but --registry was not")
     if registry_path:
         registry = Registry.load(registry_path)
-        applied = _apply_registry(pooled, registry, loaded)
+        applied, registry_aliases = _apply_registry(pooled, registry, loaded)
         registry_info = {
             "pinned": True,
             "path": str(registry_path),
             "version": registry.version,
             "entries": len(registry.entries),
             "labels_rewritten": applied,
+            "original_aliases_kept": sum(len(items) for by_original in registry_aliases.values() for items in by_original.values()),
         }
     out_dir = Path(args.out).expanduser() if args.out else None
     decisions = curation.load_decisions(out_dir / "decisions.jsonl") if out_dir else []
@@ -132,7 +161,7 @@ def _run(args: argparse.Namespace) -> int:
         if not stats:
             continue
         results[category] = curation.resolve_category(
-            stats, category, decisions, rule=rules[category]
+            stats, category, decisions, rule=rules[category], workbook=workbook
         )
 
     summary = {
@@ -142,11 +171,18 @@ def _run(args: argparse.Namespace) -> int:
             "review": len(result.candidates),
             "singletons": len(result.singletons),
             "merged_labels": sum(len(cluster.members) for cluster in result.clusters),
+            "workbook_clusters": sum(
+                1 for cluster in result.clusters if "workbook" in cluster.method.split("+")
+            ),
         }
         for category, result in results.items()
     }
+    coverage = _workbook_coverage(workbook, pooled, results) if workbook else None
     if args.dry_run or out_dir is None:
-        print(json.dumps({"dry_run": True, "summary": summary}, indent=2, sort_keys=True))
+        payload: dict[str, object] = {"dry_run": True, "summary": summary}
+        if coverage:
+            payload["workbook_coverage"] = coverage
+        print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
     run_dir = curation.write_run(
@@ -156,24 +192,83 @@ def _run(args: argparse.Namespace) -> int:
         manifest_inputs=manifest_inputs,
         profile_digest=sources.file_digest(profile_path),
         registry=registry_info,
+        workbook=workbook.as_json() if workbook else None,
+        coverage=coverage,
+        registry_aliases=registry_aliases,
+        workbook_inputs=workbook_info,
     )
     print(json.dumps({"run": str(run_dir), "summary": summary}, indent=2, sort_keys=True))
     return 0
+
+
+def _workbook_coverage(
+    workbook: object,
+    pooled: dict[str, list[LabelStat]],
+    results: dict[str, MergeResult],
+) -> dict[str, object]:
+    """How much of the corpus the human workbooks actually reach, per category.
+
+    ``matched`` is the count of distinct corpus labels whose spelling a workbook row names.
+    ``matcher_only`` is the count of clusters the matcher made without any human row — the number
+    that has to be reviewed before a release can claim workbook grounding.
+    """
+    document = workbook.as_json()  # type: ignore[attr-defined]
+    report: dict[str, object] = {}
+    for category in ("entity", "person", "theme"):
+        entries = document["forced"].get(category) or []
+        if not entries:
+            continue
+        aliases = {alias for entry in entries for alias in entry["members"]}
+        observed = {stat.label: stat.count for stat in pooled.get(category, [])}
+        folded = {" ".join(label.split()).casefold(): label for label in observed}
+        matched = sorted(folded[key] for key in aliases if key in folded)
+        result = results.get(category)
+        clusters = result.clusters if result else []
+        report[category] = {
+            "workbook_rows": document["counts"][category]["rows"],
+            "workbook_groups": len(entries),
+            "workbook_aliases": len(aliases),
+            "observed_labels": len(observed),
+            "matched": len(matched),
+            "unmatched": len(observed) - len(matched),
+            "unused_workbook_aliases": len(aliases) - len(matched),
+            "occurrences_matched": sum(observed[label] for label in matched),
+            "occurrences_total": sum(observed.values()),
+            "clusters_total": len(clusters),
+            "clusters_with_workbook": sum(
+                1 for cluster in clusters if "workbook" in cluster.method.split("+")
+            ),
+            "clusters_matcher_only": sum(
+                1 for cluster in clusters if "workbook" not in cluster.method.split("+")
+            ),
+            "adjudication_open": sum(
+                1
+                for item in document["adjudication"]
+                if item.get("category") == category
+            ),
+        }
+    return report
 
 
 def _apply_registry(
     pooled: dict[str, list[LabelStat]],
     registry: Registry,
     loaded: list[sources.Source],
-) -> int:
+) -> tuple[int, dict[str, dict[str, list[dict[str, object]]]]]:
     """Rewrite labels through the shared registry before anything is clustered.
 
     The registry is the authority: a mapping a human approved, or that reviewers settled, must reach
     the canonical tables without the similarity rules rediscovering it. Labels it does not mention keep
     their spelling and stay eligible for review.
+
+    The rewrite is *not* allowed to erase the corpus spellings it collapsed. Every rewritten label is
+    returned as ``category -> canonical -> [{alias, occurrences}]`` so the run can keep an
+    alias-to-canonical row for it; otherwise the canonical table would name a label that nothing in
+    the corpus actually says, and the provenance of the collapse would be gone.
     """
     single_source = loaded[0].name if len(loaded) == 1 else ""
     rewritten = 0
+    kept: dict[str, dict[str, list[dict[str, object]]]] = {}
     for category, stats in pooled.items():
         regrouped: dict[tuple[str, str], LabelStat] = {}
         for stat in stats:
@@ -181,6 +276,14 @@ def _apply_registry(
             canonical = registry.map_label(category, stat.label, country=country, source=single_source)
             if canonical != stat.label:
                 rewritten += 1
+                kept.setdefault(category, {}).setdefault(canonical, []).append(
+                    {
+                        "alias": stat.label,
+                        "occurrences": stat.count,
+                        "polarity": stat.polarity,
+                        "countries": list(stat.countries),
+                    }
+                )
                 stat = LabelStat(
                     label=canonical,
                     count=stat.count,
@@ -200,7 +303,7 @@ def _apply_registry(
                 )
             )
         pooled[category] = sorted(regrouped.values(), key=lambda item: (-item.count, item.label))
-    return rewritten
+    return rewritten, kept
 
 
 def _decide(args: argparse.Namespace) -> int:
@@ -339,6 +442,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--review", type=float, default=None, help="override the review-candidate score")
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--registry", default="", help="shared merge registry (jsonl) to apply and record")
+    run.add_argument(
+        "--workbooks",
+        default="",
+        help="directory holding the human Excel codebooks (entities/persons/themes.xlsx)",
+    )
     run.add_argument(
         "--require-registry",
         action="store_true",
