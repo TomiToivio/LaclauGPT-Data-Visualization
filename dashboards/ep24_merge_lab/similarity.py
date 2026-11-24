@@ -22,7 +22,8 @@ from difflib import SequenceMatcher
 from itertools import combinations
 
 from .model import Cluster, LabelStat, MergeResult, ReviewCandidate
-from .normalization import Normalized, normalize_label
+from .normalization import Normalized, clean_label, normalize_label
+from dataclasses import replace
 
 #: Above this many labels, a shared token says nothing and only costs comparisons.
 MAX_BUCKET = 150
@@ -267,7 +268,32 @@ def resolve(
     if not stats:
         return MergeResult()
 
-    normalized = {stat.label: rule.normalize(stat.label) for stat in stats}
+    def normalize_stat(stat: LabelStat) -> Normalized:
+        entry = rule.normalize(stat.label)
+        alias = entry.folded
+        if rule.name == "entity":
+            if alias in {"true finns", "finns party", "the finns party", "perussuomalaiset"}:
+                alias = "perussuomalaiset"
+            elif alias in {"cdu christian democrats", "christian democratic union", "cdu"}:
+                alias = "cdu"
+            elif alias == "christian democrats" and stat.countries and all(
+                country.casefold() in {"de", "deu", "germany", "deutschland"}
+                for country in stat.countries
+            ):
+                alias = "cdu"
+        if alias != entry.folded:
+            return replace(rule.normalize(alias), raw=entry.raw)
+        return entry
+
+    normalized = {stat.label: normalize_stat(stat) for stat in stats}
+
+    def canonical_name(entry: Normalized) -> str:
+        original = rule.normalize(entry.raw)
+        if entry.folded != original.folded:
+            return entry.folded
+        if rule.name == "entity" and entry.folded in {"cdu", "perussuomalaiset"}:
+            return entry.folded
+        return clean_label(entry.raw)
     counts = {stat.label: stat.count for stat in stats}
     entries = sorted(normalized.values(), key=lambda item: item.raw.casefold())
     surname_targets = _surname_targets(entries) if rule.surname_merge else {}
@@ -337,7 +363,12 @@ def resolve(
     for _, members in sorted(uf.groups().items(), key=lambda item: item[0].casefold()):
         member_entries = [normalized[member] for member in members]
         if len(member_entries) == 1:
-            singletons.append(member_entries[0].raw)
+            entry = member_entries[0]
+            name = forced_canonical.get(entry.raw, canonical_name(entry))
+            if name != entry.raw and not any(entry.raw in pair for pair in blocked):
+                clusters.append(Cluster(name, (entry.raw,), 1.0, "normalization", counts[entry.raw]))
+            else:
+                singletons.append(entry.raw)
             continue
         canonical_entry = _choose_canonical(member_entries, counts)
         # A researcher who merged these labels also said what to call the result. Their name
@@ -372,7 +403,7 @@ def resolve(
         member_names = sorted(entry.raw for entry in kept)
         clusters.append(
             Cluster(
-                canonical=canonical_entry.raw,
+                canonical=decided or canonical_name(canonical_entry),
                 members=tuple(member_names),
                 confidence=min(scores),
                 method="+".join(sorted(methods)) or "canonical",
