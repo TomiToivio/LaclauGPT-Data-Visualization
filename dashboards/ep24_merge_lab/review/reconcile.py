@@ -3,8 +3,7 @@
 The rules follow the issue and nothing else:
 
 * **unanimous** — all reviewers agree on decision *and* canonical name: approved automatically;
-* **two of three** — a separate adjudicator model sees the three reviews and decides on the record,
-  naming why the minority was wrong; approved with that rationale attached;
+* **two of three** — a proposal only; the human queue retains all votes and any adjudicator evidence;
 * **anything else** — goes to the human queue. It is not averaged, and it is never guessed.
 
 Two further guards: a reviewer that failed is not a vote, and a prior human decision is not
@@ -25,7 +24,7 @@ def _canonical_key(review: dict[str, Any]) -> str:
 
 
 def unanimous(reviews: list[dict[str, Any]]) -> bool:
-    if len({review["reviewer"] for review in reviews}) < 2:
+    if len({review["reviewer"] for review in reviews}) < 3:
         return False
     return len({review["decision"] for review in reviews}) == 1 and len(
         {_canonical_key(review) for review in reviews}
@@ -54,12 +53,18 @@ def decide(
     prior: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Return ``(approved, human_queue)`` with the evidence that produced each."""
+    required = max(3, required)
     prior = prior or {}
     approved: list[dict[str, Any]] = []
     queue: list[dict[str, Any]] = []
     for unit in units:
         found = reviews.get(unit["unit_id"], [])
-        distinct = {review["reviewer"]: review for review in found}
+        distinct = {
+            review["reviewer"]: review for review in found
+            if review.get("reviewer") and review.get("type", "review") == "review"
+            and review.get("decision") in {"merge", "keep", "split"}
+            and review.get("canonical")
+        }
         if len(distinct) < required:
             queue.append(
                 {
@@ -84,9 +89,11 @@ def decide(
                 for review in panel
             ],
         }
-        previous = prior.get(unit["unit_id"])
+        previous = prior.get(unit["unit_id"]) or prior.get(
+            json.dumps([unit["category"], sorted(unit["labels"])], ensure_ascii=False)
+        )
         decision = None
-        if unanimous(panel):
+        if unanimous(panel) and panel[0]["decision"] == "merge":
             decision = {
                 **base,
                 "status": "approved",
@@ -97,31 +104,13 @@ def decide(
                 "confidence": min(review["confidence"] for review in panel),
                 "rationale": panel[0].get("rationale", ""),
             }
-        else:
-            winner = majority(panel)
-            if winner is not None and len(panel) == required:
-                decision = {
-                    **base,
-                    "status": "approved",
-                    "method": "majority",
-                    "decision": winner["decision"],
-                    "canonical": winner["canonical"],
-                    "wikipedia_title": winner.get("wikipedia_title"),
-                    "confidence": min(review["confidence"] for review in panel),
-                    "rationale": winner.get("rationale", ""),
-                    "disagreement": [
-                        f"{review['reviewer']}: {review['decision']} / {review['canonical']}"
-                        for review in panel
-                        if review["decision"] != winner["decision"]
-                        or _canonical_key(review) != _canonical_key(winner)
-                    ],
-                }
         if decision is None:
             queue.append(
                 {
                     "unit_id": unit["unit_id"],
                     "category": unit["category"],
-                    "reason": "no consensus and no majority",
+                    "reason": "no consensus for a merge; human review or explicit non-merge required",
+                    "status": "proposed",
                     "unit": unit,
                     "reviews": base["reviews"],
                 }
@@ -132,12 +121,9 @@ def decide(
             or (previous.get("canonical") or "").casefold() != (decision["canonical"] or "").casefold()
         ):
             # A human already decided; the panel does not get to overrule it silently.
-            decision.update(
-                {
-                    "status": "conflict",
-                    "conflict_with_human": previous,
-                }
-            )
+            queue.append({**decision, "status": "conflict", "reason": "prior human decision",
+                          "conflict_with_human": previous, "unit": unit})
+            continue
         approved.append(decision)
     return approved, queue
 
@@ -145,27 +131,18 @@ def decide(
 def apply_adjudications(
     approved: list[dict[str, Any]], adjudications: dict[str, dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Replace majority decisions with the adjudicator's, keeping the panel visible."""
-    by_unit = {item["unit_id"]: item for item in approved}
-    for unit_id, verdict in adjudications.items():
-        item = by_unit.get(unit_id)
-        if not item:
-            continue
-        item.update(
-            {
-                "method": "adjudicated",
-                "decision": verdict["decision"],
-                "canonical": verdict["canonical"],
-                "wikipedia_title": verdict.get("wikipedia_title"),
-                "confidence": verdict["confidence"],
-                "rationale": verdict.get("rationale", ""),
-                "adjudicator": {
-                    "reviewer": verdict.get("reviewer"),
-                    "model": verdict.get("model"),
-                },
-            }
-        )
+    """Compatibility helper: adjudications cannot silently rewrite settled decisions."""
     return approved
+
+
+def attach_adjudications(
+    queue: list[dict[str, Any]], adjudications: dict[str, dict[str, Any]]
+) -> None:
+    """Retain adjudicator evidence for human adjudication without granting approval."""
+    for item in queue:
+        verdict = adjudications.get(item["unit_id"])
+        if verdict:
+            item["adjudication_proposal"] = verdict
 
 
 def load_prior(path: Path) -> dict[str, dict[str, Any]]:

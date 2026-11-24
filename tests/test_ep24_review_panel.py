@@ -122,15 +122,14 @@ def test_three_agreeing_reviewers_approve_automatically():
     assert approved[0]["method"] == "unanimous"
 
 
-def test_two_of_three_approves_and_keeps_the_disagreement_on_record():
+def test_two_of_three_queues_and_keeps_the_disagreement_on_record():
     approved, queue = reconcile.decide(
         [_unit()],
         {"u1": [_review("A"), _review("B"), _review("C", decision="keep", canonical="Orpo")]},
         required=3,
     )
-    assert len(approved) == 1 and not queue
-    assert approved[0]["method"] == "majority"
-    assert approved[0]["disagreement"], "the minority must stay visible"
+    assert not approved and len(queue) == 1
+    assert len(queue[0]["reviews"]) == 3
 
 
 def test_three_way_disagreement_goes_to_a_human():
@@ -149,19 +148,44 @@ def test_a_unit_with_two_reviews_is_not_complete():
     assert "only 2 of 3" in queue[0]["reason"]
 
 
-def test_an_adjudication_replaces_the_majority_decision():
-    approved, _ = reconcile.decide(
+def test_adjudication_is_retained_without_automatic_approval():
+    approved, queue = reconcile.decide(
         [_unit()],
         {"u1": [_review("A"), _review("B"), _review("C", decision="keep", canonical="Orpo")]},
-        required=3,
     )
-    updated = reconcile.apply_adjudications(
-        approved,
-        {"u1": {"decision": "keep", "canonical": "Orpo", "confidence": 0.7,
-                "rationale": "two different Orpos", "reviewer": "D", "model": "model-D"}},
+    verdict = {"decision": "keep", "canonical": "Orpo", "rationale": "two different Orpos"}
+    reconcile.attach_adjudications(queue, {"u1": verdict})
+    assert not approved
+    assert queue[0]["adjudication_proposal"] == verdict
+
+
+def test_two_reviewers_never_satisfy_unanimity():
+    assert not reconcile.unanimous([_review("A"), _review("B")])
+    approved, queue = reconcile.decide(
+        [_unit()], {"u1": [_review("A"), _review("B")]}, required=2
     )
-    assert updated[0]["method"] == "adjudicated"
-    assert updated[0]["decision"] == "keep" and updated[0]["canonical"] == "Orpo"
+    assert not approved and queue
+
+
+def test_three_different_canonicals_never_approve():
+    approved, queue = reconcile.decide(
+        [_unit()], {"u1": [_review("A"), _review("B", canonical="X"), _review("C", canonical="Y")]}
+    )
+    assert not approved and len(queue[0]["reviews"]) == 3
+
+
+def test_failed_attempt_does_not_count():
+    approved, queue = reconcile.decide(
+        [_unit()], {"u1": [_review("A"), _review("B"), {"reviewer": "C", "type": "attempt"}]}
+    )
+    assert not approved and "only 2 of 3" in queue[0]["reason"]
+
+
+def test_unanimous_keep_does_not_export_a_merge():
+    approved, queue = reconcile.decide(
+        [_unit()], {"u1": [_review(name, decision="keep") for name in "ABC"]}
+    )
+    assert not approved and queue
 
 
 # ------------------------------------------------------------------ model output is not trusted
@@ -198,7 +222,7 @@ def test_a_release_carries_a_registry_and_a_manifest(tmp_path: Path):
             "wikipedia_title": "Petteri Orpo",
             "qid": "Q123",
             "rationale": "one person",
-            "reviews": [{"reviewer": "A", "model": "m"}],
+            "reviews": [_review(name) for name in "ABC"],
         }
     ]
     path = release.build(
