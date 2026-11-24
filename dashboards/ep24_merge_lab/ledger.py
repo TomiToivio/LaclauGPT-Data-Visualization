@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .registry import RegistryEntry, Scope
+from .registry import HumanReview, RegistryEntry, Scope
 
 DECISIONS = ("merge", "keep_separate")
 
@@ -56,6 +56,11 @@ class Review:
     reasoning: str = ""
     snapshot_sha256: str = ""
     created_at: str = ""
+    #: ``ai`` for a model panel vote, ``human`` for a person's decision. Empty means ``ai``, which
+    #: keeps every existing ledger readable under the rule it was written for.
+    kind: str = ""
+    #: Session id issued by the authenticated review workflow, for a human vote.
+    attested_session: str = ""
 
     def validate(self) -> list[str]:
         problems: list[str] = []
@@ -99,6 +104,8 @@ class Review:
             "reasoning": self.reasoning,
             "snapshot_sha256": self.snapshot_sha256,
             "created_at": self.created_at,
+            "kind": self.kind,
+            "attested_session": self.attested_session,
         }
 
     @classmethod
@@ -121,6 +128,8 @@ class Review:
             reasoning=str(payload.get("reasoning") or ""),
             snapshot_sha256=str(payload.get("snapshot_sha256") or ""),
             created_at=str(payload.get("created_at") or ""),
+            kind=str(payload.get("kind") or ""),
+            attested_session=str(payload.get("attested_session") or ""),
         )
 
 
@@ -247,13 +256,24 @@ class Ledger:
 
     # ------------------------------------------------------------------ adjudication
 
-    def adjudicate(self, *, min_reviews: int = 3, polarity_of: dict[str, str] | None = None) -> Adjudication:
+    def adjudicate(
+        self,
+        *,
+        min_reviews: int = 3,
+        polarity_of: dict[str, str] | None = None,
+        trusted: dict[str, str] | None = None,
+    ) -> Adjudication:
         """Turn reviews into registry entries, or into conflicts and gaps.
 
         Unanimity across ``min_reviews`` distinct reviewers settles a label. Disagreement does not get
         averaged: it is recorded with every vote so a human sees who said what.
+
+        A **human** vote settles a label on its own (owner instruction, 2026-11-24), but only when the
+        session it cites is in ``trusted`` (session id -> authenticated person) and names the same
+        reviewer. Recording a human name is not the same as a person having decided.
         """
         polarity_of = polarity_of or {}
+        trusted = trusted or {}
         result = Adjudication()
         for label_id, slot in sorted(self.coverage().items()):
             if slot["mixed_snapshot"]:
@@ -265,6 +285,85 @@ class Ledger:
                     }
                 )
                 continue
+            votes = {entry.reviewer: entry for entry in self._reviews.values() if entry.label_id == label_id}
+            human = {name: vote for name, vote in votes.items() if vote.kind == "human"}
+            if human:
+                attested = [
+                    vote for vote in human.values()
+                    if vote.attested_session.strip()
+                    and trusted.get(vote.attested_session.strip(), "").strip().casefold()
+                    == vote.reviewer.strip().casefold()
+                ]
+                if not attested:
+                    result.incomplete.append(
+                        {
+                            "label_id": label_id,
+                            "reviewers": slot["reviewers"],
+                            "reason": "human vote is not backed by an attested review session",
+                        }
+                    )
+                    continue
+                if len({(vote.decision, vote.canonical.casefold()) for vote in attested}) > 1:
+                    result.conflicts.append(
+                        {
+                            "label_id": label_id,
+                            "reason": "two people decided this label differently",
+                            "votes": [
+                                {
+                                    "reviewer": vote.reviewer,
+                                    "decision": vote.decision,
+                                    "canonical": vote.canonical,
+                                    "attested": True,
+                                }
+                                for vote in sorted(attested, key=lambda item: item.reviewer)
+                            ],
+                        }
+                    )
+                    continue
+                human_vote = min(attested, key=lambda item: item.reviewer)
+                if human_vote.decision == "merge" and not human_vote.canonical.strip():
+                    result.incomplete.append(
+                        {
+                            "label_id": label_id,
+                            "reviewers": slot["reviewers"],
+                            "reason": "human merge decision names no canonical label",
+                        }
+                    )
+                    continue
+                canonical = human_vote.canonical if human_vote.decision == "merge" else human_vote.label
+                entry = RegistryEntry(
+                    category=human_vote.category,
+                    alias=human_vote.label,
+                    canonical=canonical,
+                    status="approved" if human_vote.decision == "merge" else "keep_separate",
+                    canonical_id=human_vote.wikidata_qid,
+                    wiki_title=human_vote.wiki_title,
+                    wiki_url=human_vote.wiki_url,
+                    wikidata_qid=human_vote.wikidata_qid,
+                    fallback_reason=human_vote.fallback_reason,
+                    polarity=_polarity_for(human_vote, polarity_of.get(label_id, human_vote.polarity)),
+                    scope=Scope(),
+                    evidence=tuple(
+                        dict.fromkeys(
+                            [*human_vote.evidence]
+                            + [item for vote in votes.values() for item in vote.evidence]
+                        )
+                    ),
+                    reviewers=tuple(sorted(votes)),
+                    method="human-review",
+                    decision=human_vote.decision,
+                    created_at=_now(),
+                    approval="human",
+                    human_review=HumanReview(
+                        reviewer=human_vote.reviewer,
+                        at=human_vote.created_at or _now(),
+                        snapshot=human_vote.snapshot_sha256,
+                        session=human_vote.attested_session,
+                        note="human decision overrides the model panel; all votes retained",
+                    ),
+                )
+                (result.approved if human_vote.decision == "merge" else result.keep_separate).append(entry)
+                continue
             if slot["review_count"] < min_reviews:
                 result.incomplete.append(
                     {
@@ -274,8 +373,6 @@ class Ledger:
                     }
                 )
                 continue
-
-            votes = {entry.reviewer: entry for entry in self._reviews.values() if entry.label_id == label_id}
             decisions = {vote.decision for vote in votes.values()}
             if len(decisions) > 1:
                 result.conflicts.append(
