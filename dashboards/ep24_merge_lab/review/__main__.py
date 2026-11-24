@@ -119,7 +119,7 @@ def _status(args: argparse.Namespace) -> int:
     header, units = _load(curation)
     reviewers, _ = _panel(curation) if (curation / "reviewers.json").exists() else ([], None)
     coverage = ledger.coverage(
-        curation / "review" / "ledger.jsonl", units, required=max(1, len(reviewers))
+        curation / "review" / "ledger.jsonl", units, required=max(3, len(reviewers))
     )
     approved_path = curation / "review" / "approved.jsonl"
     print(
@@ -161,7 +161,7 @@ def _reconcile(args: argparse.Namespace) -> int:
     approved, queue = reconcile.decide(
         units,
         ledger.reviews_by_unit(ledger_path),
-        required=max(1, len(reviewers)),
+        required=max(3, len(reviewers)),
         prior={},
     )
     adjudications = {}
@@ -171,7 +171,7 @@ def _reconcile(args: argparse.Namespace) -> int:
             if line.strip():
                 item = json.loads(line)
                 adjudications[item["unit_id"]] = item
-    approved = reconcile.apply_adjudications(approved, adjudications)
+    reconcile.attach_adjudications(queue, adjudications)
 
     for item in approved:
         if item.get("wikipedia_title"):
@@ -181,7 +181,7 @@ def _reconcile(args: argparse.Namespace) -> int:
             item["wikipedia_url"] = match.url
         else:
             item["qid"] = ""
-    coverage = ledger.coverage(ledger_path, units, required=max(1, len(reviewers)))
+    coverage = ledger.coverage(ledger_path, units, required=max(3, len(reviewers)))
     reconcile.write_reports(curation / "review", approved, queue, coverage)
     print(
         json.dumps(
@@ -210,7 +210,7 @@ def _release(args: argparse.Namespace) -> int:
     if queue_path.exists():
         queue = [json.loads(line) for line in queue_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     coverage = ledger.coverage(
-        curation / "review" / "ledger.jsonl", units, required=max(1, len(reviewers))
+        curation / "review" / "ledger.jsonl", units, required=max(3, len(reviewers))
     )
     release_dir = release_mod.build(
         curation,
