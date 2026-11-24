@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..ledger import Review as SharedReview
 from . import ledger, providers
 
 
@@ -35,11 +36,44 @@ class BatchStats:
         }
 
 
+def shared_problems(
+    unit: dict[str, Any], result: dict[str, Any], snapshot_sha256: str
+) -> list[str]:
+    """Check a panel verdict against the shared ledger's contract before it counts as a review.
+
+    The repository has one rule for what counts as evidence (`ep24_merge_lab.ledger.Review`): a
+    reviewer is named, the snapshot is hashed, and a merge cites a verified URL or says why no
+    article exists. A verdict that fails this is a failed attempt, not a vote.
+    """
+    return SharedReview(
+        batch_id=f"panel-{unit['unit_id']}",
+        label_id=unit["unit_id"],
+        category=str(unit.get("category", "")),
+        label=" | ".join(unit.get("labels", []))[:200],
+        reviewer=str(result.get("reviewer", "")),
+        decision=str(result.get("decision", "")),
+        canonical=str(result.get("canonical", "")),
+        wiki_title=str(result.get("wikipedia_title") or ""),
+        wiki_url=str(result.get("wikipedia_url") or ""),
+        wikidata_qid=str(result.get("qid") or ""),
+        fallback_reason=str(result.get("fallback_reason") or ""),
+        confidence=float(result.get("confidence", 0.0)),
+        reasoning=str(result.get("rationale", "")),
+        snapshot_sha256=snapshot_sha256,
+    ).validate()
+
+
 def _one(
-    unit: dict[str, Any], reviewer: providers.Reviewer, ledger_path: Path
+    unit: dict[str, Any],
+    reviewer: providers.Reviewer,
+    ledger_path: Path,
+    snapshot_sha256: str = "",
 ) -> tuple[str, dict[str, Any] | None, str]:
     try:
         result = providers.review(unit, reviewer)
+        problems = shared_problems(unit, result, snapshot_sha256)
+        if problems:
+            raise ValueError("shared contract: " + "; ".join(problems)[:200])
     except Exception as exc:  # noqa: BLE001 - any failure is a failed attempt, not a review
         ledger.append(
             ledger_path,
@@ -60,7 +94,10 @@ def _one(
 
 
 def _batch(
-    units: list[dict[str, Any]], reviewer: providers.Reviewer, ledger_path: Path
+    units: list[dict[str, Any]],
+    reviewer: providers.Reviewer,
+    ledger_path: Path,
+    snapshot_sha256: str = "",
 ) -> tuple[int, int]:
     """One model call for several units; every verdict is written on its own ledger line."""
     try:
@@ -78,13 +115,27 @@ def _batch(
         )
         recorded = 0
         for unit in units:
-            _, result, _ = _one(unit, reviewer, ledger_path)
+            _, result, _ = _one(unit, reviewer, ledger_path, snapshot_sha256)
             recorded += 1 if result else 0
         return recorded, 0
 
     recorded = 0
     for unit in units:
         verdict = verdicts.get(unit["unit_id"])
+        if verdict is not None:
+            problems = shared_problems(unit, verdict, snapshot_sha256)
+            if problems:
+                ledger.append(
+                    ledger_path,
+                    {
+                        "type": "attempt",
+                        "unit_id": unit["unit_id"],
+                        "reviewer": reviewer.name,
+                        "model": reviewer.model,
+                        "error": ("shared contract: " + "; ".join(problems))[:300],
+                    },
+                )
+                verdict = None
         if verdict is None:
             # The reviewer skipped this unit: record a failure rather than invent agreement.
             ledger.append(
@@ -115,6 +166,7 @@ def run(
     limit: int = 0,
     progress_every: int = 50,
     batch_size: int = 1,
+    snapshot_sha256: str = "",
 ) -> BatchStats:
     """Ask every reviewer about every unit not yet reviewed by them."""
     done = ledger.reviewed_pairs(ledger_path)
@@ -144,7 +196,7 @@ def run(
         stats.asked = len(pending)
         with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
             futures = {
-                pool.submit(_batch, batch_units, reviewer, ledger_path): batch_units
+                pool.submit(_batch, batch_units, reviewer, ledger_path, snapshot_sha256): batch_units
                 for batch_units, reviewer in batches
             }
             for number, future in enumerate(as_completed(futures), start=1):
@@ -164,7 +216,7 @@ def run(
 
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         futures = {
-            pool.submit(_one, unit, reviewer, ledger_path): (unit, reviewer)
+            pool.submit(_one, unit, reviewer, ledger_path, snapshot_sha256): (unit, reviewer)
             for unit, reviewer in pending
         }
         for number, future in enumerate(as_completed(futures), start=1):

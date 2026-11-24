@@ -109,6 +109,7 @@ def _panel_run(args: argparse.Namespace) -> int:
         concurrency=args.concurrency,
         limit=args.limit,
         batch_size=args.batch_size,
+        snapshot_sha256=header["digest"],
     )
     print(json.dumps({"inventory": header["digest"], **stats.as_json()}, indent=2))
     return 0
