@@ -21,7 +21,7 @@ from pathlib import Path
 if __package__ in (None, ""):  # run as a script, as the README shows
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ep24_merge_lab import curation, sources
+from ep24_merge_lab import curation, export, sources
 from ep24_merge_lab.model import CATEGORIES
 from ep24_merge_lab.similarity import RULES
 
@@ -124,6 +124,66 @@ def _decide(args: argparse.Namespace) -> int:
     return 0
 
 
+def _export(args: argparse.Namespace) -> int:
+    out_dir = Path(args.out).expanduser()
+    run = Path(args.run) if args.run else _latest_run(out_dir)
+    decisions = curation.load_decisions(out_dir / "decisions.jsonl")
+    result = export.build_export(run, decisions, out_dir, reviewer=args.reviewer, note=args.note)
+    print(
+        json.dumps(
+            {
+                "export": str(result.path),
+                "export_id": result.path.name,
+                "mapping_version": result.manifest["mapping_version"],
+                "decisions": result.manifest["decisions"]["count"],
+                "candidates_open": result.candidates_open,
+                "totals": result.manifest["totals"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _activate(args: argparse.Namespace) -> int:
+    payload = export.activate(Path(args.out).expanduser(), args.export_id, reviewer=args.reviewer)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    print("note: activation is a pointer; no dashboard file was written.")
+    return 0
+
+
+def _rollback(args: argparse.Namespace) -> int:
+    payload = export.rollback(Path(args.out).expanduser(), reviewer=args.reviewer)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _status(args: argparse.Namespace) -> int:
+    out_dir = Path(args.out).expanduser()
+    activation = export.current_activation(out_dir)
+    active = export.resolve_active_export(out_dir)
+    print(
+        json.dumps(
+            {
+                "exports": export.list_exports(out_dir),
+                "activation": activation,
+                "active_export_resolves": bool(active),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _latest_run(out_dir: Path) -> Path:
+    marker = out_dir / "LATEST"
+    if not marker.exists():
+        raise SystemExit(f"no run in {out_dir}: run merge_labels.py run first")
+    return out_dir / "runs" / marker.read_text(encoding="utf-8").strip()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -143,6 +203,28 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--review", type=float, default=None, help="override the review-candidate score")
     run.add_argument("--dry-run", action="store_true")
     run.set_defaults(func=_run)
+
+    export_cmd = subparsers.add_parser("export", help="freeze the curated mapping into a version")
+    export_cmd.add_argument("--out", required=True, help="curation directory (runs/ and exports/)")
+    export_cmd.add_argument("--run", default="", help="run id; defaults to LATEST")
+    export_cmd.add_argument("--reviewer", default="")
+    export_cmd.add_argument("--note", default="")
+    export_cmd.set_defaults(func=_export)
+
+    activate = subparsers.add_parser("activate", help="point the adapter at one export")
+    activate.add_argument("--out", required=True)
+    activate.add_argument("--export", required=True, dest="export_id")
+    activate.add_argument("--reviewer", default="")
+    activate.set_defaults(func=_activate)
+
+    rollback = subparsers.add_parser("rollback", help="withdraw activation")
+    rollback.add_argument("--out", required=True)
+    rollback.add_argument("--reviewer", default="")
+    rollback.set_defaults(func=_rollback)
+
+    status = subparsers.add_parser("status", help="what is exported and what is active")
+    status.add_argument("--out", required=True)
+    status.set_defaults(func=_status)
 
     decide = subparsers.add_parser("decide", help="record a researcher decision")
     decide.add_argument("--out", required=True)

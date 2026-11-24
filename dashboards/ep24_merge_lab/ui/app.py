@@ -22,7 +22,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 try:  # the package is importable when this file is run from the repository root
-    from ep24_merge_lab import curation
+    from ep24_merge_lab import curation, export
     from ep24_merge_lab import session as sessions
     from ep24_merge_lab.model import CATEGORIES
 except ImportError:  # pragma: no cover - streamlit run adds the script's directory to sys.path
@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover - streamlit run adds the script's direct
 
     # ui/app.py -> dashboards is two levels up; the package lives there.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from ep24_merge_lab import curation
+    from ep24_merge_lab import curation, export
     from ep24_merge_lab import session as sessions
     from ep24_merge_lab.model import CATEGORIES
 
@@ -327,8 +327,11 @@ def main() -> None:
         ordering = st.selectbox("Order by", list(SORTS), index=0, key="queue-order")
         needle = st.text_input("Filter labels", key="queue-filter").strip().casefold()
 
-    tabs = st.tabs([TITLES[category] for category in CATEGORIES])
-    for tab, category in zip(tabs, CATEGORIES, strict=True):
+    labels = [TITLES[category] for category in CATEGORIES] + ["Export & activate"]
+    tabs = st.tabs(labels)
+    with tabs[-1]:
+        _export_tab(root, run, review)
+    for tab, category in zip(tabs[:-1], CATEGORIES, strict=True):
         with tab:
             deck = deck_for(run, category)
             actions = [item for item in review.effective if item.category == category]
@@ -392,6 +395,69 @@ def main() -> None:
                       "method": card["method"]} for card in cards[:200]],
                     width="stretch", hide_index=True,
                 )
+
+
+def _export_tab(root: Path, run: Path, review: sessions.Session) -> None:
+    """Export is a separate act from activation, and neither touches a dashboard file."""
+    st.subheader("Export the curated mapping")
+    decisions = curation.load_decisions(root / "decisions.jsonl")
+    per_category = {}
+    for category in CATEGORIES:
+        clusters = export.apply_decisions(
+            export._read_clusters(run, category),
+            [decision for decision in decisions if decision.category == category],
+        )
+        per_category[category] = {
+            "clusters": len(clusters),
+            "labels": sum(len(cluster.members) for cluster in clusters),
+            "occurrences": sum(cluster.occurrences for cluster in clusters),
+        }
+    st.dataframe(
+        [{"category": category, **counts} for category, counts in per_category.items()],
+        width="stretch",
+        hide_index=True,
+    )
+    st.caption(
+        f"run {run.name} · {len(decisions)} decisions in the log · "
+        f"exporting never writes a dashboard file"
+    )
+    if st.button("Build export", type="primary"):
+        result = export.build_export(run, decisions, root, reviewer=review.reviewer)
+        st.success(f"export {result.path.name} written — {result.manifest['mapping_version'][:12]}…")
+
+    exports = export.list_exports(root)
+    if not exports:
+        st.info("No exports yet.")
+        return
+    st.subheader("Exports")
+    st.dataframe(exports, width="stretch", hide_index=True)
+    chosen = st.selectbox("Export to download", [item["export_id"] for item in exports])
+    export_dir = root / "exports" / chosen
+    payloads = export.download_payloads(export_dir)
+    filename = st.selectbox("File", sorted(payloads))
+    st.download_button(
+        f"Download {filename}",
+        data=payloads[filename],
+        file_name=filename,
+        mime="application/json" if filename.endswith(".json") else "text/csv",
+    )
+
+    st.subheader("Activation")
+    activation = export.current_activation(root)
+    if activation:
+        st.caption(
+            f"active: {activation['export_id']} · pinned at {activation['activated_at']} · "
+            f"resolves: {'yes' if export.resolve_active_export(root) else 'no'}"
+        )
+    else:
+        st.caption("nothing is activated — the legacy dashboards keep their own labels")
+    left, right = st.columns(2)
+    if left.button("Activate selected export"):
+        export.activate(root, chosen, reviewer=review.reviewer)
+        st.success(f"{chosen} is now the active mapping (pointer only)")
+    if right.button("Roll back activation"):
+        export.rollback(root, reviewer=review.reviewer)
+        st.success("activation withdrawn; adapters fall back to the untouched legacy labels")
 
 
 def _session(root: Path) -> sessions.Session:
