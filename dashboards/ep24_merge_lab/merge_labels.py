@@ -51,6 +51,8 @@ def _inventory(args: argparse.Namespace) -> int:
 def _run(args: argparse.Namespace) -> int:
     profile_path = Path(args.profile).expanduser()
     loaded = _profile(args)
+    if not loaded or any(not source.path.is_file() for source in loaded):
+        raise ValueError("All configured legacy sources must be hydrated before merging")
     manifest_inputs = [
         {
             "source": source.name,
