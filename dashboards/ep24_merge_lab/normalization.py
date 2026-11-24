@@ -106,20 +106,38 @@ class Normalized:
         return " ".join(sorted(set(self.core_tokens)))
 
 
-def clean_label(text: str) -> str:
-    """Remove redundant parenthetical annotations and leading articles."""
+def strip_annotations(text: str) -> str:
+    """Remove a parenthetical gloss: *European Broadcasting Union (EBU)* -> *European Broadcasting Union*.
+
+    Only entity and person labels are normalised this way. A theme such as
+    *European Parliament elections (2024)* carries the year as meaning, and dropping it there
+    would merge two different elections.
+    """
     value = unicodedata.normalize("NFC", text).strip()
     while re.search(r"\([^()]*\)", value):
         value = re.sub(r"\([^()]*\)", " ", value)
     value = re.sub(r"\([^)]*$", "", value)
     value = _SPACE.sub(" ", value.replace(")", " ")).strip(" ,;:-")
-    value = re.sub(r"^the\s+", "", value, flags=re.IGNORECASE)
     return value.strip() or text.strip()
+
+
+def strip_leading_article(text: str) -> str:
+    """Drop a leading definite article: *the European Union* -> *European Union*.
+
+    This one is safe for every category — an article never carries identity — unlike the
+    parenthetical stripping above.
+    """
+    return re.sub(r"^the\s+", "", text, flags=re.IGNORECASE).strip()
+
+
+def clean_label(text: str) -> str:
+    """Both of the above, for display names of entity and person labels."""
+    return strip_leading_article(strip_annotations(text)) or text.strip()
 
 
 def fold(text: str) -> str:
     """Unicode-normalize, case-fold, and collapse the whitespace/punctuation extractors add."""
-    normalized = unicodedata.normalize("NFKC", clean_label(text)).translate(_TRANSLATION).casefold()
+    normalized = unicodedata.normalize("NFKC", strip_leading_article(text)).translate(_TRANSLATION).casefold()
     normalized = _PUNCTUATION.sub(" ", normalized)
     normalized = normalized.replace("_", " ")
     normalized = _APOSTROPHE_TAIL.sub("", normalized.strip())
@@ -146,6 +164,7 @@ def normalize_label(
     *,
     strip_titles: bool = False,
     strip_legal_suffixes: bool = False,
+    strip_parentheticals: bool = False,
 ) -> Normalized:
     """Fold one label and, where the category allows it, drop words that carry no identity.
 
@@ -153,7 +172,7 @@ def normalize_label(
     organisations (``Fortum Oyj`` -> ``fortum``). Neither is applied to themes, topics or
     sentiment targets, where every word can carry meaning.
     """
-    folded = fold(raw)
+    folded = fold(strip_annotations(raw) if strip_parentheticals else raw)
     tokens = folded.split() if folded else []
     core = list(tokens)
     if strip_titles:

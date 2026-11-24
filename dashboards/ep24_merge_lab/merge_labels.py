@@ -51,8 +51,14 @@ def _inventory(args: argparse.Namespace) -> int:
 def _run(args: argparse.Namespace) -> int:
     profile_path = Path(args.profile).expanduser()
     loaded = _profile(args)
-    if not loaded or any(not source.path.is_file() for source in loaded):
-        raise ValueError("All configured legacy sources must be hydrated before merging")
+    missing = [source.name for source in loaded if not source.path.is_file()]
+    if not loaded or missing:
+        # Fail with a sentence instead of a traceback: this runs from a unit's ExecStart too.
+        raise SystemExit(
+            "not every configured legacy source is present: "
+            + (", ".join(missing) or "the profile lists no sources")
+            + " — hydrate the private data first"
+        )
     manifest_inputs = [
         {
             "source": source.name,
@@ -179,6 +185,37 @@ def _status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _check(args: argparse.Namespace) -> int:
+    """Answer one question fast, without writing anything: can the lab start?
+
+    This is what a unit's ``ExecStartPre`` should call. Re-running the merge on every start would
+    change the tables under a reviewer with an open session, so the preflight only looks.
+    """
+    loaded = _profile(args)
+    missing = [source.name for source in loaded if not source.path.is_file()]
+    if not loaded or missing:
+        print(
+            "MISSING sources: " + (", ".join(missing) or "profile lists no sources"),
+            file=sys.stderr,
+        )
+        return 1
+    if not args.out:
+        print(f"ok: {len(loaded)} sources configured", file=sys.stderr)
+        return 0
+    out_dir = Path(args.out).expanduser()
+    try:
+        run = _latest_run(out_dir)
+    except SystemExit:
+        print(f"MISSING run in {out_dir}: run merge_labels.py run first", file=sys.stderr)
+        return 1
+    decisions = len(curation.load_decisions(out_dir / "decisions.jsonl"))
+    print(
+        f"ok: {len(loaded)} sources, run {run.name}, {decisions} decisions",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def _latest_run(out_dir: Path) -> Path:
     marker = out_dir / "LATEST"
     if not marker.exists():
@@ -223,6 +260,12 @@ def build_parser() -> argparse.ArgumentParser:
     rollback.add_argument("--out", required=True)
     rollback.add_argument("--reviewer", default="")
     rollback.set_defaults(func=_rollback)
+
+    check = subparsers.add_parser("check", help="preflight: are the sources and a run present?")
+    check.add_argument("--profile", required=True)
+    check.add_argument("--root", default="")
+    check.add_argument("--out", default="")
+    check.set_defaults(func=_check)
 
     status = subparsers.add_parser("status", help="what is exported and what is active")
     status.add_argument("--out", required=True)

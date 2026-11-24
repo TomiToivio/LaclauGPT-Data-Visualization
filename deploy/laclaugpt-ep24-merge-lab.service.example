@@ -14,7 +14,10 @@ Environment=LACLAUGPT_EP24_SESSION=default
 Environment=LACLAUGPT_EP24_REVIEWER=<reviewer-name>
 Environment=LACLAUGPT_EP24_PROFILE=<private-curation-root>/profile.yaml
 Environment=LACLAUGPT_EP24_PRIVATE_ROOT=<private-repository-root>
-ExecStartPre=<visualization-root>/.venv/bin/python dashboards/ep24_merge_lab/merge_labels.py run --profile ${LACLAUGPT_EP24_PROFILE} --root ${LACLAUGPT_EP24_PRIVATE_ROOT} --out ${LACLAUGPT_EP24_CURATION}
+# Preflight only: it checks that every configured source exists and that a run is present, and
+# writes nothing. Re-running the merge here would rebuild the tables under a reviewer who has a
+# session open, which is exactly what the session's base-run pin exists to prevent.
+ExecStartPre=<visualization-root>/.venv/bin/python dashboards/ep24_merge_lab/merge_labels.py check --profile ${LACLAUGPT_EP24_PROFILE} --root ${LACLAUGPT_EP24_PRIVATE_ROOT} --out ${LACLAUGPT_EP24_CURATION}
 ExecStart=<visualization-root>/.venv/bin/streamlit run dashboards/ep24_merge_lab/ui/app.py \
     --server.address <bind-address> --server.port <port> --server.headless true \
     --browser.gatherUsageStats false

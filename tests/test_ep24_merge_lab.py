@@ -142,9 +142,49 @@ def test_containment_is_a_phrase_not_a_bag_of_words():
         stats("European Union", "European Broadcasting Union (EBU)", "the European Union"),
         RULES["entity"],
     )
+    merged = [cluster for cluster in result.clusters if len(cluster.members) > 1]
+    assert len(merged) == 1, "only the two EU spellings may merge"
+    assert set(merged[0].members) == {"European Union", "the European Union"}
+    assert all(
+        "Broadcasting" not in member for cluster in merged for member in cluster.members
+    ), "the broadcasting union is a different organisation"
+
+
+def test_a_parenthetical_gloss_is_dropped_for_entities_but_kept_for_themes():
+    """A gloss names the same thing twice; a year in a theme is meaning, not a gloss."""
+    entities = resolve(stats("European Broadcasting Union (EBU)"), RULES["entity"])
+    assert entities.clusters[0].canonical == "European Broadcasting Union"
+    assert entities.clusters[0].members == ("European Broadcasting Union (EBU)",)
+    assert entities.clusters[0].method == "normalization"
+
+    themes = resolve(stats("European Parliament elections (2024)"), RULES["theme"])
+    assert not themes.clusters, "the year must not be stripped from a theme"
+    assert themes.singletons == ["European Parliament elections (2024)"]
+
+
+def test_a_curated_party_alias_merges_its_spellings():
+    result = resolve(
+        stats("True Finns", "Finns Party", "perussuomalaiset"), RULES["entity"]
+    )
     assert len(result.clusters) == 1
-    assert set(result.clusters[0].members) == {"European Union", "the European Union"}
-    assert "European Broadcasting Union (EBU)" in result.singletons
+    assert result.clusters[0].canonical == "Perussuomalaiset"
+    assert set(result.clusters[0].members) == {"True Finns", "Finns Party", "perussuomalaiset"}
+
+
+def test_christian_democrats_is_only_the_cdu_when_the_corpus_says_germany():
+    german = resolve(
+        [LabelStat(label="Christian Democrats", count=5, countries=("germany",)),
+         LabelStat(label="CDU", count=9, countries=("germany",))],
+        RULES["entity"],
+    )
+    assert len(german.clusters) == 1
+
+    dutch = resolve(
+        [LabelStat(label="Christian Democrats", count=5, countries=("netherlands",)),
+         LabelStat(label="CDU", count=9, countries=("netherlands",))],
+        RULES["entity"],
+    )
+    assert not dutch.clusters, "a Dutch Christian Democrat is not a German CDU"
 
 
 def test_people_and_organisations_are_separate_categories():
