@@ -154,6 +154,7 @@ def resolve_category(
                 confidence=cluster.confidence,
                 method=cluster.method,
                 count=cluster.count,
+                polarity=cluster.polarity,
             )
             for cluster in result.clusters
         ]
@@ -180,6 +181,7 @@ def write_run(
     coverage: dict[str, object] | None = None,
     registry_aliases: dict[str, dict[str, list[dict[str, object]]]] | None = None,
     workbook_inputs: dict[str, object] | None = None,
+    label_counts: dict[str, int] | None = None,
 ) -> Path:
     """Write one immutable run directory and return its path."""
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -197,12 +199,12 @@ def write_run(
         clusters = sorted(result.clusters, key=lambda item: (-item.count, item.canonical))
         _write_csv(
             run_dir / f"canonical_{category}.csv",
-            ["canonical", "members", "member_count", "occurrences", "confidence", "method"],
+            ["canonical", "members", "member_count", "occurrences", "confidence", "method", "polarity"],
             [cluster.as_row() for cluster in clusters],
         )
         _write_csv(
             run_dir / f"review_{category}.csv",
-            ["label", "occurrences", "alternatives", "reason"],
+            ["label", "occurrences", "alternatives", "reason", "polarity"],
             [candidate.as_row() for candidate in result.candidates],
         )
         for cluster in clusters:
@@ -215,10 +217,16 @@ def write_run(
                         "occurrences": cluster.count,
                         "confidence": f"{cluster.confidence:.3f}",
                         "method": cluster.method,
+                        "polarity": cluster.polarity,
                     }
                 )
         stats[category] = {
-            "labels_in": len(clusters) + len(result.singletons)
+            # Reconciling clusters and singletons undercounts a sentiment label that is a
+            # singleton under two polarities (the singleton list is deduplicated by label), so the
+            # caller's own count of distinct labels wins when it is available.
+            "labels_in": (label_counts or {}).get(category)
+            or len(clusters)
+            + len(result.singletons)
             + sum(len(cluster.members) - 1 for cluster in clusters),
             "clusters": len(clusters),
             "merged_labels": sum(len(cluster.members) for cluster in clusters),
@@ -228,7 +236,7 @@ def write_run(
 
     _write_csv(
         run_dir / "alias_map.csv",
-        ["category", "canonical", "alias", "occurrences", "confidence", "method"],
+        ["category", "canonical", "alias", "occurrences", "confidence", "method", "polarity"],
         sorted(alias_rows, key=lambda row: (row["category"], row["canonical"], row["alias"])),
     )
     # A registry rewrite collapses a corpus spelling into a canonical name; without this file the

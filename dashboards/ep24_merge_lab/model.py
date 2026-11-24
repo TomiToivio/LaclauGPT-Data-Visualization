@@ -38,6 +38,10 @@ class Cluster:
     confidence: float
     method: str
     count: int = 0
+    #: Sentiment clusters only: the polarity this cluster belongs to. Two clusters may share a
+    #: canonical name and differ here — "good housing policy" said positively and negatively is
+    #: one phrase with two meanings, and collapsing them would invert the data.
+    polarity: str = ""
 
     def as_row(self) -> dict[str, object]:
         return {
@@ -47,6 +51,7 @@ class Cluster:
             "occurrences": self.count,
             "confidence": f"{self.confidence:.3f}",
             "method": self.method,
+            "polarity": self.polarity,
         }
 
 
@@ -59,6 +64,7 @@ class ReviewCandidate:
     reason: str
     #: How often the corpus contains this label — what makes a candidate high-impact.
     count: int = 0
+    polarity: str = ""
 
     def as_row(self) -> dict[str, object]:
         return {
@@ -66,6 +72,7 @@ class ReviewCandidate:
             "occurrences": self.count,
             "alternatives": " | ".join(f"{name} ({score:.3f})" for name, score in self.alternatives),
             "reason": self.reason,
+            "polarity": self.polarity,
         }
 
 
