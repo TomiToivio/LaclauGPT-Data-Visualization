@@ -158,6 +158,7 @@ def write_run(
     rule_overrides: dict[str, CategoryRule] | None = None,
     manifest_inputs: list[dict[str, object]] | None = None,
     profile_digest: str = "",
+    registry: dict[str, object] | None = None,
 ) -> Path:
     """Write one immutable run directory and return its path."""
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -225,6 +226,8 @@ def write_run(
         "run_id": run_dir.name,
         "created_at": datetime.now(UTC).isoformat(),
         "profile_sha256": profile_digest,
+        # Which registry version produced this run: a result is only reproducible against a pin.
+        "registry": registry or {"pinned": False},
         "inputs": manifest_inputs or [],
         "rules": {
             category: asdict(rule) for category, rule in sorted((rule_overrides or RULES).items())

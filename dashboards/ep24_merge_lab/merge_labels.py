@@ -22,7 +22,8 @@ if __package__ in (None, ""):  # run as a script, as the README shows
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ep24_merge_lab import curation, export, sources
-from ep24_merge_lab.model import CATEGORIES
+from ep24_merge_lab.model import CATEGORIES, LabelStat
+from ep24_merge_lab.registry import Registry
 from ep24_merge_lab.similarity import RULES
 
 
@@ -108,6 +109,21 @@ def _run(args: argparse.Namespace) -> int:
     }
 
     pooled = sources.extract(loaded, category=args.category)
+
+    registry_info: dict[str, object] = {"pinned": False}
+    registry_path = getattr(args, "registry", "") or ""
+    if not registry_path and getattr(args, "require_registry", False):
+        raise SystemExit("--require-registry was given but --registry was not")
+    if registry_path:
+        registry = Registry.load(registry_path)
+        applied = _apply_registry(pooled, registry, loaded)
+        registry_info = {
+            "pinned": True,
+            "path": str(registry_path),
+            "version": registry.version,
+            "entries": len(registry.entries),
+            "labels_rewritten": applied,
+        }
     out_dir = Path(args.out).expanduser() if args.out else None
     decisions = curation.load_decisions(out_dir / "decisions.jsonl") if out_dir else []
     results = {}
@@ -139,9 +155,52 @@ def _run(args: argparse.Namespace) -> int:
         rule_overrides=rules,
         manifest_inputs=manifest_inputs,
         profile_digest=sources.file_digest(profile_path),
+        registry=registry_info,
     )
     print(json.dumps({"run": str(run_dir), "summary": summary}, indent=2, sort_keys=True))
     return 0
+
+
+def _apply_registry(
+    pooled: dict[str, list[LabelStat]],
+    registry: Registry,
+    loaded: list[sources.Source],
+) -> int:
+    """Rewrite labels through the shared registry before anything is clustered.
+
+    The registry is the authority: a mapping a human approved, or that reviewers settled, must reach
+    the canonical tables without the similarity rules rediscovering it. Labels it does not mention keep
+    their spelling and stay eligible for review.
+    """
+    single_source = loaded[0].name if len(loaded) == 1 else ""
+    rewritten = 0
+    for category, stats in pooled.items():
+        regrouped: dict[tuple[str, str], LabelStat] = {}
+        for stat in stats:
+            country = stat.countries[0] if len(stat.countries) == 1 else ""
+            canonical = registry.map_label(category, stat.label, country=country, source=single_source)
+            if canonical != stat.label:
+                rewritten += 1
+                stat = LabelStat(
+                    label=canonical,
+                    count=stat.count,
+                    countries=stat.countries,
+                    polarity=stat.polarity,
+                )
+            key = (stat.polarity, stat.label)
+            existing = regrouped.get(key)
+            regrouped[key] = (
+                stat
+                if existing is None
+                else LabelStat(
+                    label=existing.label,
+                    count=existing.count + stat.count,
+                    countries=tuple(sorted(set(existing.countries) | set(stat.countries))),
+                    polarity=existing.polarity,
+                )
+            )
+        pooled[category] = sorted(regrouped.values(), key=lambda item: (-item.count, item.label))
+    return rewritten
 
 
 def _decide(args: argparse.Namespace) -> int:
@@ -279,6 +338,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--min-auto", type=float, default=None, help="override the auto-merge score")
     run.add_argument("--review", type=float, default=None, help="override the review-candidate score")
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument("--registry", default="", help="shared merge registry (jsonl) to apply and record")
+    run.add_argument(
+        "--require-registry",
+        action="store_true",
+        help="fail instead of running unpinned when --registry is not given",
+    )
     run.set_defaults(func=_run)
 
     export_cmd = subparsers.add_parser("export", help="freeze the curated mapping into a version")
