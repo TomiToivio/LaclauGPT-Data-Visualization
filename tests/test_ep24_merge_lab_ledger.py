@@ -231,3 +231,55 @@ def test_a_sentiment_decision_covers_every_polarity(tmp_path: Path) -> None:
     ]
     result = _ledger(tmp_path / "l.jsonl", reviews).adjudicate()
     assert result.approved[0].polarity == "*"
+
+
+# ------------------------------------------------------------------ human decisions (#315)
+
+def _human_review(label_id: str, *, reviewer: str = "tomi", session: str = "merge-lab/7f3c2a",
+                  decision: str = "merge", canonical: str = "European Union") -> object:
+    return Review(
+        batch_id="batch-01",
+        label_id=label_id,
+        category="sentiment",
+        label="european union",
+        reviewer=reviewer,
+        decision=decision,
+        canonical=canonical,
+        wiki_url="https://en.wikipedia.org/wiki/European_Union",
+        wiki_title="European Union",
+        polarity="positive",
+        evidence=("https://en.wikipedia.org/wiki/European_Union",),
+        confidence=1.0,
+        snapshot_sha256="e5c7c6ffed78",
+        created_at="2026-11-24T20:10:00+00:00",
+        kind="human",
+        attested_session=session,
+    )
+
+
+def test_one_attested_human_decision_settles_a_label_alone(tmp_path: Path) -> None:
+    """Owner instruction 2026-11-24: no three AI votes are required for a human decision."""
+    book = _ledger(tmp_path / "l.jsonl", [_human_review("sentiment:eu|positive")])
+    result = book.adjudicate(trusted={"merge-lab/7f3c2a": "tomi"})
+    assert [entry.canonical for entry in result.approved] == ["European Union"]
+    entry = result.approved[0]
+    assert entry.approval == "human"
+    assert entry.human_review.session == "merge-lab/7f3c2a"
+    assert entry.validate() == []
+    assert not result.incomplete
+
+
+def test_a_human_decision_without_an_attested_session_is_not_applied(tmp_path: Path) -> None:
+    book = _ledger(tmp_path / "l.jsonl", [_human_review("sentiment:eu|positive", session="forged")])
+    result = book.adjudicate(trusted={"merge-lab/7f3c2a": "tomi"})
+    assert not result.approved
+    assert any("attested" in item["reason"] for item in result.incomplete)
+
+
+def test_one_ai_vote_is_still_not_enough(tmp_path: Path) -> None:
+    review = _human_review("sentiment:eu|positive")
+    review = Review(**{**review.as_json(), "kind": "ai", "attested_session": ""})
+    book = _ledger(tmp_path / "l.jsonl", [review])
+    result = book.adjudicate(trusted={"merge-lab/7f3c2a": "tomi"})
+    assert not result.approved
+    assert any("required reviews" in item["reason"] for item in result.incomplete)
