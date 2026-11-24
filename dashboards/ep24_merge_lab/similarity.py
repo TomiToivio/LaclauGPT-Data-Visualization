@@ -1,0 +1,440 @@
+"""Category-specific matching rules and the clustering that applies them (#300).
+
+The hard part of label merging is not string distance, it is that the same distance means
+different things in different categories:
+
+* ``Petteri Orpo`` / ``PM Orpo`` / ``Orpo`` are one person — but ``Orpo`` is also how you name
+  whichever Orpo the corpus happens to contain, so a bare surname merges only when exactly one
+  full name in the corpus could be meant. Otherwise it is a review candidate.
+* ``Social Europe`` and ``Arguments for Europe`` share the word *Europe* and are different
+  themes. Themes and topics therefore need token-set near-equality, not containment.
+* ``good housing policy`` under *positive* and under *negative* is one phrase with two meanings.
+  Polarity is part of the identity, so sentiment never merges across it.
+
+Everything returns explicit ``Cluster`` / ``ReviewCandidate`` records: a merge the script is not
+sure about is never applied silently.
+"""
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from itertools import combinations
+
+from .model import Cluster, LabelStat, MergeResult, ReviewCandidate
+from .normalization import Normalized, normalize_label
+
+#: Above this many labels, a shared token says nothing and only costs comparisons.
+MAX_BUCKET = 150
+
+#: How many alternatives one review row may show. More than this is a search result, not a choice.
+MAX_ALTERNATIVES = 4
+
+
+@dataclass(frozen=True)
+class CategoryRule:
+    """How one category decides that two labels are the same thing."""
+
+    name: str
+    strip_titles: bool = False
+    strip_legal_suffixes: bool = False
+    #: Score at or above which two labels may be joined automatically.
+    auto_merge: float = 0.90
+    #: Score at or above which a pair is worth a researcher's attention.
+    review: float = 0.75
+    #: Whether a one-token label may join the single full name that contains it.
+    surname_merge: bool = False
+    #: Containment counts as identity (person/org) or not (theme/topic/sentiment).
+    containment_is_identity: bool = True
+    #: How many extra words a containing label may add and still be the same thing: one covers
+    #: "the European Union" and a middle name, not "European Union and its member states".
+    containment_slack: int = 1
+    #: Whether those extra words may be content words. True for people (a middle name is not
+    #: optional information), false for organisations: "European Union parliament" is a different
+    #: referent, not another spelling of the union.
+    containment_allows_content: bool = False
+
+    def normalize(self, label: str) -> Normalized:
+        return normalize_label(
+            label,
+            strip_titles=self.strip_titles,
+            strip_legal_suffixes=self.strip_legal_suffixes,
+        )
+
+
+#: The five categories of #300. The thresholds are deliberately conservative: a wrong merge
+#: silently corrupts every count downstream, while a missed merge costs one review card.
+RULES: dict[str, CategoryRule] = {
+    "person": CategoryRule(
+        name="person",
+        strip_titles=True,
+        auto_merge=0.90,
+        review=0.80,
+        surname_merge=True,
+        containment_allows_content=True,
+    ),
+    "entity": CategoryRule(
+        name="entity",
+        strip_legal_suffixes=True,
+        auto_merge=0.92,
+        review=0.85,
+        surname_merge=False,
+    ),
+    "theme": CategoryRule(
+        name="theme",
+        auto_merge=0.90,
+        review=0.82,
+        containment_is_identity=False,
+    ),
+    "topic": CategoryRule(
+        name="topic",
+        auto_merge=0.90,
+        review=0.82,
+        containment_is_identity=False,
+    ),
+    "sentiment": CategoryRule(
+        name="sentiment",
+        auto_merge=0.92,
+        review=0.85,
+        containment_is_identity=False,
+    ),
+}
+
+
+def _ratio(left: str, right: str) -> float:
+    return SequenceMatcher(a=left, b=right, autojunk=False).ratio()
+
+
+def similarity(left: Normalized, right: Normalized, rule: CategoryRule) -> tuple[float, str]:
+    """Score two labels for *this* category, and name the relation that produced the score."""
+    if not left.core_tokens or not right.core_tokens:
+        return 0.0, "empty"
+    if left.key == right.key:
+        # Same words, possibly another order ("Orpo Petteri"). The only relation that is
+        # identity by itself.
+        return 1.0, "token-set"
+    left_set, right_set = set(left.core_tokens), set(right.core_tokens)
+    if rule.containment_is_identity and (left_set < right_set or right_set < left_set):
+        shorter, longer = (left, right) if len(left.core_tokens) < len(right.core_tokens) else (
+            right,
+            left,
+        )
+        # Containment is only identity when the shorter label is *the same phrase* with words
+        # added: contiguous, and few. "European Union" is inside "European Broadcasting Union
+        # (EBU)" as a set of tokens but not as a phrase, and merging those two renamed 3 885
+        # occurrences of one entity to the other.
+        extras = [token for token in longer.core_tokens if token not in set(shorter.core_tokens)]
+        if (
+            _contiguous_in(shorter.core_tokens, longer.core_tokens)
+            and len(extras) <= rule.containment_slack
+            and (rule.containment_allows_content or _extras_are_neutral(extras, shorter.core_tokens))
+        ):
+            # "orpo" inside "petteri orpo": strong evidence, but the caller has to establish that
+            # only one such full name exists before this may merge (see `_surname_pair_ok`).
+            return (0.93, "surname") if len(shorter.core_tokens) == 1 else (0.94, "containment")
+    # Themes, topics and sentiment targets: near-equality, never containment — "Europe" is a
+    # shared word, not a shared meaning.
+    return _ratio(left.core, right.core), "ratio"
+
+
+#: Words that add no referent: an article or a conjunction around a name is the same name.
+ARTICLES: frozenset[str] = frozenset({"the", "a", "an", "of", "and", "for", "in", "on", "at", "to"})
+
+
+def _extras_are_neutral(extras: list[str], base: tuple[str, ...]) -> bool:
+    """Are the added words articles, or an acronym of what they are attached to?
+
+    ``EU`` is an acronym of *European Union*, so "EU European Union" is one entity; *parliament*
+    is a content word and makes "European Union parliament" a different referent.
+    """
+    initials = "".join(token[0] for token in base)
+    for token in extras:
+        if token in ARTICLES:
+            continue
+        if len(token) <= len(initials) and initials.startswith(token):
+            continue
+        return False
+    return True
+
+
+def _contiguous_in(shorter: tuple[str, ...], longer: tuple[str, ...]) -> bool:
+    """Is ``shorter`` one unbroken run of words inside ``longer``?"""
+    span = len(shorter)
+    return any(
+        longer[index : index + span] == shorter
+        for index in range(len(longer) - span + 1)
+    )
+
+
+def _choose_canonical(members: list[Normalized], counts: dict[str, int]) -> Normalized:
+    """The most specific spelling, then the more frequent one, then A→Z.
+
+    Specificity first is deliberate: a cluster of *Orpo*, *PM Orpo* and *Petteri Orpo* must be
+    labelled with the full name even when the bare surname is the most common spelling in the
+    corpus — the canonical label is what a reader sees, and the surname is the lossy form.
+    Organisations are unaffected: legal suffixes are stripped before this comparison, so
+    *Fortum Oyj* and *Fortum* carry the same core length and frequency decides.
+    """
+    multi_token = [item for item in members if len(item.core_tokens) > 1]
+    single_token = [item for item in members if len(item.core_tokens) <= 1]
+    # A full name beats a bare surname that was folded into it; among equals, frequency decides,
+    # because that is the spelling the corpus (and therefore the reader) actually uses.
+    pool = multi_token if (multi_token and single_token) else members
+    return max(
+        pool,
+        key=lambda item: (counts.get(item.raw, 0), len(item.core_tokens), item.raw.casefold()),
+    )
+
+
+def _surname_targets(entries: list[Normalized]) -> dict[str, set[str]]:
+    """For each one-token core, the multi-token cores that contain it.
+
+    ``{"orpo": {"petteri orpo"}}`` means a bare *Orpo* can be resolved. Two entries mean the
+    corpus has two Orpos and the bare surname is genuinely ambiguous.
+    """
+    targets: dict[str, set[str]] = defaultdict(set)
+    for entry in entries:
+        if len(entry.core_tokens) > 1:
+            for token in entry.core_tokens:
+                targets[token].add(entry.core)
+    return targets
+
+
+def _surname_pair_ok(
+    canonical: Normalized,
+    member: Normalized,
+    rule: CategoryRule,
+    surname_targets: dict[str, set[str]],
+) -> bool:
+    """May a bare surname join this full name, given what else the corpus contains?"""
+    if not rule.surname_merge or len(canonical.core_tokens) == len(member.core_tokens):
+        return False
+    shorter, longer = (
+        (canonical, member)
+        if len(canonical.core_tokens) < len(member.core_tokens)
+        else (member, canonical)
+    )
+    if len(shorter.core_tokens) != 1:
+        return False
+    if not set(shorter.core_tokens) < set(longer.core_tokens):
+        return False
+    # Exactly one full name in the corpus answers to this token: context confirms the person.
+    return len(surname_targets.get(shorter.core, set())) == 1
+
+
+class UnionFind:
+    """Small union-find with deterministic merge order, so a re-run is byte-identical."""
+
+    def __init__(self, items: list[str]) -> None:
+        self.parent = {item: item for item in items}
+
+    def find(self, item: str) -> str:
+        root = item
+        while self.parent[root] != root:
+            root = self.parent[root]
+        while self.parent[item] != root:
+            self.parent[item], item = root, self.parent[item]
+        return root
+
+    def union(self, left: str, right: str) -> None:
+        left_root, right_root = self.find(left), self.find(right)
+        if left_root != right_root:
+            first, second = sorted((left_root, right_root))
+            self.parent[second] = first
+
+    def groups(self) -> dict[str, list[str]]:
+        grouped: dict[str, list[str]] = defaultdict(list)
+        for item in self.parent:
+            grouped[self.find(item)].append(item)
+        return grouped
+
+
+def resolve(
+    stats: list[LabelStat],
+    rule: CategoryRule,
+    *,
+    forced: list[tuple[str, list[str]]] | None = None,
+    blocked: set[frozenset[str]] | None = None,
+) -> MergeResult:
+    """Cluster one category's labels, applying researcher decisions first.
+
+    ``forced`` is a list of ``(canonical, members)`` from the decision log; ``blocked`` holds
+    label pairs a researcher explicitly kept apart. Both survive re-runs, which is what makes
+    the run resumable without losing manual work.
+    """
+    forced = forced or []
+    blocked = blocked or set()
+    if not stats:
+        return MergeResult()
+
+    normalized = {stat.label: rule.normalize(stat.label) for stat in stats}
+    counts = {stat.label: stat.count for stat in stats}
+    entries = sorted(normalized.values(), key=lambda item: item.raw.casefold())
+    surname_targets = _surname_targets(entries) if rule.surname_merge else {}
+
+    uf = UnionFind([entry.raw for entry in entries])
+    merged_pairs: set[frozenset[str]] = set()
+    #: Pairs a researcher put together. The transitivity guard must not take them apart again:
+    #: a decision is not a similarity score.
+    forced_pairs: set[frozenset[str]] = set()
+    #: Member -> the name the researcher chose for its cluster.
+    forced_canonical: dict[str, str] = {}
+    for canonical, members in forced:
+        for label in {canonical, *members}:
+            if label in normalized:
+                forced_canonical[label] = canonical
+        for left, right in combinations(sorted({canonical, *members}), 2):
+            if left in normalized and right in normalized:
+                forced_pairs.add(frozenset((left, right)))
+
+    # Blocking: index every label under each of its tokens, so "orpo" meets "petteri orpo"
+    # without comparing the whole corpus pairwise.
+    buckets: dict[str, list[str]] = defaultdict(list)
+    for entry in entries:
+        for token in set(entry.core_tokens):
+            buckets[token].append(entry.raw)
+    # A token carried by hundreds of labels ("the", "party") is not a blocking key: it would make
+    # the block quadratic. Such labels still meet through any other token they share.
+    buckets = {token: labels for token, labels in buckets.items() if len(labels) <= MAX_BUCKET}
+
+    scored: dict[frozenset[str], tuple[float, str]] = {}
+
+    def score_pair(left: str, right: str) -> tuple[float, str]:
+        pair = frozenset((left, right))
+        if pair not in scored:
+            scored[pair] = similarity(normalized[left], normalized[right], rule)
+        return scored[pair]
+
+    for members in buckets.values():
+        for left, right in combinations(sorted(set(members)), 2):
+            pair = frozenset((left, right))
+            if pair in merged_pairs or pair in blocked:
+                continue
+            left_entry, right_entry = normalized[left], normalized[right]
+            score, relation = score_pair(left, right)
+            if score < rule.auto_merge:
+                continue
+            if relation == "surname" and not _surname_pair_ok(
+                left_entry, right_entry, rule, surname_targets
+            ):
+                continue
+            uf.union(left, right)
+            merged_pairs.add(pair)
+
+    # Forced clusters win over whatever the matcher decided.
+    for canonical, members in forced:
+        present = [member for member in members if member in normalized]
+        if len(present) < 2:
+            continue
+        for member in present[1:]:
+            uf.union(present[0], member)
+        if canonical in normalized:
+            uf.union(present[0], canonical)
+
+    clusters: list[Cluster] = []
+    singletons: list[str] = []
+
+    for _, members in sorted(uf.groups().items(), key=lambda item: item[0].casefold()):
+        member_entries = [normalized[member] for member in members]
+        if len(member_entries) == 1:
+            singletons.append(member_entries[0].raw)
+            continue
+        canonical_entry = _choose_canonical(member_entries, counts)
+        # A researcher who merged these labels also said what to call the result. Their name
+        # wins over the frequency/specificity rule, which is what "canonical" means here.
+        decided = next((forced_canonical[item] for item in members if item in forced_canonical), "")
+        if decided and decided in normalized:
+            canonical_entry = normalized[decided]
+        kept = [canonical_entry]
+        dropped: list[str] = []
+        scores = [1.0]
+        methods: set[str] = set()
+        # Transitivity guard: a member joins only if it is close to the chosen canonical, not
+        # merely close to some other member. A~B and B~C must not drag A and C together.
+        for entry in member_entries:
+            if entry is canonical_entry:
+                continue
+            score, relation = similarity(canonical_entry, entry, rule)
+            forced_here = frozenset((canonical_entry.raw, entry.raw)) in forced_pairs
+            if forced_here:
+                methods.add("forced")
+            if forced_here or score >= rule.auto_merge or _surname_pair_ok(
+                canonical_entry, entry, rule, surname_targets
+            ):
+                kept.append(entry)
+                scores.append(score)
+                methods.add(relation)
+            else:
+                dropped.append(entry.raw)
+        if len(kept) == 1:
+            singletons.extend([canonical_entry.raw, *dropped])
+            continue
+        member_names = sorted(entry.raw for entry in kept)
+        clusters.append(
+            Cluster(
+                canonical=canonical_entry.raw,
+                members=tuple(member_names),
+                confidence=min(scores),
+                method="+".join(sorted(methods)) or "canonical",
+                count=sum(counts.get(name, 0) for name in member_names),
+            )
+        )
+        singletons.extend(dropped)
+
+    # One row per label, not one per pair: a researcher judges a label, and a queue of 20 000
+    # pairs is not a queue. Alternatives are ranked, and only the closest few are kept.
+    alternatives: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    reasons: dict[str, str] = {}
+
+    def note(label: str, other: str, score: float, reason: str) -> None:
+        alternatives[label].append((other, score))
+        reasons.setdefault(label, reason)
+
+    # The same blocking as above: only labels that share a token can be confused, so the
+    # candidate list stays linear in the corpus rather than quadratic.
+    candidate_pairs: set[frozenset[str]] = set()
+    for members in buckets.values():
+        for left, right in combinations(sorted(set(members)), 2):
+            candidate_pairs.add(frozenset((left, right)))
+
+    for pair in sorted(candidate_pairs, key=lambda item: sorted(item)):
+        left, right = sorted(pair)
+        if pair in merged_pairs:
+            continue
+        left_entry, right_entry = normalized[left], normalized[right]
+        score, relation = score_pair(left, right)
+        if pair in blocked:
+            note(left, right, 0.0, "kept apart by a researcher decision")
+            continue
+        if relation == "surname" and not _surname_pair_ok(
+            left_entry, right_entry, rule, surname_targets
+        ):
+            # "Orpo" would merge on score alone; context says there is more than one Orpo.
+            token = left_entry.core if len(left_entry.core_tokens) == 1 else right_entry.core
+            targets = sorted(surname_targets.get(token, set()))
+            note(
+                left,
+                right,
+                score,
+                f"bare surname {token!r} matches {len(targets)} full names: " + ", ".join(targets),
+            )
+            continue
+        if rule.review <= score < rule.auto_merge:
+            note(
+                left,
+                right,
+                score,
+                f"score {score:.3f} is below the {rule.auto_merge:.2f} auto-merge threshold",
+            )
+
+    candidates = [
+        ReviewCandidate(
+            label=label,
+            alternatives=tuple(sorted(options, key=lambda item: (-item[1], item[0]))[:MAX_ALTERNATIVES]),
+            reason=reasons[label],
+        )
+        for label, options in sorted(alternatives.items())
+        if options
+    ]
+    candidates.sort(key=lambda candidate: (-candidate.alternatives[0][1], candidate.label))
+    return MergeResult(clusters=clusters, candidates=candidates, singletons=sorted(singletons))
