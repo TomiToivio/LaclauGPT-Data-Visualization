@@ -48,6 +48,35 @@ def _inventory(args: argparse.Namespace) -> int:
     return 0
 
 
+def _freeze(args: argparse.Namespace) -> int:
+    """Hash the input inventory of a run and write it beside that run (#311).
+
+    Read-only with respect to the corpus: it re-hashes what the run recorded, counts what was
+    reviewed, and writes one document. A changed or missing file is reported in `integrity`, never
+    repaired, because a freeze exists to make exactly that impossible to overlook.
+    """
+    from ep24_merge_lab import freeze as freeze_mod
+
+    profile_path = Path(args.profile).expanduser()
+    curation = Path(args.out).expanduser()
+    run_dir = Path(args.run).expanduser()
+    if not run_dir.is_absolute():
+        run_dir = curation / "runs" / str(args.run)
+    if not run_dir.is_dir():
+        print(f"no such run directory: {run_dir}", file=sys.stderr)
+        return 2
+
+    document = freeze_mod.freeze(
+        profile=_profile(args),
+        profile_path=profile_path,
+        run_dir=run_dir,
+    )
+    target = freeze_mod.write(document, run_dir / "inventory.json")
+    print(f"wrote {target}")
+    print(freeze_mod.summarize(document))
+    return 0 if (document.get("integrity") or {}).get("frozen") else 1
+
+
 def _run(args: argparse.Namespace) -> int:
     profile_path = Path(args.profile).expanduser()
     loaded = _profile(args)
@@ -232,6 +261,15 @@ def build_parser() -> argparse.ArgumentParser:
     inventory.add_argument("--root", default="", help="resolve relative paths in the profile")
     inventory.add_argument("--json", action="store_true")
     inventory.set_defaults(func=_inventory)
+
+    freeze_cmd = subparsers.add_parser(
+        "freeze", help="hash a run's input inventory and state the review obligation (#311)"
+    )
+    freeze_cmd.add_argument("--profile", required=True)
+    freeze_cmd.add_argument("--root", default="")
+    freeze_cmd.add_argument("--out", required=True, help="curation directory (runs/ live beneath it)")
+    freeze_cmd.add_argument("--run", required=True, help="run id under runs/, or a path to one")
+    freeze_cmd.set_defaults(func=_freeze)
 
     run = subparsers.add_parser("run", help="extract, merge and write a versioned run")
     run.add_argument("--profile", required=True)
