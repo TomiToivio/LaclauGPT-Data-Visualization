@@ -304,3 +304,37 @@ def test_a_second_run_does_not_overwrite_the_first(tmp_path: Path):
     second = curation.write_run(out, results=results)
     assert first != second
     assert first.exists() and second.exists()
+
+
+def test_a_semicolon_separated_person_cell_is_split_not_kept_whole():
+    """The pledge table's persons column uses ";" while its neighbours use "," (#300)."""
+    from ep24_merge_lab.sources import split_labels
+
+    assert split_labels("javier milei; santiago abascal", ";") == ["javier milei", "santiago abascal"]
+
+
+def test_one_column_may_mix_separators():
+    """Themes mix ";" and "," in the same column; neither may survive inside a label."""
+    from ep24_merge_lab.sources import split_labels
+
+    assert split_labels("voters and voting; diversity and inclusion", ";,") == [
+        "voters and voting",
+        "diversity and inclusion",
+    ]
+    assert split_labels("voters and voting, diversity and inclusion", ";,") == [
+        "voters and voting",
+        "diversity and inclusion",
+    ]
+    assert split_labels("climate policy;energy, migration", ";,") == [
+        "climate policy",
+        "energy",
+        "migration",
+    ]
+
+
+def test_a_separator_free_label_is_unchanged_by_the_wider_split():
+    from ep24_merge_lab.sources import split_labels
+
+    assert split_labels("pedro sánchez", ";,") == ["pedro sánchez"]
+    assert split_labels("", ";,") == []
+    assert split_labels("nan", ";,") == []
