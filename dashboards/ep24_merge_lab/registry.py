@@ -146,7 +146,7 @@ def now() -> str:
 class Registry:
     """A loaded registry: entries in file order, plus the lookups the pipelines need."""
 
-    def __init__(self, entries: Iterable[RegistryEntry], *, source: Path | None = None) -> None:
+    def __init__(self, entries: Iterable[RegistryEntry] = (), *, source: Path | None = None) -> None:
         self.entries: list[RegistryEntry] = list(entries)
         self.source = source
         self._latest: dict[str, RegistryEntry] = {}
