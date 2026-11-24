@@ -17,12 +17,52 @@ sure about is never applied silently.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from itertools import combinations
 
 from .model import Cluster, LabelStat, MergeResult, ReviewCandidate
-from .normalization import Normalized, normalize_label
+from .normalization import (
+    Normalized,
+    clean_label,
+    normalize_label,
+    strip_leading_article,
+)
+
+#: Party names the EP24 corpus writes several ways. This is a *curated* list, not a heuristic:
+#: each entry is a decision a researcher could have made by hand, it only applies to entity
+#: labels, and every merge it causes still appears in the review queue and in the exported
+#: mapping. A bare "Christian Democrats" is only the German CDU when the corpus says the mention
+#: is German — the Netherlands, Belgium and others have their own Christian democratic parties.
+PARTY_ALIASES: dict[str, str] = {
+    "true finns": "perussuomalaiset",
+    "finns party": "perussuomalaiset",
+    "the finns party": "perussuomalaiset",
+    "cdu christian democrats": "cdu",
+    "christian democratic union": "cdu",
+    "cdu": "cdu",
+}
+
+GERMAN_COUNTRIES: frozenset[str] = frozenset({"de", "deu", "germany", "deutschland"})
+
+#: How the canonical party names are written. The alias table works on folded text, so without
+#: this "CDU" would come back as "cdu" and every party label would look like a rename.
+PARTY_DISPLAY: dict[str, str] = {
+    "perussuomalaiset": "Perussuomalaiset",
+    "cdu": "CDU",
+}
+
+
+def party_alias(folded: str, countries: tuple[str, ...]) -> str:
+    """The canonical party name for a folded label, or the label unchanged."""
+    if folded in PARTY_ALIASES:
+        return PARTY_ALIASES[folded]
+    if folded == "christian democrats" and countries and all(
+        country.casefold() in GERMAN_COUNTRIES for country in countries
+    ):
+        return "cdu"
+    return folded
+
 
 #: Above this many labels, a shared token says nothing and only costs comparisons.
 MAX_BUCKET = 150
@@ -38,6 +78,9 @@ class CategoryRule:
     name: str
     strip_titles: bool = False
     strip_legal_suffixes: bool = False
+    #: Whether a parenthetical is a gloss to drop ("Union (EBU)") or content to keep
+    #: ("elections (2024)"). True for entities and people only.
+    strip_parentheticals: bool = False
     #: Score at or above which two labels may be joined automatically.
     auto_merge: float = 0.90
     #: Score at or above which a pair is worth a researcher's attention.
@@ -59,6 +102,7 @@ class CategoryRule:
             label,
             strip_titles=self.strip_titles,
             strip_legal_suffixes=self.strip_legal_suffixes,
+            strip_parentheticals=self.strip_parentheticals,
         )
 
 
@@ -68,6 +112,7 @@ RULES: dict[str, CategoryRule] = {
     "person": CategoryRule(
         name="person",
         strip_titles=True,
+        strip_parentheticals=True,
         auto_merge=0.90,
         review=0.80,
         surname_merge=True,
@@ -76,6 +121,7 @@ RULES: dict[str, CategoryRule] = {
     "entity": CategoryRule(
         name="entity",
         strip_legal_suffixes=True,
+        strip_parentheticals=True,
         auto_merge=0.92,
         review=0.85,
         surname_merge=False,
@@ -267,7 +313,21 @@ def resolve(
     if not stats:
         return MergeResult()
 
-    normalized = {stat.label: rule.normalize(stat.label) for stat in stats}
+    def normalize_stat(stat: LabelStat) -> Normalized:
+        entry = rule.normalize(stat.label)
+        if rule.name != "entity":
+            return entry
+        alias = party_alias(entry.folded, stat.countries)
+        if alias != entry.folded:
+            return replace(rule.normalize(alias), raw=entry.raw)
+        return entry
+
+    normalized = {stat.label: normalize_stat(stat) for stat in stats}
+
+    def canonical_name(entry: Normalized) -> str:
+        if rule.name == "entity" and entry.folded in PARTY_DISPLAY:
+            return PARTY_DISPLAY[entry.folded]
+        return clean_label(entry.raw) if rule.strip_parentheticals else strip_leading_article(entry.raw)
     counts = {stat.label: stat.count for stat in stats}
     entries = sorted(normalized.values(), key=lambda item: item.raw.casefold())
     surname_targets = _surname_targets(entries) if rule.surname_merge else {}
@@ -337,7 +397,12 @@ def resolve(
     for _, members in sorted(uf.groups().items(), key=lambda item: item[0].casefold()):
         member_entries = [normalized[member] for member in members]
         if len(member_entries) == 1:
-            singletons.append(member_entries[0].raw)
+            entry = member_entries[0]
+            name = forced_canonical.get(entry.raw, canonical_name(entry))
+            if name != entry.raw and not any(entry.raw in pair for pair in blocked):
+                clusters.append(Cluster(name, (entry.raw,), 1.0, "normalization", counts[entry.raw]))
+            else:
+                singletons.append(entry.raw)
             continue
         canonical_entry = _choose_canonical(member_entries, counts)
         # A researcher who merged these labels also said what to call the result. Their name
@@ -372,7 +437,7 @@ def resolve(
         member_names = sorted(entry.raw for entry in kept)
         clusters.append(
             Cluster(
-                canonical=canonical_entry.raw,
+                canonical=decided or canonical_name(canonical_entry),
                 members=tuple(member_names),
                 confidence=min(scores),
                 method="+".join(sorted(methods)) or "canonical",
