@@ -33,12 +33,14 @@ def oid(field, label, source):
     return digest([field, label, source if identity else None])
 
 
-def source_id(row, path):
+def source_id(row, path, *, record_number=None, snapshot=None):
     if row.get("source_url"):
         return row["source_url"]
     country = row.get("country") or path.stem
     if not (row.get("new_id") or row.get("video_id")):
-        raise ValueError("Expected source_url or legacy new_id")
+        if record_number is None or not snapshot:
+            raise ValueError("Unidentified record needs a pinned snapshot and record number")
+        return json.dumps(["legacy-row", path.name, snapshot, record_number])
     return json.dumps([country, row.get("new_id") or row["video_id"]])
 
 
@@ -46,7 +48,11 @@ def read_rows(path):
     with path.open(encoding="utf-8-sig", newline="") as stream:
         sample = stream.readline()
         stream.seek(0)
-        reader = csv.DictReader(stream, dialect=csv.Sniffer().sniff(sample, delimiters=",;\t"))
+        # A header has no escaped quotes. Sniff only its delimiter so that quoted
+        # transcripts with doubled quotes and embedded newlines remain one record.
+        delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t").delimiter
+        csv.field_size_limit(max(csv.field_size_limit(), 10**9))
+        reader = csv.DictReader(stream, delimiter=delimiter)
         if set(FIELDS) - set(reader.fieldnames or ()):
             raise ValueError(f"Missing legacy columns in {path.name}. Check Git LFS checkout.")
         yield from reader
@@ -59,8 +65,8 @@ def inventory(paths, threshold=0.88, equivalents=None):
         with path.open("rb") as stream:
             inputs[path.name] = (hasher(stream, "sha256") if hasher else
                                  hashlib.sha256(stream.read())).hexdigest()
-        for row in read_rows(path):
-            source = source_id(row, path)
+        for number, row in enumerate(read_rows(path), start=1):
+            source = source_id(row, path, record_number=number, snapshot=inputs[path.name])
             context = row.get("summary_analysis") or ""
             for field, (_, delimiter) in FIELDS.items():
                 for label in (item.strip() for item in row[field].split(delimiter)):
@@ -208,8 +214,8 @@ def curated_rows(path, state):
         if hashlib.sha256(stream.read()).hexdigest() != state["inputs"].get(path.name):
             raise ValueError("Source snapshot checksum mismatch")
     mapping = {k: state["names"][g] for g, keys in state["groups"].items() for k in keys}
-    for row in read_rows(path):
-        source = source_id(row, path)
+    for number, row in enumerate(read_rows(path), start=1):
+        source = source_id(row, path, record_number=number, snapshot=state["inputs"][path.name])
         for field, (_, sep) in FIELDS.items():
             labels = [x.strip() for x in row[field].split(sep)]
             resolved = [mapping.get(oid(field, x, source), x) for x in labels]
