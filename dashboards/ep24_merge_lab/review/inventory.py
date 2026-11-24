@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-INVENTORY_SCHEMA = "ep24.merge_lab.review_inventory/1"
+INVENTORY_SCHEMA = "ep24.merge_lab.review_inventory/2"
 
 csv.field_size_limit(10**9)
 
@@ -38,6 +38,7 @@ class DecisionUnit:
     confidence: float
     method: str
     countries: list[str] = field(default_factory=list)
+    polarity: str = ""
     #: For a candidate: the alternatives the string matcher suggested.
     alternatives: list[str] = field(default_factory=list)
     reason: str = ""
@@ -53,8 +54,8 @@ def _rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def _unit_id(category: str, kind: str, labels: list[str]) -> str:
-    body = json.dumps([category, kind, sorted(labels)], ensure_ascii=False)
+def _unit_id(category: str, kind: str, labels: list[str], polarity: str = "") -> str:
+    body = json.dumps([category, kind, sorted(labels), polarity], ensure_ascii=False)
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
 
 
@@ -66,7 +67,8 @@ def units_from_run(run_dir: Path) -> list[DecisionUnit]:
             members = [item for item in row["members"].split(" | ") if item]
             units.append(
                 DecisionUnit(
-                    unit_id=_unit_id(category, "cluster", members),
+                    unit_id=_unit_id(category, "cluster", members, row.get("polarity", "")),
+                    polarity=row.get("polarity", ""),
                     category=category,
                     kind="cluster",
                     labels=members,
@@ -84,7 +86,8 @@ def units_from_run(run_dir: Path) -> list[DecisionUnit]:
             ]
             units.append(
                 DecisionUnit(
-                    unit_id=_unit_id(category, "candidate", [row["label"], *alternatives]),
+                    unit_id=_unit_id(category, "candidate", [row["label"], *alternatives], row.get("polarity", "")),
+                    polarity=row.get("polarity", ""),
                     category=category,
                     kind="candidate",
                     labels=[row["label"]],
@@ -99,19 +102,24 @@ def units_from_run(run_dir: Path) -> list[DecisionUnit]:
     return units
 
 
+def _validate_units(units: list[DecisionUnit]) -> None:
+    if len({unit.unit_id for unit in units}) != len(units):
+        raise ValueError("Duplicate inventory unit IDs")
+
+
 def freeze(run_dir: Path, out_path: Path, units: list[DecisionUnit]) -> dict[str, Any]:
     """Write the inventory once and return its digest-bearing header."""
     payload = {
         "schema": INVENTORY_SCHEMA,
-        "frozen_at": datetime.now(UTC).isoformat(),
         "base_run": run_dir.name,
         "units": [unit.as_json() for unit in units],
     }
+    _validate_units(units)
     body = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
     digest = hashlib.sha256(body).hexdigest()
     header = {
         "schema": INVENTORY_SCHEMA,
-        "frozen_at": payload["frozen_at"],
+        "frozen_at": datetime.now(UTC).isoformat(),
         "base_run": run_dir.name,
         "digest": digest,
         "counts": {
@@ -134,7 +142,14 @@ def freeze(run_dir: Path, out_path: Path, units: list[DecisionUnit]) -> dict[str
 
 def load_inventory(path: Path) -> tuple[dict[str, Any], list[DecisionUnit]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
+    body = {key: payload[key] for key in ("schema", "base_run", "units")}
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    if payload.get("schema") != INVENTORY_SCHEMA or payload.get("digest") != digest:
+        raise ValueError("Inventory digest or schema mismatch; freeze a new inventory")
     units = [DecisionUnit(**item) for item in payload["units"]]
+    _validate_units(units)
+    if payload.get("total") != len(units):
+        raise ValueError("Inventory total mismatch")
     header = {key: value for key, value in payload.items() if key != "units"}
     return header, units
 
@@ -146,13 +161,13 @@ def attach_countries(units: list[DecisionUnit], pooled: dict[str, list[Any]]) ->
     and a Dutch one is a different party entirely. The run tables do not carry countries, so the
     harness extracts them once and stamps them onto the frozen inventory.
     """
-    by_label: dict[str, set[str]] = {}
-    for stats in pooled.values():
+    by_label: dict[tuple[str, str, str], set[str]] = {}
+    for category, stats in pooled.items():
         for stat in stats:
             if stat.countries:
-                by_label.setdefault(stat.label.casefold(), set()).update(stat.countries)
+                by_label.setdefault((category, stat.label.casefold(), getattr(stat, "polarity", "")), set()).update(stat.countries)
     for unit in units:
         countries: set[str] = set()
         for label in unit.labels:
-            countries.update(by_label.get(label.casefold(), set()))
+            countries.update(by_label.get((unit.category, label.casefold(), unit.polarity), set()))
         unit.countries = sorted(countries)
