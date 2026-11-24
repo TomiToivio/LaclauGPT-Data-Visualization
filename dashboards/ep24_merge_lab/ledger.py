@@ -334,7 +334,7 @@ class Ledger:
                 wiki_url=sample.wiki_url,
                 wikidata_qid=sample.wikidata_qid,
                 fallback_reason=sample.fallback_reason,
-                polarity=polarity_of.get(label_id, sample.polarity),
+                polarity=_polarity_for(sample, polarity_of.get(label_id, sample.polarity)),
                 scope=Scope(),
                 evidence=tuple(dict.fromkeys(item for vote in ordered for item in vote.evidence)),
                 reviewers=tuple(vote.reviewer for vote in ordered),
@@ -352,6 +352,18 @@ class Ledger:
             for label_id, slot in self.coverage().items()
             if slot["review_count"] < min_reviews or slot["mixed_snapshot"]
         ]
+
+
+def _polarity_for(review: Review, stated: str) -> str:
+    """The polarity a decision ranges over.
+
+    A reviewer decides about a sentiment *target* ("european union"), not about whether a text was
+    positive about it, so an unstated polarity means every polarity: "*". The registry then prefers a
+    polarity-specific decision when one exists and falls back to the wildcard otherwise.
+    """
+    if review.category != "sentiment":
+        return stated
+    return stated or "*"
 
 
 def _distinct_canonicals(votes: list[Review]) -> list[str]:

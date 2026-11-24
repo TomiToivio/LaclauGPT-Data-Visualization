@@ -206,10 +206,19 @@ class Registry:
             if entry.category == category
             and entry.alias.strip().casefold() == alias.strip().casefold()
             and entry.scope.matches(country, language, source)
-            and (category != "sentiment" or (bool(polarity) and entry.polarity.casefold() == polarity.casefold()))
+            and (
+                category != "sentiment"
+                or (bool(polarity) and entry.polarity.casefold() in {polarity.casefold(), "*"})
+            )
         ]
         if not candidates:
             return None
+        # A polarity-specific decision beats a wildcard one; "*" only applies when nothing narrower
+        # governs the polarity the caller is actually asking about.
+        if category == "sentiment":
+            exact = [entry for entry in candidates if entry.polarity.casefold() != "*"]
+            if exact:
+                candidates = exact
         specificity = max(sum(bool(part) for part in entry.scope.key()) for entry in candidates)
         best = [entry for entry in candidates if sum(bool(part) for part in entry.scope.key()) == specificity]
         if len({(entry.status, entry.canonical, entry.canonical_id) for entry in best}) != 1:

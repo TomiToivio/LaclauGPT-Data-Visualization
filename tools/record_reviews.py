@@ -94,12 +94,23 @@ def adjudicate(args: argparse.Namespace) -> int:
 
     if args.registry and result.entries:
         registry = Registry.load(args.registry) if Path(args.registry).exists() else Registry()
-        # Never overwrite a human decision: an existing approved entry for the same alias+scope wins.
-        fresh = [
-            entry
-            for entry in result.entries
-            if registry.latest(entry.category, entry.alias) is None
-        ]
+        # A settled decision supersedes a proposal, but must never overwrite another settled decision:
+        # that is where a human's judgement or an earlier adjudication lives.
+        SETTLED = {"approved", "keep_separate"}
+
+        def already_settled(entry) -> bool:
+            current = registry.latest(entry.category, entry.alias)
+            if current is None:
+                current = registry.latest(
+                    entry.category,
+                    entry.alias,
+                    country=entry.scope.country,
+                    language=entry.scope.language,
+                    source=entry.scope.source,
+                )
+            return current is not None and current.status in SETTLED
+
+        fresh = [entry for entry in result.entries if not already_settled(entry)]
         if fresh:
             registry.append(fresh, args.registry)
         print(f"\nwrote {len(fresh)} entries to {args.registry} ({len(result.entries) - len(fresh)} already decided)")

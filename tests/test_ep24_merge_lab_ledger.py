@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "dashboards"))
 
 from ep24_merge_lab.ledger import Ledger, LedgerError, Review
 
+_ROOT = ROOT
 SNAPSHOT = "2faa92812dc8a21a" + "0" * 48
 
 
@@ -184,3 +185,50 @@ def test_a_corrupt_ledger_names_the_bad_line(tmp_path: Path) -> None:
     path.write_text(json.dumps(_review().as_json()) + "\n{broken\n", encoding="utf-8")
     with pytest.raises(LedgerError, match=":2:"):
         Ledger.load(path)
+
+
+def test_a_settled_decision_supersedesA_proposal_but_never_another_decision(tmp_path: Path) -> None:
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(_ROOT / "tools"))
+    import record_reviews as rr
+
+    ledger_path = tmp_path / "ledger.jsonl"
+    registry_path = tmp_path / "registry.jsonl"
+    ledger = Ledger()
+    ledger.append([_review(reviewer=f"{name}/run") for name in "abc"], ledger_path)
+
+    from ep24_merge_lab.registry import Registry, RegistryEntry
+    Registry(entries=[RegistryEntry(
+        category="entity", alias="true finns", canonical="Finns Party",
+        status="proposed", reviewers=("someone/single-pass",), evidence=("proposal",),
+    )]).append(_entries := [RegistryEntry(
+        category="entity", alias="true finns", canonical="Finns Party",
+        status="proposed", reviewers=("someone/single-pass",), evidence=("proposal",),
+    )], registry_path)
+
+    rr.main(["adjudicate", "--ledger", str(ledger_path), "--registry", str(registry_path), "--min-reviews", "3"])
+    after = Registry.load(registry_path)
+    assert after.latest("entity", "true finns").status == "approved"
+
+    # A second adjudication must not append a duplicate approval.
+    before = registry_path.read_text(encoding="utf-8").count("\n")
+    rr.main(["adjudicate", "--ledger", str(ledger_path), "--registry", str(registry_path), "--min-reviews", "3"])
+    assert registry_path.read_text(encoding="utf-8").count("\n") == before
+
+
+def test_a_sentiment_decision_covers_every_polarity(tmp_path: Path) -> None:
+    """Reviewers judge the target, not the polarity, so the record must say "*" and not be rejected."""
+    reviews = [
+        _review(
+            reviewer=f"{name}/run",
+            label_id="sentiment:european union",
+            category="sentiment",
+            label="european union",
+            canonical="European Union",
+        )
+        for name in "abc"
+    ]
+    result = _ledger(tmp_path / "l.jsonl", reviews).adjudicate()
+    assert result.approved[0].polarity == "*"
