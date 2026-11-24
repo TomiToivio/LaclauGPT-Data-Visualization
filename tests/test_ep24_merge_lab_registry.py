@@ -192,3 +192,27 @@ def test_a_proposal_does_not_rewrite_output(tmp_path: Path) -> None:
     registry = Registry.load(path)
     assert registry.map_label("entity", "true finns") == "true finns"
     assert registry.latest("entity", "true finns") is not None  # still visible to a reviewer
+
+
+def test_sentiment_resolution_is_polarity_specific(tmp_path: Path) -> None:
+    rows = [
+        _entry(category="sentiment", alias="policy", canonical="Policy support", polarity="positive"),
+        _entry(category="sentiment", alias="policy", canonical="Policy criticism", polarity="negative"),
+    ]
+    registry = Registry.load(_write(tmp_path / "registry.jsonl", rows))
+    assert registry.map_label("sentiment", "policy", polarity="positive") == "Policy support"
+    assert registry.map_label("sentiment", "policy", polarity="negative") == "Policy criticism"
+    assert registry.map_label("sentiment", "policy") == "policy"
+
+
+def test_conflicting_scopes_do_not_guess(tmp_path: Path) -> None:
+    rows = [
+        _entry(alias="party", canonical="One", scope=Scope(country="FI")),
+        _entry(alias="party", canonical="Two", scope=Scope(language="fi")),
+    ]
+    registry = Registry.load(_write(tmp_path / "registry.jsonl", rows))
+    assert registry.map_label("entity", "party", country="FI", language="fi") == "party"
+
+
+def test_approval_requires_three_distinct_reviewers() -> None:
+    assert _entry(reviewers=("a", "a", "b")).validate()

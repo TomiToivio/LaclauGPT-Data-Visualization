@@ -162,3 +162,25 @@ class TestDigest:
         document = _freeze(private, run_dir)
         target = freeze.write(document, run_dir / "inventory.json")
         assert json.loads(target.read_text(encoding="utf-8"))["digest"] == document["digest"]
+
+
+def test_pooled_counts_include_people_without_double_counting(tmp_path: Path) -> None:
+    records = tmp_path / "records.csv"
+    records.write_text("entities\nAlpha\n", encoding="utf-8")
+    codebook = tmp_path / "codebook.csv"
+    codebook.write_text("label,entity_type,aliases\nExample Person,person,\nAlpha,organization,\n", encoding="utf-8")
+    profile = [
+        sources.Source("records", "records", records, lists={"entity": [sources.ListColumn("entities")]}),
+        sources.Source("codebook", "entity_codebook", codebook),
+    ]
+    document = freeze.freeze(profile=profile, profile_path=None, run_dir=tmp_path)
+    assert document["categories"]["entity"]["labels"] == 1
+    assert document["categories"]["person"]["labels"] == 1
+    assert document["workload"]["reviews_required_total"] == 6
+
+
+def test_changed_profile_breaks_freeze(tmp_path: Path) -> None:
+    private, run_dir = _run(tmp_path)
+    with (private / "profile.yaml").open("a", encoding="utf-8") as handle:
+        handle.write("\n# changed\n")
+    assert _freeze(private, run_dir)["integrity"]["frozen"] is False
