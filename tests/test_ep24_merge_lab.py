@@ -416,7 +416,6 @@ def test_a_repeated_or_organisational_qualifier_on_a_short_name_is_dropped():
 
 
 def test_collapsed_labels_pool_their_counts():
-    import csv as _csv
 
     from ep24_merge_lab import sources
 
