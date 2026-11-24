@@ -36,6 +36,7 @@ __all__ = [
     "CATEGORIES",
     "Candidate",
     "CurationSettings",
+    "cards",
     "curate",
     "normalise",
     "read_labels",
@@ -83,6 +84,18 @@ SENTIMENT_FORMS: dict[str, str] = {
 POLARITY = {"positive": 1, "neutral": 0, "negative": -1}
 
 SEPARATORS = re.compile(r"\s*[,;|/&]\s*")
+
+#: Column names seen for each category across the legacy exports, first match wins.
+COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
+    "persons": ("persons", "person", "new_entity", "NER_politicians"),
+    "entities": ("entities", "entity", "NER_entities"),
+    "themes": ("themes", "theme", "new_theme", "political_themes"),
+    "topics": ("topics", "topic", "lda_topic"),
+    "sentiments": ("sentiments", "sentiment", "polarity"),
+}
+
+#: EP24 exports often carry polarity as three columns rather than as labels.
+SENTIMENT_COLUMNS = ("positive", "neutral", "negative")
 
 
 @dataclass(frozen=True)
@@ -136,6 +149,7 @@ def read_labels(path: Path, category: str, *, delimiter: str = ",") -> Counter[s
 
     The file is opened read-only: curation never edits its source.
     """
+    path = Path(path)
     counts: Counter[str] = Counter()
     suffix = path.suffix.lower()
     if suffix in {".json", ".jsonl"}:
@@ -153,8 +167,23 @@ def read_labels(path: Path, category: str, *, delimiter: str = ",") -> Counter[s
     import csv
 
     with path.open(encoding="utf-8", newline="") as handle:
-        for row in csv.DictReader(handle, delimiter=delimiter):
-            counts.update(_cell_labels(row.get(category)))
+        rows = list(csv.DictReader(handle, delimiter=delimiter))
+
+    columns = set(rows[0].keys()) if rows else set()
+    column = next((name for name in COLUMN_ALIASES.get(category, (category,)) if name in columns), None)
+    if column is None and category == "sentiments" and set(SENTIMENT_COLUMNS) <= columns:
+        # Polarity is encoded as columns: one label per non-empty cell. Already canonical, so the
+        # sentiment tab is honest rather than empty.
+        for polarity in SENTIMENT_COLUMNS:
+            present = sum(1 for row in rows if str(row.get(polarity) or "").strip() not in {"", "nan", "none"})
+            if present:
+                counts[polarity] = present
+        return counts
+    if column is None:
+        return counts
+
+    for row in rows:
+        counts.update(_cell_labels(row.get(column)))
     return counts
 
 
@@ -385,6 +414,63 @@ def _apply_decisions(candidates: list[Candidate], decisions: dict[str, object]) 
             )
         out.append(candidate)
     return out
+
+
+def cards(
+    category: str,
+    counts: Counter[str],
+    result: dict[str, object],
+    *,
+    unresolved_limit: int = 60,
+) -> list[dict[str, object]]:
+    """Board cards for one category: proposals first, then confirmed clusters, then loose labels.
+
+    Loose labels are the point. A category where the rule proposed nothing still has labels, and a
+    board that draws only clusters shows an empty tab that reads as "no data".
+    """
+    rows: list[dict[str, object]] = []
+    for row in result["review"]:  # type: ignore[union-attr]
+        if row["category"] != category:
+            continue
+        labels = [item.strip() for item in str(row["candidates"]).split(";") if item.strip()]
+        rows.append({
+            "id": f"review::{row['proposed_canonical']}",
+            "label": row["proposed_canonical"],
+            "aliases": labels,
+            "count": sum(counts.get(label, 0) for label in labels),
+            "confidence": float(row["confidence"]),
+            "status": "review",
+            "rationale": row["rationale"],
+        })
+    for row in result["canonical"]:  # type: ignore[union-attr]
+        if row["category"] != category:
+            continue
+        rows.append({
+            "id": f"merged::{row['canonical']}",
+            "label": row["canonical"],
+            "aliases": [item.strip() for item in str(row["aliases"]).split(";") if item.strip()],
+            "count": int(row["occurrences"]),
+            "confidence": float(row["confidence"]),
+            "status": "merged",
+            "rationale": row["method"],
+        })
+
+    clustered = {label for row in rows for label in row["aliases"]}
+    loose = sorted(
+        ((label, count) for label, count in counts.items() if label not in clustered),
+        key=lambda item: (-item[1], item[0]),
+    )
+    for label, count in loose[:unresolved_limit]:
+        rows.append({
+            "id": f"label::{label}",
+            "label": label,
+            "aliases": [],
+            "count": int(count),
+            "confidence": 1.0,
+            "status": "unresolved",
+            "rationale": "not merged by any rule — drag onto another card to merge by hand",
+        })
+    return sorted(rows, key=lambda row: (-len(row["aliases"]), -int(row["count"])))
 
 
 def curate(

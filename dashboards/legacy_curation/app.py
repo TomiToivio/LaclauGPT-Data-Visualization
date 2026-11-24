@@ -38,6 +38,7 @@ sys.modules[_spec.name] = _legacy  # dataclasses resolves cls.__module__ through
 _spec.loader.exec_module(_legacy)
 
 CATEGORIES = _legacy.CATEGORIES
+build_cards = _legacy.cards
 curate = _legacy.curate
 read_labels = _legacy.read_labels
 
@@ -115,37 +116,6 @@ def _save_decisions(decisions: dict, action: dict) -> None:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def _cards(category: str, counts: dict[str, int], result: dict) -> list[dict]:
-    """Unresolved clusters first — they are the work — then the confirmed ones for context."""
-    cards: list[dict] = []
-    for row in result["review"]:
-        if row["category"] != category:
-            continue
-        labels = [item.strip() for item in str(row["candidates"]).split(";") if item.strip()]
-        cards.append({
-            "id": f"review::{row['proposed_canonical']}",
-            "label": row["proposed_canonical"],
-            "aliases": labels,
-            "count": sum(counts.get(label, 0) for label in labels),
-            "confidence": float(row["confidence"]),
-            "status": "review",
-            "rationale": row["rationale"],
-        })
-    for row in result["canonical"]:
-        if row["category"] != category:
-            continue
-        cards.append({
-            "id": f"merged::{row['canonical']}",
-            "label": row["canonical"],
-            "aliases": [item.strip() for item in str(row["aliases"]).split(";") if item.strip()],
-            "count": int(row["occurrences"]),
-            "confidence": float(row["confidence"]),
-            "status": "merged",
-            "rationale": row["method"],
-        })
-    return sorted(cards, key=lambda card: (-len(card["aliases"]), -card["count"]))
-
-
 def _validate(action: dict, cards: list[dict]) -> tuple[bool, str]:
     """Backend validation: never trust the browser's ids."""
     known = {card["id"] for card in cards}
@@ -198,7 +168,13 @@ def main() -> None:
             if not counts:
                 st.info("No labels for this category in the source.")
                 continue
-            cards = _cards(category, counts, result)
+            cards = build_cards(category, counts, result)
+            loose = sum(1 for card in cards if card["status"] == "unresolved")
+            if loose:
+                st.caption(
+                    f"Showing {loose} unmerged labels of {len(counts)} by frequency, plus every "
+                    "proposed and confirmed cluster. Merged labels are no longer listed individually."
+                )
             action = component(
                 cards=cards,
                 category=category,

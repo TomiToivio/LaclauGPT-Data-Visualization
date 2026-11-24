@@ -12,6 +12,7 @@ from pathlib import Path
 
 from laclaugpt_visualization.legacy_curation import (
     CATEGORIES,
+    cards,
     curate,
     normalise,
     read_labels,
@@ -139,3 +140,51 @@ def test_every_category_is_curated_without_error() -> None:
     assert set(result["stats"]) == set(CATEGORIES)  # type: ignore[arg-type]
     for stats in result["stats"].values():  # type: ignore[union-attr]
         assert stats["distinct_after"] <= stats["labels"]
+
+
+def test_loose_labels_are_drawn_even_when_no_merge_is_proposed() -> None:
+    """A category with nothing to merge still has labels to merge by hand — the tab is not blank."""
+    counts = Counter({"javier milei": 90, "santiago abascal": 40, "ursula von der leyen": 5})
+    result = curate({"persons": counts})
+    board = cards("persons", counts, result)
+    assert {card["status"] for card in board} == {"unresolved"}
+    assert [card["label"] for card in board] == ["javier milei", "santiago abascal", "ursula von der leyen"]
+
+
+def test_a_clustered_label_is_not_repeated_as_a_loose_card() -> None:
+    counts = Counter({"Petteri Orpo": 50, "Orpo": 20, "Kaja Kallas": 10})
+    result = curate({"persons": counts})
+    board = cards("persons", counts, result)
+    merged = [card for card in board if card["status"] == "merged"]
+    assert merged and "Orpo" in merged[0]["aliases"]
+    loose = [card for card in board if card["status"] == "unresolved"]
+    assert [card["label"] for card in loose] == ["Kaja Kallas"]
+
+
+def test_the_loose_list_is_capped_but_ordered_by_frequency() -> None:
+    counts = Counter({f"label {index}": index for index in range(1, 30)})
+    board = cards("topics", counts, curate({"topics": counts}), unresolved_limit=5)
+    assert [card["count"] for card in board] == [29, 28, 27, 26, 25]
+
+
+def test_sentiment_labels_are_read_from_per_polarity_columns(tmp_path: Path) -> None:
+    """EP24 exports encode polarity as three columns; that is still a sentiment category."""
+    source = tmp_path / "export.csv"
+    source.write_text(
+        "positive,neutral,negative\n"
+        '"solidarity, hope",,"fear, anger"\n'
+        '"hope",,"anger"\n'
+        ',,"fear"\n',
+        encoding="utf-8",
+    )
+    counts = read_labels(source, "sentiments")
+    # A polarity with no occurrences anywhere is not a label: only what the data contains.
+    assert counts == Counter({"negative": 3, "positive": 2})
+
+
+def test_a_legacy_column_alias_is_honoured(tmp_path: Path) -> None:
+    """The older exports call persons 'new_entity'; the category must still resolve."""
+    source = tmp_path / "legacy.csv"
+    source.write_text('new_entity,new_theme\n"Kaja Kallas",climate policy\n', encoding="utf-8")
+    assert read_labels(source, "persons") == Counter({"Kaja Kallas": 1})
+    assert read_labels(source, "themes") == Counter({"climate policy": 1})
