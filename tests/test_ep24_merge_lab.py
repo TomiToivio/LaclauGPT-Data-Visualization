@@ -378,3 +378,80 @@ def test_a_separator_free_label_is_unchanged_by_the_wider_split():
     assert split_labels("pedro sánchez", ";,") == ["pedro sánchez"]
     assert split_labels("", ";,") == []
     assert split_labels("nan", ";,") == []
+
+
+# ------------------------------------------------------------------ redundant qualifiers (#300)
+
+def test_an_acronym_qualifier_folds_into_the_party_name():
+    from ep24_merge_lab.normalization import redundant_qualifier
+
+    assert redundant_qualifier("social democratic party (sdp)") == "social democratic party"
+    assert redundant_qualifier("European Union (EU)") == "European Union"  # casing is preserved
+    # Letter order varies between exporters: the Finnish SDP is written SPD in some sources.
+    assert redundant_qualifier("social democratic party (spd)") == "social democratic party"
+
+
+def test_a_qualifier_naming_another_thing_is_kept():
+    """Common sense: a place, a person, a year or a different body is information, not noise."""
+    from ep24_merge_lab.normalization import redundant_qualifier
+
+    for label in (
+        "government (france)",
+        "government (spain)",
+        "speaker (jorge buxadé)",
+        "social democratic party (2024)",
+        "european union (brussels)",
+        "government (opposition)",  # the bracket is the only thing that distinguishes it
+        "party (france)",
+    ):
+        assert redundant_qualifier(label) is None, label
+
+
+def test_a_repeated_or_organisational_qualifier_on_a_short_name_is_dropped():
+    from ep24_merge_lab.normalization import redundant_qualifier
+
+    assert redundant_qualifier("vox (vox)") == "vox"  # pure repetition
+    assert redundant_qualifier("vox (party)") == "vox"  # the type is not the name
+    assert redundant_qualifier("Party (party)") == "Party"
+
+
+def test_collapsed_labels_pool_their_counts():
+    import csv as _csv
+
+    from ep24_merge_lab import sources
+
+    tmp = Path(__file__).parent / "_tmp_qualifier.csv"
+    tmp.write_text(
+        'entities\n"sdp social democratic party"\n"social democratic party (sdp)"\n'
+        '"social democratic party"\n"government (france)"\n"government (spain)"\n',
+        encoding="utf-8",
+    )
+    try:
+        source = sources.Source(
+            name="fixture",
+            kind="records",
+            path=tmp,
+            lists={"entity": [sources.ListColumn(column="entities", separator=",")]},
+        )
+        pooled = sources.extract([source], category="entity")
+        counts = {stat.label: stat.count for stat in pooled["entity"]}
+        assert counts["social democratic party"] == 2  # the plain row plus the collapsed (sdp) row
+        assert "social democratic party (sdp)" not in counts
+        assert counts["government (france)"] == 1 and counts["government (spain)"] == 1
+    finally:
+        tmp.unlink()
+
+
+def test_the_canonical_label_does_not_carry_its_own_aliases():
+    """A cluster whose spellings include a bracket must be named by the plain form."""
+    from ep24_merge_lab.similarity import RULES, resolve
+    from ep24_merge_lab.sources import LabelStat
+
+    stats = [
+        LabelStat(label="psoe (spanish socialist workers' party)", count=40),
+        LabelStat(label="psoe", count=12),
+        LabelStat(label="spanish socialist workers' party", count=6),
+    ]
+    result = resolve(stats, RULES["entity"])
+    assert result.clusters, "the three spellings should cluster"
+    assert "(" not in result.clusters[0].canonical

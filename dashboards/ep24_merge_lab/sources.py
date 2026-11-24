@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from .model import CATEGORIES, LabelStat
-from .normalization import normalize_label
+from .normalization import normalize_label, redundant_qualifier
 
 #: Profile authors write the column name ("entities"), the model has the category ("entity").
 CATEGORY_ALIASES = {
@@ -302,9 +302,39 @@ def extract(sources: Iterable[Source], *, category: str | None = None) -> dict[s
     for found_category, stats in pooled.items():
         if category and found_category != category:
             continue
-        result[found_category] = sorted(stats.values(), key=lambda item: (-item.count, item.label))
+        collapsed = _collapse_redundant_qualifiers(stats)
+        result[found_category] = sorted(collapsed.values(), key=lambda item: (-item.count, item.label))
     _move_person_labels(result)
     return result
+
+
+def _collapse_redundant_qualifiers(
+    stats: dict[tuple[str, str], LabelStat],
+) -> dict[tuple[str, str], LabelStat]:
+    """Fold "party (sdp)" into "party" before anything is clustered.
+
+    Done here, on the pooled counts, so the collapsed spelling is what a researcher sees in the
+    canonical table and what the dashboards would eventually count — not a merge the rules have to
+    rediscover from two half-identical labels.
+    """
+    collapsed: dict[tuple[str, str], LabelStat] = {}
+    for (polarity, label), stat in stats.items():  # keys are (polarity, label)
+        base = redundant_qualifier(label)
+        if base and base != label:
+            stat = LabelStat(label=base, count=stat.count, countries=stat.countries, polarity=polarity)
+            label = base
+        key = (polarity, label)
+        existing = collapsed.get(key)
+        if existing is None:
+            collapsed[key] = stat
+        else:
+            collapsed[key] = LabelStat(
+                label=existing.label,
+                count=existing.count + stat.count,
+                countries=tuple(sorted(set(existing.countries) | set(stat.countries))),
+                polarity=existing.polarity,
+            )
+    return collapsed
 
 
 def _move_person_labels(result: dict[str, list[LabelStat]]) -> None:

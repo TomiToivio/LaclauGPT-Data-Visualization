@@ -212,6 +212,24 @@ def _contiguous_in(shorter: tuple[str, ...], longer: tuple[str, ...]) -> bool:
     )
 
 
+def _acronym_noise(item: Normalized) -> int:
+    """How many of this label's own tokens are just an acronym of the others.
+
+    "spd social democratic party" and "social democratic party" denote one party; the acronym
+    repeats the name, so the label without it is the better canonical form.
+    """
+    tokens = item.core_tokens
+    noise = 0
+    for index, token in enumerate(tokens):
+        rest = tokens[:index] + tokens[index + 1 :]
+        if len(rest) < 2 or len(token) < 2 or len(token) > len(rest):
+            continue
+        initials = "".join(part[0] for part in rest)
+        if sorted(token) == sorted(initials):
+            noise += 1
+    return noise
+
+
 def _choose_canonical(members: list[Normalized], counts: dict[str, int]) -> Normalized:
     """The most specific spelling, then the more frequent one, then A→Z.
 
@@ -221,14 +239,29 @@ def _choose_canonical(members: list[Normalized], counts: dict[str, int]) -> Norm
     Organisations are unaffected: legal suffixes are stripped before this comparison, so
     *Fortum Oyj* and *Fortum* carry the same core length and frequency decides.
     """
+    # A spelling that carries its own alias in brackets never names a cluster: drop those before
+    # specificity is weighed, or "psoe (spanish socialist workers' party)" beats the plain forms.
+    plain = [item for item in members if "(" not in item.raw]
+    if plain:
+        members = plain
+
     multi_token = [item for item in members if len(item.core_tokens) > 1]
     single_token = [item for item in members if len(item.core_tokens) <= 1]
     # A full name beats a bare surname that was folded into it; among equals, frequency decides,
     # because that is the spelling the corpus (and therefore the reader) actually uses.
     pool = multi_token if (multi_token and single_token) else members
+    # Acronym-free first ("social democratic party" beats "spd social democratic party"), then a
+    # spelling that does not carry its own aliases in brackets: a canonical label that reads
+    # "psoe (spanish socialist workers' party)" is showing its work instead of naming the thing.
     return max(
         pool,
-        key=lambda item: (counts.get(item.raw, 0), len(item.core_tokens), item.raw.casefold()),
+        key=lambda item: (
+            0 if "(" not in item.raw else 1,
+            -_acronym_noise(item),
+            counts.get(item.raw, 0),
+            len(item.core_tokens),
+            item.raw.casefold(),
+        ),
     )
 
 

@@ -187,6 +187,87 @@ def normalize_label(
     )
 
 
+_PARENTHETICAL = re.compile(r"^(?P<base>.+?)\s*\((?P<qualifier>[^()]{1,40})\)\s*$")
+
+#: Qualifiers that only repeat what the base already says ("green movement (movement)").
+REDUNDANT_QUALIFIERS: frozenset[str] = frozenset(
+    {"party", "political party", "the party", "movement", "coalition", "alliance", "group"}
+)
+
+#: Words that make a parenthetical informative rather than redundant: it names a *different* thing.
+_KEEP_IN_BASE = frozenset({"party", "movement", "coalition", "alliance", "group"})
+
+#: A short name may carry its organisation type in brackets: "vox (party)" is still Vox.
+_ORGANISATION_TYPES = frozenset(
+    {"party", "political party", "movement", "coalition", "alliance", "group", "front"}
+)
+
+#: ...but not when the short name *is* the generic word, where the bracket may be the only content.
+_GENERIC_BASES = frozenset(
+    {
+        "government",
+        "party",
+        "coalition",
+        "group",
+        "alliance",
+        "movement",
+        "parliament",
+        "commission",
+        "council",
+        "speaker",
+        "minister",
+        "president",
+        "court",
+        "union",
+    }
+)
+
+
+def redundant_qualifier(label: str) -> str | None:
+    """The base label when a trailing parenthetical adds nothing, else ``None``.
+
+    "social democratic party (sdp)" is one party written two ways: the qualifier is the acronym of
+    the words in front of it, so the base is the referent. That is the whole rule, and it is
+    deliberately narrow:
+
+    * an acronym of the base's initials, in any letter order ("sdp"/"spd"), or
+    * a qualifier the base already carries ("green movement (movement)").
+
+    Anything else is left alone, because "government (france)" and "government (spain)" are two
+    governments, "speaker (jorge buxadé)" names a person, and a year or a place is information, not
+    noise. Stripping those would merge different referents — the one failure mode that silently
+    corrupts every count downstream.
+    """
+    match = _PARENTHETICAL.match(label.strip())
+    if match is None:
+        return None
+    base = match.group("base").strip()
+    qualifier = match.group("qualifier").strip()
+    if not base or not qualifier:
+        return None
+    if any(character.isdigit() for character in qualifier):
+        return None
+    if fold(qualifier) == fold(base):
+        return base  # pure repetition: "vox (vox)"
+    base_tokens = [token for token in re.split(r"[\s\-]+", fold(base)) if token]
+    if len(base_tokens) < 2:
+        # A one-word name may still carry a redundant type: "vox (party)". Not "party (party)" or
+        # "government (opposition)", where the bracket is the only thing that distinguishes it.
+        if fold(base) in _GENERIC_BASES:
+            return None
+        return base if fold(qualifier) in _ORGANISATION_TYPES else None
+
+    initials = "".join(token[0] for token in base_tokens)
+    squashed = re.sub(r"[^a-z0-9]", "", fold(qualifier))
+    if squashed and sorted(squashed) == sorted(initials):
+        return base
+    if fold(qualifier) in REDUNDANT_QUALIFIERS and any(
+        token in _KEEP_IN_BASE for token in base_tokens
+    ):
+        return base
+    return None
+
+
 def display_form(raw: str) -> str:
     """The label a curator should see: whitespace collapsed, surrounding junk removed."""
     return _SPACE.sub(" ", unicodedata.normalize("NFC", raw)).strip(" \t\n\r,;:-")
