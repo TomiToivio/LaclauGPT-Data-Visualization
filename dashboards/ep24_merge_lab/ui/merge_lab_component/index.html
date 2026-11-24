@@ -129,7 +129,7 @@
 
   function render() {
     var board = document.getElementById("board");
-    board.innerHTML = "";
+    while (board.firstChild) board.removeChild(board.firstChild);
     if (!state.cards || !state.cards.length) {
       var empty = document.createElement("div");
       empty.className = "empty";
@@ -146,15 +146,33 @@
       node.setAttribute("aria-label",
         card.label + ", " + (card.aliases ? card.aliases.length : 0) + " aliases, " + card.count +
         " occurrences. Press Enter to pick up for merging.");
-      node.innerHTML =
-        '<div><span class="chip ' + (card.kind === "cluster" ? "cluster" : "review") + '">' +
-          (card.kind === "cluster" ? "merged" : "review") + "</span>" +
-          '<span class="chip">' + (card.method || "") + "</span></div>" +
-        '<div class="label"></div>' +
-        '<div class="aliases"></div>' +
-        '<div class="meta">' + (card.count || 0) + " occ · conf " + (card.confidence || 0).toFixed(2) + "</div>";
-      node.querySelector(".label").textContent = card.label;
-      node.querySelector(".aliases").textContent = (card.aliases || []).join(" · ");
+      // Built node by node with textContent: labels come from scraped corpora, so none of this
+      // may ever be parsed as HTML (a label can contain markup).
+      var head = document.createElement("div");
+      var kindChip = document.createElement("span");
+      kindChip.className = "chip " + (card.kind === "cluster" ? "cluster" : "review");
+      kindChip.textContent = card.kind === "cluster" ? "merged" : "review";
+      var methodChip = document.createElement("span");
+      methodChip.className = "chip";
+      methodChip.textContent = card.method || "";
+      head.appendChild(kindChip);
+      head.appendChild(methodChip);
+
+      var labelNode = document.createElement("div");
+      labelNode.className = "label";
+      labelNode.textContent = card.label;
+      var aliasesNode = document.createElement("div");
+      aliasesNode.className = "aliases";
+      aliasesNode.textContent = (card.aliases || []).join(" · ");
+      var metaNode = document.createElement("div");
+      metaNode.className = "meta";
+      metaNode.textContent =
+        (card.count || 0) + " occ · conf " + Number(card.confidence || 0).toFixed(2);
+
+      node.appendChild(head);
+      node.appendChild(labelNode);
+      node.appendChild(aliasesNode);
+      node.appendChild(metaNode);
 
       node.addEventListener("dragstart", function (event) {
         picked = cardId(card);
@@ -187,11 +205,9 @@
         } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
           event.preventDefault();
           var step = event.key === "ArrowRight" ? 1 : -1;
-          var next = state.cards[(index + step + state.cards.length) % state.cards.length];
-          if (next) {
-            var target = document.querySelector('[data-id="' + cardId(next).replace(/"/g, '\\"') + '"]');
-            if (target) target.focus();
-          }
+          var siblings = board.children;
+          var next = siblings[(index + step + siblings.length) % siblings.length];
+          if (next && next.focus) next.focus();
         }
       });
       node.addEventListener("click", function () {
