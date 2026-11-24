@@ -93,9 +93,11 @@ class RegistryEntry:
             problems.append("keep_separate must point at itself")
         if not self.reviewers:
             problems.append("no reviewer recorded — a decision must be attributable")
+        if self.status == "approved" and len(set(self.reviewers)) < 3:
+            problems.append("approved mapping requires three distinct reviewer IDs")
         if self.status == "approved" and not self.evidence:
             problems.append("approved mapping carries no evidence")
-        if self.category == "sentiment" and self.status == "approved" and not self.polarity:
+        if self.category == "sentiment" and self.status in {"approved", "keep_separate"} and not self.polarity:
             problems.append("sentiment mapping must state its polarity")
         if self.wiki_title and not self.wiki_url:
             problems.append("wiki_title needs the verified URL that was actually read")
@@ -103,7 +105,7 @@ class RegistryEntry:
 
     def identity(self) -> str:
         """What this decision is about: category + alias + scope. Revision is not part of it."""
-        return "|".join((self.category, self.alias.strip().casefold(), *self.scope.key()))
+        return "|".join((self.category, self.alias.strip().casefold(), self.polarity.casefold(), *self.scope.key()))
 
     def as_json(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -196,7 +198,7 @@ class Registry:
         payload = json.dumps([entry.as_json() for entry in self.entries], sort_keys=True)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
-    def latest(self, category: str, alias: str, *, country: str = "", language: str = "", source: str = "") -> RegistryEntry | None:
+    def latest(self, category: str, alias: str, *, country: str = "", language: str = "", source: str = "", polarity: str = "") -> RegistryEntry | None:
         """The in-force decision for this alias in this context, most specific scope first."""
         candidates = [
             entry
@@ -204,19 +206,23 @@ class Registry:
             if entry.category == category
             and entry.alias.strip().casefold() == alias.strip().casefold()
             and entry.scope.matches(country, language, source)
+            and (category != "sentiment" or (bool(polarity) and entry.polarity.casefold() == polarity.casefold()))
         ]
         if not candidates:
             return None
-        specific = max(candidates, key=lambda entry: sum(1 for part in entry.scope.key() if part))
-        return specific
+        specificity = max(sum(bool(part) for part in entry.scope.key()) for entry in candidates)
+        best = [entry for entry in candidates if sum(bool(part) for part in entry.scope.key()) == specificity]
+        if len({(entry.status, entry.canonical, entry.canonical_id) for entry in best}) != 1:
+            return None
+        return best[0]
 
-    def map_label(self, category: str, alias: str, *, country: str = "", language: str = "", source: str = "") -> str:
+    def map_label(self, category: str, alias: str, *, country: str = "", language: str = "", source: str = "", polarity: str = "") -> str:
         """The canonical label for this alias, or the alias unchanged when nothing applies.
 
         ``keep_separate`` returns the alias itself, which is the point: an explicit non-merge must
         survive into every later run without being re-litigated.
         """
-        entry = self.latest(category, alias, country=country, language=language, source=source)
+        entry = self.latest(category, alias, country=country, language=language, source=source, polarity=polarity)
         # Only settled decisions rewrite output. A proposal is evidence for the review queue, not a
         # canonicalisation: applying unapproved mappings is how one reviewer silently reseals the whole
         # corpus.
