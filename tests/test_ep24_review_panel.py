@@ -296,7 +296,7 @@ def test_both_ledgers_refuse_two_reviewers_and_a_bare_majority():
         ]
     }
     for reviews in (two, split):
-        approved, queue = reconcile.decide([unit], reviews, required=3)
+        approved, _queue = reconcile.decide([unit], reviews, required=3)
         assert not approved, "the panel approved on fewer than three agreeing reviewers"
 
         entries = []
