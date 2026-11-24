@@ -187,3 +187,37 @@ def test_a_committed_decision_is_not_written_twice(tmp_path: Path):
     lines = (tmp_path / "decisions.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0])["source_ref"] == "s9:u1"
+
+
+# ------------------------------------------------------------------ rename and split
+
+
+def test_a_rename_validates_and_applies(tmp_path: Path):
+    deck = app.deck_for(_run(tmp_path), "person")
+    action = app.validate({"action": "rename", "id": "Petteri Orpo", "canonical": "P. Orpo"}, "person", deck)
+    assert action.action == "rename" and action.canonical == "P. Orpo"
+    renamed = app.apply_actions(deck, [action])
+    assert any(card["label"] == "P. Orpo" for card in renamed)
+    assert any("Petteri Orpo" in card["aliases"] for card in renamed)
+
+
+def test_a_split_must_name_an_alias_of_that_card(tmp_path: Path):
+    deck = app.deck_for(_run(tmp_path), "person")
+    with pytest.raises(ValueError, match="only an alias"):
+        app.validate({"action": "split", "id": "Petteri Orpo", "member": "Not There"}, "person", deck)
+    action = app.validate({"action": "split", "id": "Petteri Orpo", "member": "Orpo"}, "person", deck)
+    cards = app.apply_actions(deck, [action])
+    assert any(card["label"] == "Orpo" for card in cards)
+    cluster = next(card for card in cards if card["label"] == "Petteri Orpo")
+    assert "Orpo" not in cluster["aliases"]
+
+
+def test_a_split_is_committed_as_a_keep_separate_decision(tmp_path: Path):
+    """The log has no 'split' action: 'these two are not the same label' is what it records."""
+    review = sessions.new_session("s10", "run-1", "tomi")
+    review.add(sessions.Action(action="split", category="person", canonical="Petteri Orpo",
+                               target="Orpo", members=("Petteri Orpo", "Orpo"), uid="u5"))
+    app.commit(tmp_path, review, review.effective)
+    decision = json.loads((tmp_path / "decisions.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert decision["action"] == "keep_separate"
+    assert decision["members"] == ["Petteri Orpo", "Orpo"]

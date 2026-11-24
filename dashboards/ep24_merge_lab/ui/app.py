@@ -228,8 +228,31 @@ def validate(payload: dict[str, Any], category: str, cards: list[dict[str, Any]]
         canonical = canonical or target
         if len(canonical) > 200:
             raise ValueError("canonical labels are capped at 200 characters")
-    if action == "rename" and not canonical:
-        raise ValueError("a rename needs a new name")
+    if action == "rename":
+        label = str(payload.get("id", "")).strip()
+        if label not in labels:
+            raise ValueError("the label to rename is not on the current deck")
+        if not canonical:
+            raise ValueError("a rename needs a new name")
+        if len(canonical) > 200:
+            raise ValueError("canonical labels are capped at 200 characters")
+        return sessions.Action(
+            action="rename", category=category, canonical=canonical, members=(label,),
+            at=datetime.now(UTC).isoformat(), uid=uuid.uuid4().hex[:12],
+        )
+    if action == "split":
+        label = str(payload.get("id", "")).strip()
+        member = str(payload.get("member", "")).strip()
+        card = next((item for item in cards if item["label"] == label), None)
+        if card is None:
+            raise ValueError("the label to split is not on the current deck")
+        if member not in card.get("aliases", []):
+            raise ValueError("only an alias of that label can be split off")
+        return sessions.Action(
+            action="split", category=category, canonical=label, target=member,
+            members=(label, member), at=datetime.now(UTC).isoformat(),
+            uid=uuid.uuid4().hex[:12],
+        )
     return sessions.Action(
         action=action,
         category=category,

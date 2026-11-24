@@ -64,6 +64,15 @@
   button.primary { background: #1f4d3a; border-color: #2c6b50; }
   button.danger { background: #4a1f24; border-color: #6b2c35; }
   .moves { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .card .edit {
+    float: right; padding: 0 6px; line-height: 18px; font-size: 12px; background: transparent;
+    border-color: transparent; color: var(--dim);
+  }
+  .card .edit:hover { color: var(--accent); border-color: var(--line); }
+  .panel select {
+    background: #0d1117; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px; font: inherit; max-width: 260px;
+  }
   .help { color: var(--dim); font-size: 12px; margin-top: 6px; }
   .empty { color: var(--dim); padding: 18px 4px; }
   kbd { background: #0d1117; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 11px; }
@@ -89,6 +98,17 @@
     <button id="cancel">Cancel</button>
   </div>
 
+  <div class="panel" id="editor" role="region" aria-live="polite" aria-label="Card editor">
+    <div style="flex:1 1 100%">
+      <div class="meta" id="editor-title">Edit card</div>
+    </div>
+    <input id="editor-name" aria-label="New canonical label" />
+    <button class="primary" id="rename">Rename</button>
+    <select id="editor-member" aria-label="Alias to split off"></select>
+    <button id="split">Split off</button>
+    <button id="editor-close">Close</button>
+  </div>
+
   <div class="moves">
     <button id="undo">↶ Undo</button>
     <button id="redo">Redo ↷</button>
@@ -106,6 +126,7 @@
   var state = { category: "", cards: [], progress: { reviewed: 0, total: 0 }, can_undo: false, can_redo: false, milestone: "" };
   var picked = null;      // card id picked up
   var pending = null;     // {source, target} awaiting confirmation
+  var editing = null;     // card id whose editor is open
   var sent = 0;           // nonce-ish counter, so a re-render does not replay an action
 
   function send(type, payload) {
@@ -169,6 +190,20 @@
       metaNode.textContent =
         (card.count || 0) + " occ · conf " + Number(card.confidence || 0).toFixed(2);
 
+      var edit = document.createElement("button");
+      edit.className = "edit";
+      edit.type = "button";
+      edit.textContent = "✎";
+      edit.setAttribute("aria-label", "Rename or split " + card.label);
+      edit.addEventListener("click", function (event) {
+        event.stopPropagation();
+        editing = cardId(card);
+        picked = null;
+        renderEditor();
+        render();
+      });
+      head.appendChild(edit);
+
       node.appendChild(head);
       node.appendChild(labelNode);
       node.appendChild(aliasesNode);
@@ -227,6 +262,7 @@
     document.getElementById("undo").disabled = !state.can_undo;
     document.getElementById("redo").disabled = !state.can_redo;
     renderPanel();
+    renderEditor();
     resize();
   }
 
@@ -270,6 +306,52 @@
   document.getElementById("cancel").addEventListener("click", function () {
     pending = null; renderPanel();
   });
+  document.getElementById("editor-close").addEventListener("click", function () {
+    editing = null; renderEditor();
+  });
+  document.getElementById("rename").addEventListener("click", function () {
+    var card = cardById(editing);
+    if (!card) return;
+    var name = document.getElementById("editor-name").value.trim();
+    if (!name || name === card.label) { editing = null; renderEditor(); return; }
+    sendValue({ action: "rename", id: card.label, canonical: name, nonce: ++sent });
+    editing = null;
+  });
+  document.getElementById("split").addEventListener("click", function () {
+    var card = cardById(editing);
+    if (!card) return;
+    var member = document.getElementById("editor-member").value;
+    if (!member) return;
+    sendValue({ action: "split", id: card.label, member: member, nonce: ++sent });
+    editing = null;
+  });
+
+  function renderEditor() {
+    var panel = document.getElementById("editor");
+    if (!editing) { panel.classList.remove("on"); return; }
+    var card = cardById(editing);
+    if (!card) { editing = null; panel.classList.remove("on"); return; }
+    panel.classList.add("on");
+    document.getElementById("editor-title").textContent = "Editing: " + card.label;
+    var name = document.getElementById("editor-name");
+    if (document.activeElement !== name) name.value = card.label;
+    var select = document.getElementById("editor-member");
+    select.replaceChildren();
+    var placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = card.aliases && card.aliases.length
+      ? "Alias to split off (" + card.aliases.length + ")"
+      : "No aliases to split";
+    select.appendChild(placeholder);
+    (card.aliases || []).forEach(function (alias) {
+      var option = document.createElement("option");
+      option.value = alias;
+      option.textContent = alias;
+      select.appendChild(option);
+    });
+    document.getElementById("split").disabled = !(card.aliases && card.aliases.length);
+    resize();
+  }
   document.getElementById("undo").addEventListener("click", function () {
     sendValue({ action: "undo", nonce: ++sent });
   });
