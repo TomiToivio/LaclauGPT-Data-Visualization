@@ -64,6 +64,12 @@ python dashboards/ep24_merge_lab/merge_labels.py run --profile <profile.yaml> --
 # record a researcher decision; every later run honours it
 python dashboards/ep24_merge_lab/merge_labels.py decide --out <private>/analysis/ep24_legacy_curation \
     --category person --action merge --canonical "Petteri Orpo" --member "Orpo" --reviewer tomi
+
+# freeze the curated mapping into a version, then (separately) point adapters at it
+python dashboards/ep24_merge_lab/merge_labels.py export   --out <curation> --reviewer tomi
+python dashboards/ep24_merge_lab/merge_labels.py status   --out <curation>
+python dashboards/ep24_merge_lab/merge_labels.py activate --out <curation> --export <export id>
+python dashboards/ep24_merge_lab/merge_labels.py rollback --out <curation>
 ```
 
 Options worth knowing: `--category` restricts a run to one category; `--min-auto` and `--review`
@@ -140,3 +146,55 @@ What the page does and does not do:
 
 A session is a review *of one run*: the page remembers which run it was opened against, and the
 CLI must be re-run before a new review round makes sense.
+
+## Export, activation and rollback (stage 3)
+
+Three separate acts, on purpose:
+
+1. **curate** — decisions land in `decisions.jsonl`.
+2. **export** — `exports/<export id>/` is an immutable snapshot: `curated_<category>.csv`,
+   `alias_map.json`, `counts_preview.csv` and a `manifest.json` naming the base run, its input
+   hashes, the decision digest and count, the reviewed/open candidate counts, a per-file sha256
+   map and a `mapping_version` derived from it.
+3. **activate** — `activation.json` is a pointer to one export id plus its `mapping_version`. It
+   changes no dashboard by itself; an adapter that reads it starts serving canonical labels, and
+   removing the pointer makes it serve the untouched legacy labels again. `activation_history.jsonl`
+   records every activation and rollback.
+
+Properties that are checked, not assumed:
+
+- **occurrences are conserved** — collapsing aliases moves members between clusters, it never
+  copies a count; `counts_preview.csv` says `conserved yes` per category, and a mismatch is a bug;
+- **an edited export is not served** — the manifest's `mapping_version` is recomputed from the
+  files before use, so a hand-edited or half-restored export resolves to *nothing*;
+- **sources are never written** — the adapter opens legacy tables read-only, and
+  `write_canonicalised` writes a new file named `<source>.canonical-<export id>.csv` beside the
+  original with a `.provenance.json`; it refuses a target that equals the source;
+- **no double counting** — two spellings of one label inside a single record collapse to one
+  occurrence, which is the case alias merging would otherwise inflate.
+
+### Using the mapping from a reader
+
+```python
+from ep24_merge_lab import adapters, export
+
+active = export.resolve_active_export(curation_root)      # None when nothing is activated
+if active:
+    export_dir, manifest = active
+    mapping = adapters.load_mapping(export_dir)
+    for row in adapters.iter_canonicalised(source_csv, columns={"person": "entities"}, mapping=mapping):
+        ...
+```
+
+`adapters.count_preview(...)` reports what activation would change — labels before and after,
+distinct labels before and after, and how many occurrences collapse — without writing anything.
+
+### Researcher workflow
+
+1. `run` the CLI to produce a new merge pass; `inventory` first if the sources changed.
+2. Open the review page, work through the categories, and **Commit decisions**.
+3. Re-`run` the CLI: decisions are applied before clustering, so the new tables reflect them.
+4. `export`; look at `counts_preview.csv` and `manifest.json`.
+5. `activate` when — and only when — the numbers are right. Roll back with one command.
+6. The legacy dashboards keep serving untouched files throughout; a dashboard reads canonical
+   labels only if it is pointed at the adapter and something is activated.
