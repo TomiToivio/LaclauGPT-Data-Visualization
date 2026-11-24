@@ -29,7 +29,7 @@ def test_drag_resume_and_export(tmp_path):
     (tmp_path / ".git").mkdir()
     source = tmp_path / "analysis/ep24/source/synthetic_dashboard_records.csv"
     source.parent.mkdir(parents=True)
-    columns = "source_url entities new_entity new_theme topics positive neutral negative".split()
+    columns = ["source_url", "entities", "new_entity", "new_theme", "topics", "positive", "neutral", "negative"]
     with source.open("w", newline="") as stream:
         writer = csv.DictWriter(stream, columns)
         writer.writeheader()
