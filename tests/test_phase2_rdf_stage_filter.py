@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 RDF_PAGE = ROOT / "src" / "laclaugpt_visualization" / "pages" / "rdf_explorer.py"
 

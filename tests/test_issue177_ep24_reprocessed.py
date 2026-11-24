@@ -4,7 +4,13 @@ import json
 import pandas as pd
 
 from laclaugpt_visualization.ep24_reprocessed import (
-    STAGES, identity, multilayer, read_records, rows, status, unpack,
+    STAGES,
+    identity,
+    multilayer,
+    read_records,
+    rows,
+    status,
+    unpack,
 )
 
 

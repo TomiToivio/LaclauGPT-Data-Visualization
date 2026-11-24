@@ -1,5 +1,10 @@
 from laclaugpt_visualization.graph_api import GraphEnvelope
-from laclaugpt_visualization.graph_views import compare_graphs, ego_graph, filter_graph, provenance_inspector
+from laclaugpt_visualization.graph_views import (
+    compare_graphs,
+    ego_graph,
+    filter_graph,
+    provenance_inspector,
+)
 
 
 def graph():

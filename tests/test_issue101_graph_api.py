@@ -8,7 +8,6 @@ from laclaugpt_visualization.graph_api import (
     layer_enabled,
 )
 
-
 FIXTURE = {
     "nodes": [
         {"id": "record:1", "label": "Source", "type": "Record", "provenance_refs": ["source:1"]},

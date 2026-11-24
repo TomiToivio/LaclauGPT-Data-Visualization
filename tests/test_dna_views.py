@@ -9,7 +9,6 @@ from laclaugpt_visualization.dna_views import (
     projection_edges,
 )
 
-
 FIXTURE = Path(__file__).parent / "fixtures" / "dna_multimethod_v1.json"
 
 

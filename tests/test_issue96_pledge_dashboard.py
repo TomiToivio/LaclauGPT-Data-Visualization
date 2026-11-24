@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 
 from laclaugpt_visualization.config import Settings
-from laclaugpt_visualization.plugins import default_registry
 from laclaugpt_visualization.pledge_dashboard import build_pledge_snapshot
+from laclaugpt_visualization.plugins import default_registry
 
 
 def test_pledge_dashboard_is_opt_in_and_independently_disableable(monkeypatch):

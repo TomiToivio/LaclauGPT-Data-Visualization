@@ -189,7 +189,6 @@ def test_a_corrupt_ledger_names_the_bad_line(tmp_path: Path) -> None:
 
 def test_a_settled_decision_supersedesA_proposal_but_never_another_decision(tmp_path: Path) -> None:
     import sys as _sys
-    from pathlib import Path as _Path
 
     _sys.path.insert(0, str(_ROOT / "tools"))
     import record_reviews as rr
