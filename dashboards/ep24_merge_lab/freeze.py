@@ -147,7 +147,7 @@ def freeze(
 ) -> dict[str, Any]:
     """Build the frozen inventory document for one run.
 
-    `labels` is the per-category distinct-label count from `sources.inventory()`; pass it when the
+    `labels` is the per-category distinct-label count from the pooled `sources.extract()`; pass it when the
     caller has already read the corpus, otherwise it is recomputed here. The recomputation reads the
     whole corpus, which is why the CLI prints it as slow rather than hiding it.
 
@@ -159,11 +159,9 @@ def freeze(
     run_root = Path(str(manifest.get("root") or run_dir))
 
     if labels is None:
-        counted: dict[str, int] = {}
-        for entry in sources.inventory(profile):
-            for category, distinct in (entry.get("distinct_labels") or {}).items():
-                counted[category] = counted.get(category, 0) + int(distinct)
-        labels = counted
+        # Count the pooled extraction, not the sum of per-source distinct counts.
+        # This includes persons projected from entity codebooks and preserves polarity.
+        labels = {category: len(stats) for category, stats in sources.extract(profile).items()}
 
     inputs = [_verify(entry, run_root) for entry in (manifest.get("inputs") or [])]
     outputs = []
@@ -207,7 +205,8 @@ def freeze(
             "inputs_changed": [entry["path"] for entry in inputs if entry["state"] == "changed"],
             "inputs_missing": [entry["path"] for entry in inputs if entry["state"] == "missing"],
             "outputs_verified": sum(1 for entry in outputs if entry["state"] == "verified"),
-            "frozen": all(entry["state"] == "verified" for entry in inputs + outputs),
+            "frozen": bool(inputs) and all(entry["state"] == "verified" for entry in inputs + outputs)
+            and (profile_record is None or profile_record["state"] == "verified"),
         },
     }
     # The digest identifies the *inventory*, not the moment it was taken: `frozen_at` is excluded so
