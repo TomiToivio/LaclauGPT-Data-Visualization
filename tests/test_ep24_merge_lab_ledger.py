@@ -154,12 +154,21 @@ def test_two_reviews_are_not_enough_and_say_so(tmp_path: Path) -> None:
     assert "2 of 3" in result.incomplete[0]["reason"]
 
 
-def test_agreeing_to_merge_but_naming_different_canonicals_is_an_error(tmp_path: Path) -> None:
+def test_agreeing_to_merge_but_naming_different_canonicals_is_a_conflict(tmp_path: Path) -> None:
+    """Same intent, different titles is not a settled decision: the issue asks for the exact title."""
     reviews = _three()
     bad = [_review(reviewer="c/run", canonical="True Finns")]
-    ledger = _ledger(tmp_path / "l.jsonl", reviews[:2] + bad)
-    with pytest.raises(LedgerError, match="different canonicals"):
-        ledger.adjudicate()
+    result = _ledger(tmp_path / "l.jsonl", reviews[:2] + bad).adjudicate()
+    assert result.approved == []
+    assert result.conflicts[0]["canonicals"] == ["Finns Party", "True Finns"]
+    assert "different canonicals" in result.conflicts[0]["reason"]
+
+
+def test_the_same_canonical_in_different_case_is_not_a_conflict(tmp_path: Path) -> None:
+    reviews = _three()
+    mixed = [_review(reviewer="c/run", canonical="finns party")]
+    result = _ledger(tmp_path / "l.jsonl", reviews[:2] + mixed).adjudicate()
+    assert len(result.approved) == 1 and result.conflicts == []
 
 
 def test_appending_is_append_only(tmp_path: Path) -> None:

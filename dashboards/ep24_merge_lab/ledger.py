@@ -297,7 +297,33 @@ class Ledger:
             decision = decisions.pop()
             ordered = sorted(votes.values(), key=lambda item: item.reviewer)
             sample = ordered[0]
-            canonical = "" if decision == "keep_separate" else _consensus_canonical(ordered)
+            if decision == "keep_separate":
+                canonical = ""
+            else:
+                canonicals = _distinct_canonicals(ordered)
+                if len(canonicals) > 1:
+                    # Same intent, different titles is still not a settled decision: #311 asks for the
+                    # *exact* English article title, and "Hungarians" vs "Hungarian people" (a redirect)
+                    # are not interchangeable as a canonical label. A human adjudicates which one.
+                    result.conflicts.append(
+                        {
+                            "label_id": label_id,
+                            "reason": "reviewers agreed to merge but named different canonicals",
+                            "canonicals": canonicals,
+                            "votes": [
+                                {
+                                    "reviewer": vote.reviewer,
+                                    "decision": vote.decision,
+                                    "canonical": vote.canonical,
+                                    "wiki_url": vote.wiki_url,
+                                    "evidence": list(vote.evidence),
+                                }
+                                for vote in ordered
+                            ],
+                        }
+                    )
+                    continue
+                canonical = canonicals[0] if canonicals else ""
             entry = RegistryEntry(
                 category=sample.category,
                 alias=sample.label,
@@ -328,14 +354,14 @@ class Ledger:
         ]
 
 
-def _consensus_canonical(votes: list[Review]) -> str:
-    """The canonical label the reviewers agreed on; if the strings differ, that is not unanimity."""
-    canonicals = {vote.canonical.strip() for vote in votes if vote.canonical.strip()}
-    if len(canonicals) > 1:
-        raise LedgerError(
-            "reviewers agreed to merge but named different canonicals: " + " vs ".join(sorted(canonicals))
-        )
-    return canonicals.pop()
+def _distinct_canonicals(votes: list[Review]) -> list[str]:
+    """The canonical spellings the reviewers proposed, case-insensitively deduplicated."""
+    seen: dict[str, str] = {}
+    for vote in votes:
+        spelling = vote.canonical.strip()
+        if spelling:
+            seen.setdefault(spelling.casefold(), spelling)
+    return sorted(seen.values())
 
 
 def _now() -> str:
