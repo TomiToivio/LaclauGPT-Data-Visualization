@@ -132,7 +132,7 @@ def review(
         "prompt": prompt,
         "stream": False,
         "format": "json",
-        "options": {"temperature": reviewer.temperature, "num_predict": 800},
+        "options": {"temperature": reviewer.temperature, "num_predict": 400},
     }
     started = time.time()
     last_error: Exception | None = None
@@ -140,7 +140,7 @@ def review(
     text = ""
     for attempt in range(1, attempts + 1):
         try:
-            payload["options"]["num_predict"] = 800 * attempt
+            payload["options"]["num_predict"] = 400 * attempt
             response = _post(reviewer.host, "/api/generate", payload, timeout)
             text = response.get("response", "")
             if response.get("done_reason") == "length":
