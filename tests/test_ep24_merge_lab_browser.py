@@ -29,12 +29,13 @@ def test_drag_resume_and_export(tmp_path):
     (tmp_path / ".git").mkdir()
     source = tmp_path / "analysis/ep24/source/synthetic_dashboard_records.csv"
     source.parent.mkdir(parents=True)
-    columns = ["source_url", "entities", "new_entity", "new_theme", "topics", "positive", "neutral", "negative"]
+    columns = ["source_url", "entities", "new_entity", "new_theme", "topics", "positive", "neutral", "negative", "summary_analysis"]
     with source.open("w", newline="") as stream:
         writer = csv.DictWriter(stream, columns)
         writer.writeheader()
-        writer.writerow({"source_url": "urn:example:1", "entities": "Council, Council Board"})
-        writer.writerow({"source_url": "urn:example:2", "entities": "Council Board"})
+        writer.writerow({"source_url": "urn:example:1", "entities": "Council, Council Board",
+                         "summary_analysis": 'They said "yes", then left.\nSecond line.'})
+        writer.writerow({"source_url": "", "entities": "Council Board"})
     original = source.read_bytes()
     subprocess.run([sys.executable, str(LAB / "lab.py"), str(tmp_path)], check=True)
     with socket.socket() as sock:
@@ -81,12 +82,14 @@ def test_drag_resume_and_export(tmp_path):
         assert source.read_bytes() == original
         with (export / source.name).open(newline="") as stream:
             records = list(csv.DictReader(stream))
-        assert [row["source_url"] for row in records] == ["urn:example:1", "urn:example:2"]
+        assert [row["source_url"] for row in records] == ["urn:example:1", ""]
+        assert records[0]["summary_analysis"] == 'They said "yes", then left.\nSecond line.'
         assert all(row["entities"] == "Council Board" for row in records)
         mapping = json.loads((export / "mapping.json").read_text())
         lineage = {(a["label"], ref) for a in mapping["aliases"].values() for ref in a["refs"]}
+        fallback = json.dumps(["legacy-row", source.name, hashlib.sha256(original).hexdigest(), 2])
         assert lineage == {("Council", "urn:example:1"), ("Council Board", "urn:example:1"),
-                           ("Council Board", "urn:example:2")}
+                           ("Council Board", fallback)}
         subprocess.run([sys.executable, str(LAB / "import_version.py"), str(tmp_path),
                         "--revision", "2"], check=True)
     finally:
