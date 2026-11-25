@@ -42,6 +42,9 @@ PARTY_ALIASES: dict[str, str] = {
     "basic finns party (perussuomalaiset)": "true finns",
     "party (perussuomalaiset)": "true finns",
     "perussuomalaiset (ps) / finns party": "true finns",
+    "perussuomalaisten finns party": "true finns",
+    "perussuomalainen party": "true finns",
+    "perussuomalainen finns party": "true finns",
 }
 
 #: Bracketed content that is an annotation rather than part of a name.
@@ -143,3 +146,108 @@ def clean_cell(cell: str, separator: str = ",") -> str:
     # cleanup and nothing else.
     joiner = separator + " " if separator + " " in cell else separator
     return joiner.join(cleaned)
+
+
+#: Bracketed wording that describes what a thing is rather than which one it is.
+_GENERIC_BRACKETS = frozenset(
+    {"party", "parties", "political party", "political parties", "the party", "party members"}
+)
+#: Trailing words that name the kind of thing, not the thing: "fidesz party" is Fidesz.
+_GENERIC_SUFFIXES = (" party",)  # "parties" is a class ("opposition parties"), not one party
+#: A base that describes a position rather than naming a party. "political party" is not "political",
+#: and "far-right parties" is not "far-right": the suffix rule needs a *name* in front of it.
+_GENERIC_BASES = frozenset(
+    {"political", "left", "right", "far-left", "far-right", "centre", "center", "left-wing",
+     "right-wing", "opposition", "governing", "green", "liberal", "conservative", "socialist",
+     "social democratic", "populist", "nationalist", "national", "ruling", "small", "new", "old"}
+)
+
+
+def fold_key(label: str) -> str:
+    """The key two spellings of one label share: case, punctuation and a leading "the" ignored."""
+    # Only spelling noise is folded away: case, quotes, a full stop after an abbreviation, and "&"
+    # against "and". Brackets, slashes and commas are part of the label's meaning — folding them
+    # turned "socialist party (psoe)" into "socialist party psoe".
+    text = unicodedata.normalize("NFKC", label).casefold().replace("&", " and ")
+    text = text.replace(".", " ").replace('"', "").replace("\u201c", "").replace("\u201d", "")
+    text = " ".join(text.split())
+    return text[4:] if text.startswith("the ") else text
+
+
+def variant_merges(labels) -> dict[str, str]:
+    """Decide, from one category's own vocabulary, which spellings are the same label.
+
+    Three rules, each answerable from the vocabulary alone — no outside knowledge, no guessing:
+
+    * spellings that differ only in case, punctuation, quotes or a leading "the" are one label, and
+      the most frequent spelling represents it;
+    * "``X`` party" is ``X`` **when ``X`` is itself a label of this category** — ``fidesz party`` is
+      Fidesz because ``fidesz`` exists, while a lone ``green party`` is left as written;
+    * a bracket that only says what the thing is (``vox (party)``) is dropped.
+
+    Returns ``alias -> canonical`` for every spelling that should change. Nothing that would merge
+    two labels the vocabulary keeps apart (plural/singular, ``right``/``rights``) is included.
+    """
+    counts: dict[str, int] = {}
+    for label in labels:
+        text = label.strip()
+        if text:
+            counts[text] = counts.get(text, 0) + 1
+
+    representatives: dict[str, str] = {}
+    for label in sorted(counts, key=lambda item: (-counts[item], len(item), item)):
+        representatives.setdefault(fold_key(label), label)
+
+    mapping: dict[str, str] = {}
+    for label, key in ((label, fold_key(label)) for label in counts):
+        canonical = representatives[key]
+        if canonical != label:
+            mapping[label] = canonical
+
+    # A trailing " party" is the kind of thing, not the thing, when the bare label exists.
+    bare = set(representatives.values())
+    for label in list(counts):
+        current = mapping.get(label, label)
+        for suffix in _GENERIC_SUFFIXES:
+            if current.casefold().endswith(suffix):
+                stem = current[: -len(suffix)].strip()
+                target = next((item for item in bare if item.casefold() == stem.casefold()), "")
+                if target.casefold() in _GENERIC_BASES:
+                    target = ""
+                if target and target != current:
+                    mapping[label] = target
+                    mapping.setdefault(current, target)
+                break
+
+    # A bracket that only says what the thing is adds nothing.
+    for label in list(counts):
+        current = mapping.get(label, label)
+        match = re.search(r"\(([^()]*)\)", current)
+        if not match or _fold(match.group(1)) not in _GENERIC_BRACKETS:
+            continue
+        target = (current[: match.start()] + current[match.end() :]).strip(" -,")
+        target = " ".join(target.split())
+        if target and target != current:
+            mapping[label] = target
+            mapping.setdefault(current, target)
+
+    return {alias: canonical for alias, canonical in mapping.items() if alias != canonical}
+
+
+def merge_cell(cell: str, mapping: dict[str, str], separator: str = ",") -> str:
+    """Apply a variant mapping to every label of one cell, collapsing labels that become equal."""
+    if not cell:
+        return ""
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in (item.strip() for item in cell.split(separator)):
+        label = mapping.get(part, part)
+        if not label:
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(label)
+    joiner = separator + " " if separator + " " in cell else separator
+    return joiner.join(out)
