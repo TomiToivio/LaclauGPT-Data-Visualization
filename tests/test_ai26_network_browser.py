@@ -32,13 +32,27 @@ def test_offline_force_component():
             api.expect(paths).to_have_count(3)
             assert page.locator("path[stroke][marker-end]").count() == 2
             assert len(set(paths.evaluate_all("items => items.map(item => item.getAttribute('d'))"))) == 3
+            edge = page.locator("path.edge").first
+            edge.focus()
+            edge.press("Enter")
+            api.expect(page.locator("#details")).to_contain_text("Evidence IDs:")
+            assert page.locator("#graph").get_attribute("role") == "group"
             circles.first.focus()
             circles.first.press("Enter")
             api.expect(page.locator("#details")).to_contain_text("visible incident edges")
+            page.locator("#neighbors").click()
+            api.expect(page.locator("#neighbors")).to_have_attribute("aria-pressed", "true")
+            page.locator("#zoomIn").click()
+            assert page.locator("#graph > g").get_attribute("transform") != "translate(0,0) scale(1)"
             page.locator("#search").fill("not present")
             assert circles.first.get_attribute("opacity") == "0.16"
             page.locator("#reset").click()
             assert circles.first.get_attribute("opacity") == "1"
+            api.expect(page.locator("#neighbors")).to_have_attribute("aria-pressed", "false")
+            before = circles.evaluate_all("nodes => nodes.map(n => [n.getAttribute('cx'), n.getAttribute('cy')])")
+            assert page.evaluate("simulation.alphaTarget()") == 0
+            page.wait_for_timeout(150)
+            assert circles.evaluate_all("nodes => nodes.map(n => [n.getAttribute('cx'), n.getAttribute('cy')])") == before
             assert not errors
             assert not requests
         finally:
