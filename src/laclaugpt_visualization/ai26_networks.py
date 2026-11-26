@@ -110,7 +110,7 @@ def filter_publication_window(
         return frame
     times = pd.to_datetime(
         frame.get("source_timestamp", pd.Series(index=frame.index, dtype="object")),
-        utc=True, errors="coerce",
+        utc=True, errors="coerce", format="mixed",
     )
     mask = times.notna()
     if start is not None:
@@ -192,6 +192,20 @@ def _record_edges(
     return nodes, edges
 
 
+def _safe_provenance(provenance: Mapping[str, Any]) -> dict[str, Any]:
+    """Allow only fields in the producer GraphProvenance contract into browser payloads."""
+    scalars = (
+        "source_id", "source_url", "run_id", "provenance_id", "method",
+        "model", "config_id", "transformation",
+    )
+    result = {key: value for key in scalars if isinstance(value := provenance.get(key), str)}
+    for key in ("evidence_ids", "codebook_refs"):
+        values = provenance.get(key)
+        if isinstance(values, list):
+            result[key] = [value for value in values if isinstance(value, str)]
+    return result
+
+
 def _artifact_edges(
     payload: Mapping[str, Any], sources: set[str],
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], int]:
@@ -247,7 +261,7 @@ def _artifact_edges(
             "layer": layer, "weight": edge.get("weight"),
             "directed": edge.get("directed") is True,
             "assertion_kind": edge.get("assertion_kind"),
-            "source_url": source_url, "provenance": dict(provenance),
+            "source_url": source_url, "provenance": _safe_provenance(provenance),
             "review_status": properties.get("review_status"),
             "stance": properties.get("qualifier") or properties.get("stance"),
             "timestamp": edge.get("valid_from"), "valid_to": edge.get("valid_to"),
@@ -266,7 +280,12 @@ def graph_view(
     min_weight: float = 0,
     edge_types: tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    """Build a bounded NetworkX multigraph; graph degree here means visible incident edges only."""
+    """Build a bounded NetworkX multigraph; degree means visible incident edges only.
+
+    This record-backed adapter does not invoke the generic GraphEnvelope-only
+    multilayer builder: its source-level filtering is shared with dashboard charts,
+    and explicit stable actor/concept IDs supplied by Analysis are the identity map.
+    """
     nodes, edges = _record_edges(frame)
     omitted = 0
     if artifact is not None:
