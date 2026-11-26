@@ -5,7 +5,12 @@ All charts operate on the caller's already-filtered bounded snapshot.
 """
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 from collections.abc import Mapping
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
@@ -147,6 +152,43 @@ def chart_style(figure):
     return figure
 
 
+def valid_revision(value: str) -> str | None:
+    """Accept only a hexadecimal Git revision, never paths or environment secrets."""
+    return value.lower() if re.fullmatch(r"[0-9a-fA-F]{7,40}", value) else None
+
+
+@lru_cache(maxsize=1)
+def release_revision() -> tuple[str, str]:
+    """Report deployment metadata or the checkout revision at first render."""
+    declared = valid_revision(os.environ.get("LACLAUGPT_VIS_RELEASE_SHA", ""))
+    if declared:
+        return declared, "Deployment revision"
+    root = Path(__file__).resolve().parents[2]
+    if (root / ".git").exists() and (root / "src" / __package__).is_dir():
+        try:
+            command = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+                check=True, capture_output=True, text=True, timeout=1,
+            )
+            revision = valid_revision(command.stdout.strip())
+            if revision:
+                return revision, "Checkout revision at first render"
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return "", "Release revision unavailable"
+
+
+def source_link(source: str) -> str | None:
+    """Construct a safe Markdown URL only for ordinary HTTP(S) source identities."""
+    try:
+        parsed = urlsplit(source)
+        if parsed.scheme in {"http", "https"} and parsed.hostname:
+            return quote(source, safe=":/?#[]@!*+,;=%")
+    except ValueError:
+        pass
+    return None
+
+
 def render_header():
     import streamlit as st
 
@@ -166,6 +208,8 @@ def render_header():
         """,
         unsafe_allow_html=True,
     )
+    revision, label = release_revision()
+    st.caption(f"{label}: {revision[:12]}" if revision else label)
 
 
 def render_corpus_charts(frame: pd.DataFrame):
@@ -278,6 +322,13 @@ def render_record_picker(frame: pd.DataFrame, key: str):
     selected = st.selectbox("Read source record", options, format_func=labels.get, key=key)
     row = records.loc[selected]
     render_record_details(row)
+    from laclaugpt_visualization.provenance import provenance_frame, safe_provenance_events
+
+    with st.expander("Safe provenance (technical details)"):
+        st.json(safe_provenance_events(row))
+        projected = provenance_frame(pd.DataFrame([row])).to_dict(orient="records")
+        if projected:
+            st.json(projected[0])
     return row
 
 
@@ -289,22 +340,21 @@ def render_record_details(row: Mapping):
     source = readable(row.get("source_url"))
     if source:
         st.text(source)
-        try:
-            parsed = urlsplit(source)
-            if parsed.scheme in {"http", "https"} and parsed.hostname:
-                url = quote(source, safe=":/?#[]@!*+,;=%")
-                st.markdown(f"[Open original source]({url})")
-        except ValueError:
-            pass
+        if url := source_link(source):
+            st.markdown(f"[Open original source]({url})")
     for field, label in (
         ("human_readable_summary", "Researcher-readable summary"),
         ("summary", "Analysis summary"),
         ("source_text", "Source text"),
+        ("caption", "Source caption"),
         ("translated_text", "Translation"),
         ("transcript", "Transcript"),
+        ("whisper_transcript", "Legacy transcript"),
         ("ocr", "Text visible in media"),
     ):
         if content := readable(row.get(field)):
+            if field == "whisper_transcript" and content == readable(row.get("transcript")):
+                continue
             with st.expander(label, expanded=field in {"human_readable_summary", "summary"}):
                 st.text(content)
     st.markdown("##### Analysis and review")
