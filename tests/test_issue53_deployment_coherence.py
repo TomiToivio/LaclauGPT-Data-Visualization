@@ -12,7 +12,7 @@ def test_laskin_preflight_rejects_active_legacy_units() -> None:
     assert "ai26-dashboard.service" in script
     assert "ai26-export.service" in script
     assert "ai26-export.timer" in script
-    assert "legacy AI26 user units are still active" in script
+    assert "legacy AI26 user units are active or enabled" in script
 
 
 def test_runbook_retires_legacy_jsonl_export() -> None:
