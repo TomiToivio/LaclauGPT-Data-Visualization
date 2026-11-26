@@ -38,7 +38,13 @@ set +a
 [[ "${LACLAUGPT_VIS_BROWSER_DATA_CONTRACT:-}" == "canonical" ]] || fail "browser data contract must be canonical"
 [[ "${LACLAUGPT_VIS_MACHINE:-}" == "linux-server" ]] || fail "machine must be linux-server"
 [[ "${LACLAUGPT_VIS_EXECUTION:-}" == "web-service" ]] || fail "execution must be web-service"
-[[ "${LACLAUGPT_VIS_SERVER_HOST:-127.0.0.1}" != "0.0.0.0" ]] || fail "refusing wildcard bind without a protected access layer"
+[[ "${LACLAUGPT_VIS_RELEASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || fail "configure the full reviewed release SHA"
+[[ "$(git rev-parse HEAD)" == "$LACLAUGPT_VIS_RELEASE_SHA" ]] || fail "checkout differs from pinned release"
+[[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "release checkout contains local changes"
+for setting in LACLAUGPT_VIS_PASSWORD LACLAUGPT_VIS_DEMO_PASSWORD LACLAUGPT_VIS_AUTH_CONFIG; do
+  [[ -z "${!setting:-}" ]] || fail "remove obsolete AI26 application gate setting: $setting"
+done
+"$SCRIPT_DIR/check-laskin-listeners.sh" before-start || fail "private listener check failed"
 info "AI26 Phase 2 profile shape verified"
 
 # Optional distributed services are configuration choices. The application health command

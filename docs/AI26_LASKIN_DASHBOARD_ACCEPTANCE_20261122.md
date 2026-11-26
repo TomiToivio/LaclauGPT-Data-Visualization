@@ -1,5 +1,7 @@
 # AI26 Laskin dashboard acceptance (22 November 2026)
 
+> Historical Laskin deployment record. Issue #330 supersedes the host instructions below. Use the [single-service AI26 deployment runbook](AI26_LASKIN_DASHBOARD.md) for the current policy on port 8504.
+
 **Scope:** host verification after the AI26 Visualization readability/reliability repair.
 Repository CI and a healthy Streamlit port do **not** prove that Laskin is serving the
 correct checkout, correct module, or current MongoDB research results.

@@ -1,5 +1,7 @@
 # EP24 FI/PL/PT researcher dashboard on Laskin (:8502)
 
+> Historical Laskin deployment record. Issue #330 supersedes the host instructions below. Use the [single-service AI26 deployment runbook](AI26_LASKIN_DASHBOARD.md) for the current policy on port 8504.
+
 ## Processed-video export mode (#242, November 2026)
 
 The researcher dashboard now consumes the **existing exported 500 processed videos for each of Finland, Poland and Portugal**, without an approved cohort roster or `EP24_APPROVED_ROSTER`. The export directory must contain `combined.csv` and the normal optional source manifest. This is deliberately not a source-population selection operation: prepare the 500-per-country CSV export upstream and point `LACLAUGPT_VIS_ANALYSIS_DATA_DIR` to it.
