@@ -37,10 +37,11 @@ LACLAUGPT_VIS_STORAGE_BACKEND=mongodb
 LACLAUGPT_VIS_DATA_BACKEND=mongodb
 LACLAUGPT_VIS_CACHE_BACKEND=redis
 LACLAUGPT_VIS_MESSAGING_BACKEND=redis
-LACLAUGPT_VIS_OBJECT_BACKEND=s3
+LACLAUGPT_VIS_OBJECT_BACKEND=local
 
-LACLAUGPT_VIS_SERVER_HOST=127.0.0.1
-LACLAUGPT_VIS_SERVER_PORT=8501
+LACLAUGPT_VIS_RELEASE_SHA=<reviewed-full-git-commit>
+LACLAUGPT_VIS_SERVER_HOST=<Laskin-tailnet-IPv4>
+LACLAUGPT_VIS_SERVER_PORT=8504
 LACLAUGPT_VIS_DATA_DIR=/private/runtime/ai26/visualization
 LACLAUGPT_VIS_OUTPUT_DIR=/private/runtime/ai26/visualization/exports
 ```
@@ -113,17 +114,6 @@ The guard lives in `deploy/preflight-checkout-ai26.py` and can be run alone:
 .venv/bin/python deploy/preflight-checkout-ai26.py --repo-root .
 ```
 
-## Start manually
-
-```bash
-set -a
-. "$LACLAUGPT_VIS_ENV_FILE"
-set +a
-exec "$LACLAUGPT_VIS_REPO_ROOT/.venv/bin/laclaugpt-visualize" serve
-```
-
-With `project_id=ai26`, `serve` selects the packaged AI26 research workbench. The application exposes Monitor, Explore, Networks when an explicit upstream network product exists, Records/Researcher Review, Reports and diagnostics. Records awaiting analysis remain visible and must not break the dashboard.
-
 ## systemd
 
 Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as a template. Replace these placeholders locally:
@@ -135,47 +125,9 @@ Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as a template. 
 
 The checked-in template deliberately contains no credential, private hostname or Laskin-specific filesystem path. It does contain `Environment=LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`; the protected environment file should carry the same value. The preflight intentionally fails if that effective value is anything else.
 
-After installing the customized unit:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now laclaugpt-visualization-ai26.service
-sudo systemctl status laclaugpt-visualization-ai26.service
-sudo systemctl restart laclaugpt-visualization-ai26.service
-journalctl -u laclaugpt-visualization-ai26.service -n 200 --no-pager
-```
-
-A user-service installation is also valid. Remove `User=` and `Group=`, install under `~/.config/systemd/user/`, use `WantedBy=default.target`, and run the equivalent `systemctl --user` commands.
-
-### One unit owns :8501 (#293)
-
-`laclaugpt-visualize serve` launches `ai26_dashboard.py` through Streamlit — the same page a hand-written
-`streamlit run src/laclaugpt_visualization/ai26_dashboard.py` unit would serve. The difference is what the
-packaged entry point adds around it: the readiness check in `ExecStartPre`, the effective browser-data
-contract, and the settings the CLI validates. A second unit that calls Streamlit directly therefore buys
-nothing and loses all three.
-
-Two units that both name `--server.port 8501` can both be `enabled`: the one that starts first wins the
-port and the other dies, so a reboot can silently change which service answers. A healthy port proves
-only that *something* serves it.
-
-After install, or whenever the endpoint looks wrong, check all three facts — port, checkout, unit:
-
-```bash
-ss -ltnp | grep ':8501'                         # which pid owns the port
-readlink /proc/<pid>/cwd                        # which checkout it runs from
-grep -o '[^/]*\.service' /proc/<pid>/cgroup     # which unit owns it
-systemctl --user is-enabled laclaugpt-visualization-ai26.service
-```
-
-Exactly one enabled unit may name `:8501`, and it must be the one above. `deploy/served-drift-report.py`
-reports a listener owned by any other unit as drift when the deployment spec names the expected one
-(`--deployment 'ai26=8501:/path#laclaugpt-visualization-ai26.service'`), and it also reports a listener
-that no unit owns.
-
 ## Retire the legacy split deployment
 
-The legacy JSONL dashboard/export path from the former monolithic deployment is not part of the supported visualization service. Before enabling the unified service, retire those units if present:
+The legacy JSONL dashboard/export path from the former monolithic deployment is not part of the supported visualization service. Before enabling the unified service, confirm each unit belongs exclusively to the obsolete dashboard and has no remaining consumers. For confirmed units:
 
 ```bash
 systemctl --user disable --now ai26-dashboard.service ai26-export.service ai26-export.timer 2>/dev/null || true
@@ -207,135 +159,28 @@ After start, verify that:
 8. AI26 data does not mix with Brazil26 or any other project namespace;
 9. no visualization-side discourse inference is performed.
 
-### Distinct worktree ownership for :8501 and :8503 (#236)
+## Single-service cutover and rollback (#330)
 
-The canonical AI26 dashboard on :8501 owns branch `main`. A second
-worktree for a separate :8503 live-steps instance **must not claim `main`**:
-Git forbids checking the same branch out in two normal worktrees, which
-previously left the :8501 refresh on a maintenance branch. The #234 preflight
-now also fails if `git worktree list --porcelain` shows another worktree
-claiming `main`. This is a read-only assertion and will not modify either
-deployment.
+Use the Laskin system service `laclaugpt-visualization-ai26.service`. The external EP24 hosts are outside this migration. Operate locally on Laskin. Keep private inventories, unit backups, prior release SHA, dependency versions and data paths in the private runtime directory. Use the existing canonical AI26 data source.
 
-To inspect the host before any change:
+1. Inventory all four ports with `sudo ss -ltnp '( sport = :8501 or sport = :8502 or sport = :8503 or sport = :8504 )'`. For each listener, inspect its PID, cgroup, working directory and parent process. Check system and relevant user `systemctl list-unit-files` and `list-timers --all`, container restart policies, Compose definitions, cron and login/startup jobs. Check disabled/inactive units too. Match names to executable, project and paths. Record dependencies and any unrelated consumers before changing an owner.
+2. Inspect `git worktree list --porcelain`. Preserve all worktrees and data. If a retired checkout holds main, coordinate with its owner before releasing the branch. Choose a clean canonical checkout at the reviewed main commit. Set its full SHA in the private environment. Retain a private dependency snapshot (`python -m pip freeze --exclude-editable`) from the tested release venv for replay on the same Python/platform. Restore it with `pip install -r` before installing the release with `pip install --no-deps -e .`.
+3. Confirm actual tailnet policy grants the researchers access and denies unauthorized peers, including forwarded/proxied access. Review Tailscale Serve/Funnel and reverse proxies. Remove obsolete application gate variables from this service's private environment. Set the literal authorized IPv4 returned by `tailscale ip -4` and port 8504. The startup check verifies the local bind. ACLs and upstream exposure require the independent host/network checks.
+4. Stop the old service on every dashboard port, including the previous 8504 owner. For each identified obsolete system or user unit, use `systemctl disable --now UNIT` in its owning manager (system units require sudo). Disable matching timers/sockets before services. For container-managed services, first remove the dashboard-specific restart/autostart policy and stop the verified dashboard container. Preserve volumes. Back up and retire only the confirmed obsolete dashboard configuration after checking reverse dependencies. Preserve unrelated exporters, units, source and research material. Reload the changed managers and recheck inactive/disabled state.
+5. Install the customized system service. Load its protected environment in the operator shell, run the preflight, and then start the single service.
 
 ```bash
-git -C "$LACLAUGPT_VIS_REPO_ROOT" worktree list
-git -C "$LACLAUGPT_VIS_REPO_ROOT" status --short
-# Check the :8503 worktree separately (substitute its configured path):
-git -C "$LIVE_STEPS_WORKTREE" status --short
-git -C "$LIVE_STEPS_WORKTREE" branch --show-current
-```
-
-**Do not run `git worktree remove`, `git reset --hard`, `git stash`,
-`git clean` or `git switch --discard-changes` against the :8503 checkout.**
-The #236 incident documented staged edits and deletion belonging to another
-session. Preserve them exactly as found.
-
-For an **already clean** :8503 worktree, switch to a deployment-specific branch:
-
-```bash
-# Only after verifying the :8503 checkout is CLEAN, and main is at
-# the intended tested commit:
-git -C "$LIVE_STEPS_WORKTREE" switch -c deploy/live-steps
-# If that branch already exists, use "switch deploy/live-steps" instead.
-git -C "$LACLAUGPT_VIS_REPO_ROOT" switch main
-git -C "$LACLAUGPT_VIS_REPO_ROOT" pull --ff-only origin main
-```
-
-Alternatively a clean :8503 worktree may be detached at a reviewed SHA using
-`git switch --detach <reviewed-sha>`. Never detach or switch while it contains
-someone else's uncommitted work. If :8503 is dirty, **stop and coordinate with
-the owner of that work**; do not force the :8501 checkout onto main with
-`--ignore-other-worktrees`. Once :8503 no longer claims main, refresh :8501
-using the documented main-branch commands and run the preflight before
-restarting. Do not start or deploy :8503 merely to fix branch ownership.
-
-## Update and restart
-
-One clone may serve more than one dashboard. A git branch can be checked out in only one worktree,
-so the AI26 checkout on `:8501` owns `main`; any additional deployment must be a **detached**
-worktree so it never claims the branch (#236).
-
-```bash
-cd "$LACLAUGPT_VIS_REPO_ROOT"
-git status --short
-git switch main                 # stop if another worktree owns main
-git pull --ff-only origin main
-.venv/bin/pip install -e '.[remote]'
+set -a
+. "$LACLAUGPT_VIS_ENV_FILE"
+set +a
 bash deploy/preflight-laskin-ai26.sh
-sudo systemctl restart laclaugpt-visualization-ai26.service
-sudo systemctl status laclaugpt-visualization-ai26.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now laclaugpt-visualization-ai26.service
+bash deploy/check-laskin-listeners.sh serving
+curl --fail --noproxy '*' "http://$LACLAUGPT_VIS_SERVER_HOST:8504/_stcore/health"
+export LACLAUGPT_VIS_DEPLOYMENTS="ai26=8504:$LACLAUGPT_VIS_REPO_ROOT#laclaugpt-visualization-ai26.service"
+sudo --preserve-env=LACLAUGPT_VIS_DEPLOYMENTS .venv/bin/python deploy/served-drift-report.py
 ```
 
-If preflight fails, leave the known-good service in place and fix the configuration or checkout before restarting.
-
-### When `main` is held by another worktree
-
-```bash
-git -C "$LACLAUGPT_VIS_REPO_ROOT" worktree list
-# fatal: 'main' is already checked out at '<other worktree>'
-```
-
-Do not use `--ignore-other-worktrees`, even as a temporary workaround. First preserve
-any uncommitted work in the other checkout through its owner. When clean, switch that
-checkout to its own deployment branch or a reviewed detached commit, then switch
-:8501 to `main`. The preflight refuses conflicting branch ownership rather
-than concealing it.
-
-## Continuous served-drift report (#234)
-
-`deploy/preflight-laskin-ai26.sh` guards a *deploy*: it refuses to start a checkout that is not
-`origin/main` with its declared dependencies installed (#235). It cannot see what happened **after**
-a successful start — the drift that #176, #185, #234 and #236 all were, where the checkout moved
-while the unit stayed `active` and the port kept answering 200.
-
-`deploy/served-drift-report.py` is the continuous observer. It reads what is actually being served:
-
-```bash
-.venv/bin/python deploy/served-drift-report.py            # table, exit 1 on any problem
-.venv/bin/python deploy/served-drift-report.py --fetch    # compare against a freshly fetched origin
-.venv/bin/python deploy/served-drift-report.py --json     # machine-readable
-```
-
-For every deployment it ties the port to the checkout: the listening process's `/proc/<pid>/cwd`
-must be the configured path, the branch must be `main`, and HEAD must equal `origin/main`. When the
-spec names a unit, it also ties the port to **that unit** through the listener's cgroup, and reports
-a listener owned by any other unit — or by no unit at all — as drift (#293: the port was healthy and
-the unit was wrong). It also
-reports a branch claimed by **two deployments**, the #236 layout defect that makes the documented
-refresh impossible to run non-interactively. A duplicate claim held only by a transient scratch
-worktree is reported as a note, not a failure.
-
-The deployments are the documented two on Laskin and can be overridden:
-
-```bash
-# The deployment paths are host state, not repository content: name them here or in
-# LACLAUGPT_VIS_DEPLOYMENTS (comma separated, NAME=PORT:PATH[#UNIT]).
-.venv/bin/python deploy/served-drift-report.py \
-  --deployment "ai26-dashboard=8501:$LACLAUGPT_VIS_REPO_ROOT#laclaugpt-visualization-ai26.service" \
-  --deployment "live-steps=8503:$LIVE_STEPS_WORKTREE@detached"
-```
-
-`@detached` marks a secondary deployment: per the convention above it must serve a commit, not a
-branch, so a detached HEAD there is correct. The same rule inverted applies — a *secondary*
-deployment found on `main` is reported as the #236 layout defect.
-
-Two operational details, both learned the hard way (#293). The variable is `LACLAUGPT_VIS_DEPLOYMENTS`;
-the script prints its own name in the error when it is unset, which is the only reason a wrong spelling
-is diagnosable. And run the unit **once by hand** after installing it: the service is deliberately
-`SuccessExitStatus=0 1 2`, because "drift" and "could not inspect" are reportable outcomes rather than
-unit failures — so an unset variable looks exactly like a healthy run in `systemctl status`. The log is
-the evidence, not the unit state.
-
-### Install the hourly report
-
-`deploy/laskin-served-drift.service.example` and `.timer.example` run it hourly and append to
-`<private-runtime-root>/logs/served-drift.log`; both a drift and a healthy run are recorded, and the
-exit status is preserved for a watcher. Fill in the two paths, install into
-`~/.config/systemd/user/`, then `systemctl --user enable --now laskin-served-drift.timer` — and
-`loginctl enable-linger "$USER"`, otherwise the timer dies with the login session.
-
-## Logs and privacy
-
-Use the service manager journal for process logs. Do not paste logs into public issues without checking for research content, private endpoints, credentials or private provenance paths. Runtime data and researcher notes must remain under the configured private runtime root, never inside the public Git checkout.
+6. From an authorized researcher browser, open the private endpoint on 8504. Verify there is no login prompt, real AI26 coverage and analysis freshness agree with the source, filters update charts and evidence, and all available network layers render. Verify rejected access from an unauthorized vantage point. Confirm the service working directory and release SHA against the reviewed revision. Repeat the listener and browser checks after a service-manager reload and again after the next authorized host reboot. Record the endpoint, commit, sanitized checks and outstanding checks in #330. Keep the issue open until live acceptance.
+7. For rollback, stop the unit, restore the previously verified single-service checkout, matching virtualenv and pinned SHA. A rollback to an older reviewed commit requires the documented intentional git-drift override. Keep the private address, port 8504, and network restriction. Rerun preflight and the listener/health/browser tests. If there is no previously verified consolidated release, keep the service stopped and record the failed cutover.

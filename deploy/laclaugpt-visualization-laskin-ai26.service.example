@@ -13,6 +13,7 @@ Environment=LACLAUGPT_VIS_ENV_FILE=<private-env-file>
 # AI26 Phase 2 canonical contract; keep the private EnvironmentFile value canonical too.
 # Phase 0 remains available only as an explicit historical compatibility override.
 Environment=LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical
+Environment=LACLAUGPT_VIS_SERVER_PORT=8504
 EnvironmentFile=<private-env-file>
 ExecStartPre=<visualization-root>/deploy/preflight-laskin-ai26.sh
 ExecStart=<visualization-root>/.venv/bin/laclaugpt-visualize serve
