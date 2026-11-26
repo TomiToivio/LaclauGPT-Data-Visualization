@@ -151,7 +151,7 @@ def test_the_service_example_configures_the_variable_the_script_reads():
     example = Path(__file__).resolve().parents[1] / "deploy" / "laskin-served-drift.service.example"
     text = example.read_text(encoding="utf-8")
     assert f"Environment={drift.DEPLOYMENTS_ENV}=" in text
-    assert "#laclaugpt-visualization-ai26.service" in text
+    assert "#ai26-dashboard.service" in text
 
 
 def test_the_runbook_names_the_variable_the_script_reads():
