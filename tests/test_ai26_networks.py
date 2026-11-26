@@ -2,6 +2,7 @@
 from datetime import UTC, datetime
 
 import pandas as pd
+
 from laclaugpt_visualization.ai26_graph_render import graph_html
 from laclaugpt_visualization.ai26_networks import (
     filter_coded_records,
@@ -106,3 +107,14 @@ def test_html_no_network_dependency_or_script_breakout():
     assert "<script>alert(1)</script>" not in html
     assert "\\u003c/script>" in html
     assert "<script src=" not in html
+
+def test_mixed_timestamp_formats_and_provenance_allowlist():
+    rows = pd.DataFrame({"source_timestamp": [
+        "2026-11-23T12:00:00Z", "2026-11-23T13:00:00+01:00", "2026-11-23",
+    ]})
+    bounds = period_bounds("Selected UTC day", selected_start="2026-11-23")
+    assert len(filter_publication_window(rows, *bounds)) == 3
+    payload = artifact()
+    payload["edges"][0]["provenance"]["unknown_private_field"] = "not exported"
+    result = graph_view(frame(), payload)
+    assert "unknown_private_field" not in str(result)
