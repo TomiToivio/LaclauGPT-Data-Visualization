@@ -41,6 +41,16 @@ Object.entries(palette).forEach(([layer,color])=>{
 });
 const nodeById=new Map(data.nodes.map(d=>[d.id,d]));
 const originalEdges=data.edges.map(d=>({...d}));
+const parallel=new Map();
+data.edges.forEach(d=>{
+ const pair=JSON.stringify([d.source,d.target].sort());
+ if(!parallel.has(pair))parallel.set(pair,[]);
+ parallel.get(pair).push(d);
+});
+parallel.forEach(edges=>edges.forEach((d,i)=>{
+ const direction=d.source<=d.target?1:-1;
+ d.curvature=(i-(edges.length-1)/2)*22*direction;
+}));
 const radius=d=>Math.min(18,5+Math.sqrt(d.degree)*3);
 const simulation=d3.forceSimulation(data.nodes)
  .force('link',d3.forceLink(data.edges).id(d=>d.id).distance(92))
@@ -108,7 +118,9 @@ function tick(){
   const x=d.source.x,y=d.source.y,dx=d.target.x-x,dy=d.target.y-y;
   const distance=Math.sqrt(dx*dx+dy*dy);
   if(distance<0.01)return 'M'+x+','+y+'c35,-45 55,40 0,0';
-  return 'M'+x+','+y+'A'+Math.max(20,distance*1.5)+','+Math.max(20,distance*1.5)+' 0 0,1 '+d.target.x+','+d.target.y;
+  const bend=d.curvature;
+  return 'M'+x+','+y+'Q'+(x+dx/2-dy/distance*bend)+','
+   +(y+dy/2+dx/distance*bend)+' '+d.target.x+','+d.target.y;
  });
  nodes.attr('cx',d=>d.x).attr('cy',d=>d.y);
  labels.attr('x',d=>d.x).attr('y',d=>d.y);
