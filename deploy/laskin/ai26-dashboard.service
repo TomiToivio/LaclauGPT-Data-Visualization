@@ -5,11 +5,11 @@ After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/mnt/workspace/LaclauGPT-Data-Visualization
+WorkingDirectory=%h/LaclauGPT-Data-Visualization
 EnvironmentFile=%h/.config/laclaugpt/ai26/dashboard.env
-ExecStart=/mnt/workspace/LaclauGPT-Data-Visualization/.venv/bin/python -m streamlit run \
+ExecStart=%h/LaclauGPT-Data-Visualization/.venv/bin/python -m streamlit run \
     src/laclaugpt_visualization/ai26_dashboard.py \
-    --server.address 100.115.95.109 --server.port 8504 \
+    --server.address ${LACLAUGPT_VIS_SERVER_ADDRESS} --server.port 8504 \
     --server.headless true --browser.gatherUsageStats false
 # The dashboard is a research interface, not a batch job: it must never start analysis by loading.
 Restart=on-failure
