@@ -35,7 +35,6 @@ from laclaugpt_visualization.integrations.hermes import (
     clear_derived_cache,
     inspect_effective_config,
 )
-from laclaugpt_visualization.provenance import provenance_frame, safe_provenance_events
 from laclaugpt_visualization.research_views import load_reports, timeline_counts
 from laclaugpt_visualization.transforms import graph_projection, monitor, relations
 from laclaugpt_visualization.worker_status import RedisOperationalStatus
@@ -574,13 +573,7 @@ def _records(frame: pd.DataFrame) -> None:
     table = researcher_table(frame)
     if len(table.columns):
         st.dataframe(table, width="stretch", hide_index=True)
-    selected = render_record_picker(frame, "ai26_records_inspector")
-    if selected is not None:
-        with st.expander("Safe provenance (technical details)"):
-            st.json(safe_provenance_events(selected))
-            projected = provenance_frame(pd.DataFrame([selected])).to_dict(orient="records")
-            if projected:
-                st.json(projected[0])
+    render_record_picker(frame, "ai26_records_inspector")
 
 def _reports(settings: Settings, frame: pd.DataFrame) -> None:
     reports = load_reports(settings.data_path("reports"))
