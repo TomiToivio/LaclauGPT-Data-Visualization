@@ -136,7 +136,7 @@ Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as a template. 
 
 The checked-in template deliberately contains no credential, private hostname or Laskin-specific filesystem path. It does contain `Environment=LACLAUGPT_VIS_BROWSER_DATA_CONTRACT=canonical`; the protected environment file should carry the same value. The preflight intentionally fails if that effective value is anything else.
 
-After installing the customized unit:
+Install the customized template under the canonical filename `ai26-dashboard.service` (not the historical template basename). Prefer the existing user-manager installation on Laskin. After installing a system-manager variant, if that is the approved host configuration:
 
 ```bash
 sudo systemctl daemon-reload
@@ -146,15 +146,14 @@ sudo systemctl restart ai26-dashboard.service
 journalctl -u ai26-dashboard.service -n 200 --no-pager
 ```
 
-A user-service installation is also valid. Remove `User=` and `Group=`, install under `~/.config/systemd/user/`, use `WantedBy=default.target`, and run the equivalent `systemctl --user` commands.
+The reported #337 migration uses a user-service installation; retain that manager rather than enabling a second system unit. Remove `User=` and `Group=`, install under `~/.config/systemd/user/`, use `WantedBy=default.target`, and run the equivalent `systemctl --user` commands.
 
 ### One unit owns :8504 (#293)
 
 `laclaugpt-visualize serve` launches `ai26_dashboard.py` through Streamlit — the same page a hand-written
 `streamlit run src/laclaugpt_visualization/ai26_dashboard.py` unit would serve. The difference is what the
 packaged entry point adds around it: the readiness check in `ExecStartPre`, the effective browser-data
-contract, and the settings the CLI validates. A second unit that calls Streamlit directly therefore buys
-nothing and loses all three.
+contract, and the settings the CLI validates. The #337 migration used a direct Streamlit invocation; update the existing canonical unit in place to use the packaged entry point and preflight, rather than creating another unit.
 
 Two units that both name `--server.port 8501` can both be `enabled`: the one that starts first wins the
 port and the other dies, so a reboot can silently change which service answers. A healthy port proves
