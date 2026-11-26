@@ -37,9 +37,10 @@ LACLAUGPT_VIS_STORAGE_BACKEND=mongodb
 LACLAUGPT_VIS_DATA_BACKEND=mongodb
 LACLAUGPT_VIS_CACHE_BACKEND=redis
 LACLAUGPT_VIS_MESSAGING_BACKEND=redis
-LACLAUGPT_VIS_OBJECT_BACKEND=s3
+LACLAUGPT_VIS_OBJECT_BACKEND=local
 
-LACLAUGPT_VIS_SERVER_HOST=<verified-private-interface-IPv4>
+LACLAUGPT_VIS_RELEASE_SHA=<reviewed-full-git-commit>
+LACLAUGPT_VIS_SERVER_HOST=<Laskin-tailnet-IPv4>
 LACLAUGPT_VIS_SERVER_PORT=8504
 LACLAUGPT_VIS_NETWORK_ACCESS_VERIFIED=1
 LACLAUGPT_VIS_DATA_DIR=/private/runtime/ai26/visualization
@@ -114,17 +115,6 @@ The guard lives in `deploy/preflight-checkout-ai26.py` and can be run alone:
 .venv/bin/python deploy/preflight-checkout-ai26.py --repo-root .
 ```
 
-## Start manually
-
-```bash
-set -a
-. "$LACLAUGPT_VIS_ENV_FILE"
-set +a
-exec "$LACLAUGPT_VIS_REPO_ROOT/.venv/bin/laclaugpt-visualize" serve
-```
-
-With `project_id=ai26`, `serve` selects the packaged AI26 research workbench. The application exposes Monitor, Explore, Networks when an explicit upstream network product exists, Records/Researcher Review, Reports and diagnostics. Records awaiting analysis remain visible and must not break the dashboard.
-
 ## systemd
 
 Use `deploy/laclaugpt-visualization-laskin-ai26.service.example` as a template. Replace these placeholders locally:
@@ -175,7 +165,7 @@ that no unit owns.
 
 ## Consolidate Laskin deployments (#330)
 
-The single AI26 dashboard is the only dashboard to serve on Laskin. The private interface and URL are supplied by the operator outside Git. No Streamlit password gate is required: authorization is enforced by the private network. Do not expose a wildcard listener or public interface. Confirm the private interface ownership and network ACLs before setting the verification flag in the protected environment file. The flag records operator verification; it is not itself a network security mechanism.
+The single AI26 dashboard is the only dashboard to serve on Laskin. The private interface and URL are supplied by the operator outside Git. No Streamlit password gate is required: authorization is enforced by the private network. Do not expose a wildcard listener or public interface. Confirm the address matches the local Tailscale IPv4, review Serve/Funnel and reverse proxies, and verify network ACLs from authorized and unauthorized clients before setting the verification flag in the protected environment file. The flag records operator verification; it is not itself a network security mechanism.
 
 Before migration, inventory listeners and both user/system services:
 
@@ -201,9 +191,9 @@ systemctl --user disable --now laclaugpt-ep24-researcher.service laclaugpt-live-
 
 Preserve independent export and backup jobs unless confirmed obsolete; the reported migration left the export timer in place. Never revive a retired exporter solely to feed the new service. Future portable exports should use a temporary file followed by atomic rename.
 
-Stop and disable the identified old dashboard units (including the old port 8504 instance) using the appropriate manager; do not blindly kill unrelated processes or disable upstream Collection/Analysis. Remove obsolete dashboard-only autostart definitions after dependency review. Confirm all four dashboard listeners are stopped before starting the new service. Replace the canonical service configuration, set the private bind address and explicit port 8504, and run preflight. Do not restart obsolete EP24 or live-steps dashboards. Keep external EP24 reference deployments unchanged.
+Stop and disable the identified old dashboard units (including the old port 8504 instance) using the appropriate manager; do not blindly kill unrelated processes or disable upstream Collection/Analysis. Remove obsolete dashboard-only autostart definitions after dependency review. Confirm all four dashboard listeners are stopped before starting the new service. Replace the canonical service configuration, set the private bind address and explicit port 8504, pin the full reviewed release SHA in the protected environment, remove obsolete application password variables, and run preflight. Retain a private dependency snapshot (pip freeze --exclude-editable) for reproducible rollback. Do not restart obsolete EP24 or live-steps dashboards. Keep external EP24 reference deployments unchanged.
 
-After starting the canonical unit, verify the private endpoint in a browser without a Streamlit login, the health endpoint, actual data and the served revision. Check that ports 8501–8503 have no dashboard listeners and that port 8504 has exactly one intended service. Check enabled/active units and timers and repeat the checks after the normal service-manager reload/restart. Verify network ACLs from an authorized client and confirm no public listener. For rollback, stop the new service and restore the saved canonical service configuration/release only; do not restore retired dashboard instances unless separately authorized.
+After starting the canonical unit, run `bash deploy/check-laskin-listeners.sh serving` with the protected environment loaded and verify the private endpoint in a browser without a Streamlit login, the health endpoint, actual data and the served revision. Check that ports 8501–8503 have no dashboard listeners and that port 8504 has exactly one intended service. Check enabled/active units and timers and repeat the checks after the normal service-manager reload/restart and the next authorized reboot. Verify network ACLs from an authorized client and confirm no public listener. For rollback, stop the new service and restore the saved canonical service configuration/release only; do not restore retired dashboard instances unless separately authorized.
 
 Agents without host access should use synthetic fixtures and prepare reviewed PRs; a host-capable operator records sanitized results of these checks in issue #330.
 
@@ -235,9 +225,10 @@ git status --short
 git switch main                 # stop if another worktree owns main
 git pull --ff-only origin main
 .venv/bin/pip install -e '.[remote]'
+# Update LACLAUGPT_VIS_RELEASE_SHA in the protected environment to the reviewed full SHA.
 bash deploy/preflight-laskin-ai26.sh
-sudo systemctl restart ai26-dashboard.service
-sudo systemctl status ai26-dashboard.service
+systemctl --user restart ai26-dashboard.service
+systemctl --user status ai26-dashboard.service
 ```
 
 If preflight fails, leave the known-good service in place and fix the configuration or checkout before restarting.

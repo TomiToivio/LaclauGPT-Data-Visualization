@@ -1,5 +1,7 @@
 # FI/PL/PT live pipeline explorer — steps 1–7
 
+> Historical Laskin deployment record. Issue #330 supersedes the host instructions below. Use the [single-service AI26 deployment runbook](AI26_LASKIN_DASHBOARD.md) for the current policy on port 8504.
+
 A researcher-facing view over the three live `*_live_steps_1_7.csv` exports (Finland, Poland,
 Portugal). Served on **Laskin** at <http://100.115.95.109:8503/> (Tailscale address of `laskin01`).
 

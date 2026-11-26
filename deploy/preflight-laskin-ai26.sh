@@ -54,14 +54,14 @@ networks = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10")
 sys.exit(0 if any(address in ipaddress.IPv4Network(net) for net in networks) else 1)
 PY
 [[ "${LACLAUGPT_VIS_NETWORK_ACCESS_VERIFIED:-}" == "1" ]] || fail "verify private network ACLs and set LACLAUGPT_VIS_NETWORK_ACCESS_VERIFIED=1"
-# Ports reserved for retired dashboard deployments must be clear; never kill
-# processes here. An operator must identify and stop the correct service.
-command -v ss >/dev/null 2>&1 || fail "ss is required to inspect retired dashboard ports"
-listeners="$(ss -H -ltn)" || fail "could not inspect listening TCP ports"
-if printf '%s\n' "$listeners" | awk '$4 ~ /:(8501|8502|8503)$/ { found = 1 } END { exit !found }'; then
-  fail "retired dashboard ports 8501–8503 still have listeners; inspect their owners"
-fi
-info "AI26 profile and retired dashboard ports verified"
+[[ "${LACLAUGPT_VIS_RELEASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || fail "configure the full reviewed release SHA"
+[[ "$(git rev-parse HEAD)" == "$LACLAUGPT_VIS_RELEASE_SHA" ]] || fail "checkout differs from pinned release"
+[[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "release checkout contains local changes"
+for setting in LACLAUGPT_VIS_PASSWORD LACLAUGPT_VIS_DEMO_PASSWORD LACLAUGPT_VIS_AUTH_CONFIG; do
+  [[ -z "${!setting:-}" ]] || fail "remove obsolete AI26 application gate setting: $setting"
+done
+"$SCRIPT_DIR/check-laskin-listeners.sh" before-start || fail "private listener check failed"
+info "AI26 Phase 2 profile shape verified"
 
 # Optional distributed services are configuration choices. The application health command
 # performs sanitized validation and must degrade cleanly when optional capabilities are absent.

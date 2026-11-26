@@ -171,7 +171,7 @@ def fold_key(label: str) -> str:
     text = unicodedata.normalize("NFKC", label).casefold().replace("&", " and ")
     text = text.replace(".", " ").replace('"', "").replace("\u201c", "").replace("\u201d", "")
     text = " ".join(text.split())
-    return text[4:] if text.startswith("the ") else text
+    return text.removeprefix("the ")
 
 
 def variant_merges(labels) -> dict[str, str]:

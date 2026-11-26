@@ -18,6 +18,15 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from laclaugpt_visualization.ai26_research_ux import (
+    chart_style,
+    render_corpus_charts,
+    render_distribution,
+    render_header,
+    render_overlap,
+    render_record_picker,
+    researcher_table,
+)
 from laclaugpt_visualization.canonical_explore import canonical_explore
 from laclaugpt_visualization.config import Settings, get_settings
 from laclaugpt_visualization.data import filter_frame, normalize_frame
@@ -26,7 +35,6 @@ from laclaugpt_visualization.integrations.hermes import (
     clear_derived_cache,
     inspect_effective_config,
 )
-from laclaugpt_visualization.provenance import provenance_frame, safe_provenance_events
 from laclaugpt_visualization.research_views import load_reports, timeline_counts
 from laclaugpt_visualization.transforms import graph_projection, monitor, relations
 from laclaugpt_visualization.worker_status import RedisOperationalStatus
@@ -473,16 +481,17 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
             f"Analysis freshness: newest analyzed record is {snapshot.analyzed_age_hours:.1f} "
             f"hours old ({snapshot.newest_analyzed_at})."
         )
+    render_corpus_charts(frame)
     values = monitor(frame)
     timeline = timeline_counts(frame)
     if not timeline.empty:
         st.markdown("#### Records across time")
         st.caption("Source, collection, analysis and event clocks describe different timestamps.")
         st.plotly_chart(
-            px.line(
+            chart_style(px.line(
                 timeline, x="period", y="documents", color="time_kind", markers=True,
                 labels={"period": "Date", "documents": "Records", "time_kind": "Clock"},
-            ),
+            )),
             width="stretch",
         )
     # Side by side rather than stacked: formations, signifiers and actors are read as a set, and
@@ -499,7 +508,8 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
             column.caption(f"No {title.lower()} in the current filtered window.")
             continue
         column.plotly_chart(
-            px.bar(table.head(12), x="count", y=table.columns[0], orientation="h"),
+            chart_style(px.bar(table.head(12).iloc[::-1], x="count",
+                               y=table.columns[0], orientation="h")),
             width="stretch",
             height=340,
         )
@@ -535,25 +545,11 @@ def _explore(frame: pd.DataFrame) -> None:
         )
 
     for target in ("formations", "topics", "entities", "signifiers"):
-        table = views[target]
         st.markdown(f"#### {target.title()}")
-        if table.empty:
-            st.info(f"No {target} in the current filtered window.")
-            continue
-        st.plotly_chart(
-            _ranked_bar(table, target, f"Frequent {target}"),
-            width="stretch",
-        )
-        with st.expander(f"View {target} counts"):
-            st.dataframe(table.head(100), width="stretch", hide_index=True)
+        render_distribution(frame, views[target], target, target.title())
 
-    cross = views["formation_signifier"]
     st.markdown("#### Formation × signifier")
-    if cross.empty:
-        st.info("No formation/signifier overlap is available in the current view.")
-    else:
-        st.dataframe(cross.head(100), width="stretch", hide_index=True)
-
+    render_overlap(frame, views["formation_signifier"])
 
 def _networks(frame: pd.DataFrame) -> None:
     projection = graph_projection(frame)
@@ -574,63 +570,10 @@ def _records(frame: pd.DataFrame) -> None:
     if frame.empty:
         st.info("No records match the current filters.")
         return
-    columns = [
-        name
-        for name in (
-            "source_url",
-            "source_platform",
-            "source_author",
-            "source_language",
-            "analysis_status",
-            "summary",
-        )
-        if name in frame
-    ]
-    st.dataframe(frame[columns] if columns else frame, width="stretch", hide_index=True)
-    options = [
-        value for value in frame["source_url"].astype(str).unique()
-        if value.strip() and value != "nan"
-    ]
-    if not options:
-        return
-    source_url = st.selectbox("Close-read record", options)
-    row = frame[frame["source_url"] == source_url].iloc[0]
-    st.markdown("#### Text / metadata")
-    summary = _readable_text(row.get("summary"), "") or _readable_text(
-        row.get("human_readable_summary"), "No summary"
-    )
-    st.write(summary)
-    for field in ("source_text", "caption", "transcript", "whisper_transcript", "ocr"):
-        content = _readable_text(row.get(field), "")
-        if content:
-            st.markdown(f"**{field.replace('_', ' ').title()}**")
-            st.write(content)
-    st.markdown("#### Analysis")
-    st.json(
-        {
-            key: row.get(key)
-            for key in (
-                "formations",
-                "signifiers",
-                "topics",
-                "entities",
-                "discourses",
-                "us",
-                "them",
-                "frontier",
-                "uncertainties",
-                "abstentions",
-                "evidence",
-            )
-            if key in row
-        }
-    )
-    with st.expander("Safe provenance"):
-        st.json(safe_provenance_events(row))
-        projected = provenance_frame(pd.DataFrame([row])).to_dict(orient="records")
-        if projected:
-            st.json(projected[0])
-
+    table = researcher_table(frame)
+    if len(table.columns):
+        st.dataframe(table, width="stretch", hide_index=True)
+    render_record_picker(frame, "ai26_records_inspector")
 
 def _reports(settings: Settings, frame: pd.DataFrame) -> None:
     reports = load_reports(settings.data_path("reports"))
@@ -779,11 +722,8 @@ def _diagnostics(settings: Settings, snapshot: LiveSnapshot, frame: pd.DataFrame
 
 def run() -> None:
     st.set_page_config(page_title="LaclauGPT AI26 Research Dashboard", layout="wide")
-    st.title("LaclauGPT · AI26 Research Dashboard")
-    st.caption(
-        "Live distributed research instrument · MongoDB durable state · Redis coordination · "
-        "no multimodal blob display"
-    )
+    render_header()
+    st.caption("Live AI26 research dashboard · descriptive observations and source evidence")
     st.warning(CAVEAT)
     settings = get_settings()
     ai26_namespace(settings)

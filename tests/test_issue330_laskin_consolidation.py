@@ -29,7 +29,8 @@ class LaskinConsolidationTest(unittest.TestCase):
                     '#!/bin/sh\n'
                     + ("echo 'LISTEN 0 32 127.0.0.1:8502 0.0.0.0:*'\n" if listener else "")
                 ),
-                "git": '#!/bin/sh\npwd\n',
+                "git": ('#!/bin/sh\ncase "$*" in *--show-toplevel*) pwd;; *"rev-parse HEAD"*) printf "%040d\\n" 1;; *status*) exit 0;; esac\n'),
+                "tailscale": '#!/bin/sh\necho 100.64.0.1\n',
                 "laclaugpt-visualize": '#!/bin/sh\nexit 0\n',
                 "systemctl": (
                     '#!/bin/sh\n'
@@ -49,7 +50,8 @@ class LaskinConsolidationTest(unittest.TestCase):
                 "LACLAUGPT_VIS_EXECUTION=web-service\n"
                 f"LACLAUGPT_VIS_SERVER_HOST={host}\n"
                 f"LACLAUGPT_VIS_SERVER_PORT={port}\n"
-                f"LACLAUGPT_VIS_NETWORK_ACCESS_VERIFIED={verified}\n",
+                f"LACLAUGPT_VIS_NETWORK_ACCESS_VERIFIED={verified}\n"
+                f"LACLAUGPT_VIS_RELEASE_SHA={1:040d}\n",
                 encoding="utf-8",
             )
             env = os.environ.copy()
@@ -70,7 +72,7 @@ class LaskinConsolidationTest(unittest.TestCase):
     def test_retired_listener_blocks_start(self):
         result = self.run_preflight("100.64.0.1", "8504", "1", listener=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("still have listeners", result.stderr)
+        self.assertIn("listener still occupies", result.stderr)
 
     def test_invalid_settings_fail_closed(self):
         cases = [
