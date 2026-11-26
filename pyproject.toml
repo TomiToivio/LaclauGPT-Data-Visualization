@@ -62,3 +62,6 @@ line-length = 100
 # dashboards/pledge/pledge_dashboard.py is a verbatim copy of the script deployed from the
 # presentation host. Restyling it here would make the backup differ from the code that runs.
 "dashboards/pledge/pledge_dashboard.py" = ["C408", "BLE001"]
+
+[tool.setuptools.package-data]
+laclaugpt_visualization = ["ai26_graph_assets/*.html", "ai26_graph_assets/*.js", "ai26_graph_assets/*.md"]
