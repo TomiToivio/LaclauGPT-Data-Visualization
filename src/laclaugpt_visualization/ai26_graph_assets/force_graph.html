@@ -6,7 +6,7 @@
 body { margin:0; padding:12px; }
 header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 button,input { background:#202d48; color:inherit; border:1px solid #597297; border-radius:6px; padding:7px; }
-button:focus-visible,input:focus-visible,.node:focus-visible { outline:3px solid #fbbf24; }
+button:focus-visible,input:focus-visible,.node:focus-visible,.edge:focus-visible { outline:3px solid #fbbf24; }
 svg { width:100%; height:500px; touch-action:none; border:1px solid #344460; margin-top:10px; }
 .legend { display:flex; gap:1.2em; flex-wrap:wrap; }
 .da {color:#3ee9ed} .dna {color:#ffaf66} .sna {color:#d7a0ff}
@@ -17,11 +17,11 @@ svg { width:100%; height:500px; touch-action:none; border:1px solid #344460; mar
 <header>
 <label>Find a node <input id="search" placeholder="Name or concept"></label>
 <button id="reset">Reset view</button><button id="zoomIn">Zoom in</button>
-<button id="zoomOut">Zoom out</button><button id="neighbors">Toggle selected node neighborhood</button>
+<button id="zoomOut">Zoom out</button><button id="neighbors" aria-pressed="false">Toggle selected node neighborhood</button>
 <button id="export">Save SVG</button>
 </header>
 <p class="legend"><span class="da">● DA · coded discourse</span><span class="dna">● DNA · statements</span><span class="sna">● SNA · social ties</span></p>
-<svg id="graph" role="img" aria-label="Interactive analytical graph. Use the node search and details list to explore."></svg>
+<svg id="graph" role="group" aria-label="Interactive analytical graph. Tab to nodes and edges; press Enter or Space to inspect."></svg>
 <div role="status" id="details">Select a node or edge to inspect the displayed relation and its evidence.</div>
 <script>/* D3_BUNDLE */</script>
 <script>
@@ -58,18 +58,28 @@ const simulation=d3.forceSimulation(data.nodes)
  .force('collision',d3.forceCollide(d=>radius(d)+5))
  .force('center',d3.forceCenter(width/2,height/2));
 const detail=document.getElementById('details');
+const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function relayout(alpha){
+ simulation.alpha(alpha);
+ if(reducedMotion){simulation.stop();simulation.tick(250);tick();}
+ else simulation.restart();
+}
 const label=id=>nodeById.get(typeof id==='object'?id.id:id)?.label || String(id);
+function showEdge(d){
+ detail.textContent=[label(d.source)+(d.directed?' → ':' — ')+label(d.target),d.layer.toUpperCase()+' · '+d.type,
+  d.assertion_kind, d.stance?'Stance: '+d.stance:'', d.review_status?'Review: '+d.review_status:'',
+  d.weight==null?'Weight unavailable':'Weight: '+d.weight, d.timestamp||'',
+  'Source: '+d.source_url, 'Evidence IDs: '+(d.provenance?.evidence_ids||[]).join(', ')].filter(Boolean).join('\n');
+}
+function keyboardActivate(handler){return d=>{if(d3.event.key==='Enter'||d3.event.key===' '){d3.event.preventDefault();handler(d);}};}
 const lines=viewport.append('g').selectAll('path').data(data.edges).enter().append('path')
  .attr('fill','none').attr('stroke',d=>palette[d.layer]).attr('stroke-opacity',0.68)
  .attr('stroke-width',d=>1.4+Math.min(3,Math.sqrt(Math.abs(Number(d.weight)||0))))
  .attr('stroke-dasharray',d=>d.assertion_kind==='empirical' && d.type!=='co-occurrence'?null:'5 3')
  .attr('marker-end',d=>d.directed?'url(#arrow-'+d.layer+')':null)
- .on('click',d=>{
-   detail.textContent=[label(d.source)+' → '+label(d.target),d.layer.toUpperCase()+' · '+d.type,
-    d.assertion_kind, d.stance?'Stance: '+d.stance:'', d.review_status?'Review: '+d.review_status:'',
-    d.weight==null?'Weight unavailable':'Weight: '+d.weight, d.timestamp||'',
-    'Source: '+d.source_url, 'Evidence IDs: '+(d.provenance?.evidence_ids||[]).join(', ')].filter(Boolean).join('\n');
- });
+ .attr('class','edge').attr('tabindex',0).attr('role','button')
+ .attr('aria-label',d=>label(d.source)+(d.directed?' to ':' and ')+label(d.target)+' '+d.layer.toUpperCase()+' '+d.type)
+ .on('click',showEdge).on('keydown',keyboardActivate(showEdge));
 lines.append('title').text(d=>d.layer.toUpperCase()+' · '+d.type+(d.stance?' · '+d.stance:''));
 let selected=null, ego=false;
 function showNode(d){
@@ -84,10 +94,10 @@ const nodes=viewport.append('g').selectAll('circle').data(data.nodes).enter().ap
  .attr('class','node').attr('r',radius).attr('fill',d=>d.layers.length>1?'#e6efff':palette[d.layers[0]])
  .attr('stroke','#101627').attr('stroke-width',1.5).attr('tabindex',0).attr('role','button')
  .attr('aria-label',d=>d.label+' '+d.kind)
- .on('click',showNode).on('keydown',d=>{if(d3.event.key==='Enter'||d3.event.key===' '){d3.event.preventDefault();showNode(d);}})
- .call(d3.drag().on('start',d=>{if(!d3.event.active)simulation.alphaTarget(0.2).restart();d.fx=d.x;d.fy=d.y;})
- .on('drag',d=>{d.fx=d3.event.x;d.fy=d3.event.y;}).on('end',()=>{if(!d3.event.active)simulation.alphaTarget(0);}))
- .on('dblclick',d=>{d.fx=null;d.fy=null;simulation.alpha(0.3).restart();});
+ .on('click',showNode).on('keydown',keyboardActivate(showNode))
+ .call(d3.drag().on('start',d=>{if(!reducedMotion&&!d3.event.active)simulation.alphaTarget(0.2).restart();d.fx=d.x;d.fy=d.y;})
+ .on('drag',d=>{d.fx=d3.event.x;d.fy=d3.event.y;if(reducedMotion){d.x=d.fx;d.y=d.fy;tick();}}).on('end',()=>{if(!d3.event.active)simulation.alphaTarget(0);}))
+ .on('dblclick',d=>{d.fx=null;d.fy=null;relayout(0.3);});
 nodes.append('title').text(d=>d.label+' · '+d.kind+' · '+d.degree+' displayed incident edges');
 const labels=viewport.append('g').attr('class','labels').selectAll('text').data(data.nodes).enter()
  .append('text').attr('dx',d=>radius(d)+4).attr('dy',3).text(d=>d.label);
@@ -101,12 +111,14 @@ function highlight(){
  lines.attr('stroke-opacity',d=>visible(d.source)&&visible(d.target)?0.72:0.08);
 }
 document.getElementById('search').addEventListener('input',highlight);
-document.getElementById('neighbors').addEventListener('click',()=>{ego=!ego;highlight();});
+document.getElementById('neighbors').addEventListener('click',event=>{ego=!ego;event.currentTarget.setAttribute('aria-pressed',String(ego));highlight();});
 document.getElementById('zoomIn').addEventListener('click',()=>svg.call(zoom.scaleBy,1.35));
 document.getElementById('zoomOut').addEventListener('click',()=>svg.call(zoom.scaleBy,1/1.35));
 document.getElementById('reset').addEventListener('click',()=>{
  svg.call(zoom.transform,d3.zoomIdentity); document.getElementById('search').value='';
- selected=null;ego=false;data.nodes.forEach(d=>{d.fx=null;d.fy=null;});simulation.alpha(0.5).restart();highlight();
+ selected=null;ego=false;document.getElementById('neighbors').setAttribute('aria-pressed','false');
+ data.nodes.forEach(d=>{d.fx=null;d.fy=null;});relayout(0.5);highlight();
+ detail.textContent='Select a node or edge to inspect the displayed relation and its evidence.';
 });
 document.getElementById('export').addEventListener('click',()=>{
  const clone=svg.node().cloneNode(true);clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
@@ -126,6 +138,6 @@ function tick(){
  labels.attr('x',d=>d.x).attr('y',d=>d.y);
 }
 simulation.on('tick',tick);
-if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){simulation.stop();simulation.tick(250);tick();}
+if(reducedMotion)relayout(1);
 </script>
 </html>
