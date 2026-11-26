@@ -85,3 +85,19 @@ def test_safe_links_and_revision_labels():
     assert valid_revision("12abCDE") == "12abcde"
     assert valid_revision("/tmp/private") is None
     assert valid_revision("bad") is None
+
+
+def test_canonical_evidence_references_and_uncertainty_are_preserved():
+    references = readable([{"id": "e1", "ref": "unit1", "provenance_id": "p1"},
+                           {"evidence_id": "e2", "relation": "derived_from",
+                            "from_id": "obj1", "to_id": "unit1",
+                            "source_url": "https://example.invalid/source",
+                            "review_status": "PROVISIONAL", "metadata": {"secret": "hidden"}}])
+    for expected in ("e1", "unit1", "p1", "e2", "derived_from", "obj1",
+                     "https://example.invalid/source", "PROVISIONAL"):
+        assert expected in references
+    assert "hidden" not in references
+    uncertainty = readable({"target_id": "obj1", "kind": "model_confidence",
+                            "value": 0.64, "note": "Synthetic note"})
+    assert "obj1" in uncertainty
+    assert "Synthetic note" in uncertainty

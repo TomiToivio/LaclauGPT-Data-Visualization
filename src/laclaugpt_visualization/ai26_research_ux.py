@@ -44,13 +44,15 @@ DETAIL_FIELDS = {
     "abstentions": "Abstentions",
     "evidence": "Evidence",
 }
-# Intentionally exclude internal IDs, hashes, run manifests and arbitrary backend payloads.
+# Preserve canonical evidence references, but exclude backend IDs, hashes and arbitrary payloads.
 DETAIL_KEYS = frozenset({
     "name", "label", "text", "quote", "quotation", "evidence", "evidence_quote",
     "evidence_text", "description", "summary", "interpretation", "confidence",
     "uncertainty", "status", "reason", "kind", "type", "role", "start", "end",
     "selector", "value", "context", "explanation", "evidence_span",
     "source", "target", "polarity", "stance", "position", "message", "excerpt",
+    "id", "ref", "provenance_id", "evidence_id", "relation", "from_id", "to_id",
+    "source_url", "review_status", "target_id", "note",
 })
 
 
