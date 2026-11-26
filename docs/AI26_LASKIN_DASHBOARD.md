@@ -193,6 +193,15 @@ git worktree list
 
 Check containers and other supervisor/autostart mechanisms if present. Record each listener's PID, unit, working directory, restart policy and dependencies in private deployment notes. Back up only the relevant service definitions and environment configuration securely; keep all research data and worktrees intact.
 
+The legacy JSONL dashboard/export path remains retired. After confirming these exact units belong to the retired deployment, the known user-unit cleanup command is:
+
+```bash
+systemctl --user disable --now ai26-dashboard.service ai26-export.service ai26-export.timer
+systemctl --user disable --now laclaugpt-ai26-dashboard.service
+```
+
+Never revive a retired exporter to feed the new service. Future portable exports should use a temporary file followed by atomic rename.
+
 Stop and disable the identified old dashboard units (including the old port 8504 instance) using the appropriate manager; do not blindly kill unrelated processes or disable upstream Collection/Analysis. Remove obsolete dashboard-only autostart definitions after dependency review. Confirm all four dashboard listeners are stopped before starting the new service. Replace the canonical service configuration, set the private bind address and explicit port 8504, and run preflight. Do not restart obsolete EP24 or live-steps dashboards. Keep external EP24 reference deployments unchanged.
 
 After starting the canonical unit, verify the private endpoint in a browser without a Streamlit login, the health endpoint, actual data and the served revision. Check that ports 8501–8503 have no dashboard listeners and that port 8504 has exactly one intended service. Check enabled/active units and timers and repeat the checks after the normal service-manager reload/restart. Verify network ACLs from an authorized client and confirm no public listener. For rollback, stop the new service and restore the saved canonical service configuration/release only; do not restore retired dashboard instances unless separately authorized.
