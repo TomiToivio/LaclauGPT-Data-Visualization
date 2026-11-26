@@ -28,6 +28,7 @@ from laclaugpt_visualization.ai26_research_ux import (
     researcher_table,
 )
 from laclaugpt_visualization.canonical_explore import canonical_explore
+from laclaugpt_visualization.components import payload_from_projection, render_graph
 from laclaugpt_visualization.config import Settings, get_settings
 from laclaugpt_visualization.data import filter_frame, normalize_frame
 from laclaugpt_visualization.distributed import ProjectNamespace
@@ -553,6 +554,21 @@ def _explore(frame: pd.DataFrame) -> None:
 
 def _networks(frame: pd.DataFrame) -> None:
     projection = graph_projection(frame)
+    payload = payload_from_projection(projection)
+    if payload["nodes"]:
+        st.caption(
+            "Drag a node to pin it, scroll to zoom, click to inspect. These are records and their "
+            "evidence-bearing relations, not a discourse, DNA or SNA graph; layout position carries "
+            "no theoretical meaning."
+        )
+        selected = render_graph(payload, key="ai26_networks_force_graph")
+        if isinstance(selected, Mapping) and selected.get("selected"):
+            st.info(
+                f"Inspecting **{selected.get('label') or selected['selected']}** "
+                f"({selected.get('type') or 'record'})."
+            )
+    else:
+        st.info("No relations to draw in the current filtered view.")
     a, b = st.columns(2)
     a.metric("Nodes", len(projection["nodes"]))
     b.metric("Edges", len(projection["edges"]))

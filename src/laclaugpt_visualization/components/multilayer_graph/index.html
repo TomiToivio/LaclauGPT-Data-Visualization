@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>AI26 multilayer graph</title>
+<!-- d3 is vendored next to this file: the dashboard must not depend on a CDN at runtime. -->
+<script src="d3.min.js"></script>
+<style>
+  :root {
+    --ink: #f4f1e8;
+    --dim: #a6a29a;
+    --grid: #23252b;
+    --da: #ff4d6d;
+    --dna: #35d0ba;
+    --sna: #ffc857;
+    --bridge: #9d8cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0d0f14;
+    color: var(--ink);
+    font: 13px/1.45 "Inter", "Segoe UI", system-ui, sans-serif;
+  }
+  .wrap { display: flex; flex-direction: column; height: 100vh; }
+  .bar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 10px 12px; border-bottom: 1px solid var(--grid); background: #11141a;
+  }
+  .bar input[type="search"] {
+    background: #0b0d12; color: var(--ink); border: 1px solid #2b2f38;
+    border-radius: 999px; padding: 6px 12px; min-width: 190px; outline: none;
+  }
+  .bar input[type="search"]:focus { border-color: var(--dna); }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+    border: 1px solid #2b2f38; border-radius: 999px; cursor: pointer; user-select: none;
+  }
+  .toggle input { accent-color: var(--dna); }
+  .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  button {
+    background: #171b22; color: var(--ink); border: 1px solid #2b2f38;
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit;
+  }
+  button:hover { border-color: var(--dna); }
+  .stage { position: relative; flex: 1; min-height: 0; }
+  svg { width: 100%; height: 100%; display: block; cursor: grab; }
+  svg:active { cursor: grabbing; }
+  .edge { stroke-opacity: .45; }
+  .edge.bridge { stroke-dasharray: 5 4; stroke-opacity: .6; }
+  .node circle { stroke: #05070a; stroke-width: 1.2; cursor: pointer; }
+  .node text { fill: var(--dim); font-size: 10px; pointer-events: none; }
+  .node.selected circle { stroke: var(--ink); stroke-width: 2.5; }
+  .legend {
+    position: absolute; left: 12px; bottom: 12px; display: flex; gap: 14px;
+    background: rgba(9, 11, 16, .82); padding: 7px 12px; border-radius: 10px;
+    border: 1px solid var(--grid); font-size: 11px; color: var(--dim);
+  }
+  .tip {
+    position: absolute; pointer-events: none; background: #05070a; color: var(--ink);
+    border: 1px solid #2b2f38; border-radius: 8px; padding: 8px 10px; max-width: 320px;
+    font-size: 11.5px; opacity: 0; transition: opacity .12s ease;
+  }
+  .empty {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--dim); text-align: center; padding: 24px;
+  }
+  .note { color: var(--dim); font-size: 11px; padding: 6px 12px; border-top: 1px solid var(--grid); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <input id="search" type="search" placeholder="Find an actor, signifier, concept…" aria-label="Search nodes" />
+    <label class="toggle"><input id="layer-da" type="checkbox" checked /><span class="swatch" style="background:var(--da)"></span>DA</label>
+    <label class="toggle"><input id="layer-dna" type="checkbox" checked /><span class="swatch" style="background:var(--dna)"></span>DNA</label>
+    <label class="toggle"><input id="layer-sna" type="checkbox" checked /><span class="swatch" style="background:var(--sna)"></span>SNA</label>
+    <button id="reset" type="button">Reset layout</button>
+    <button id="pin" type="button" aria-pressed="false">Freeze</button>
+  </div>
+  <div class="stage">
+    <svg id="canvas" role="img" aria-label="Interactive discourse network"></svg>
+    <div class="tip" id="tip"></div>
+    <div class="legend" id="legend"></div>
+    <div class="empty" id="empty" hidden></div>
+  </div>
+  <div class="note" id="note"></div>
+</div>
+<script>
+(function () {
+  const COLORS = { da: "#ff4d6d", dna: "#35d0ba", sna: "#ffc857", bridge: "#9d8cff", other: "#8f9bb3" };
+  const svg = d3.select("#canvas");
+  const tip = document.getElementById("tip");
+  const empty = document.getElementById("empty");
+  const note = document.getElementById("note");
+  const legend = document.getElementById("legend");
+  let state = { nodes: [], edges: [], disclosure: {}, selected: null };
+  let simulation = null;
+  let frozen = false;
+
+  // ---------------------------------------------------------------- Streamlit protocol
+  function send(type, data) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data || {}), "*");
+  }
+  function setValue(value) { send("streamlit:setComponentValue", { value: value, dataType: "json" }); }
+  function setHeight(height) {
+    document.body.style.height = height + "px";
+    send("streamlit:setFrameHeight", { height: Math.ceil(height) });
+  }
+  send("streamlit:componentReady", { apiVersion: 1 });
+  window.addEventListener("message", function (event) {
+    if (!event.data || event.data.type !== "streamlit:render") return;
+    const args = (event.data.args || {});
+    state.nodes = (args.nodes || []).map(function (n) {
+      return Object.assign({}, n, { radius: 6 + Math.sqrt(Math.max(1, n.degree || 1)) * 3 });
+    });
+    state.edges = (args.edges || []).map(function (e) {
+      return Object.assign({}, e, { source: e.source, target: e.target });
+    });
+    state.disclosure = args.disclosure || {};
+    render();
+  });
+
+  function layerOf(node) {
+    if (node.layer) return node.layer;
+    const layers = node.layers || [];
+    return layers.length ? layers[0] : "other";
+  }
+
+  function visible() {
+    const layers = ["da", "dna", "sna"].filter(function (l) {
+      const box = document.getElementById("layer-" + l);
+      return !box || box.checked;
+    });
+    const nodes = state.nodes.filter(function (n) {
+      const l = layerOf(n);
+      return l === "other" || l === "bridge" || layers.includes(l);
+    });
+    const ids = new Set(nodes.map(function (n) { return n.id; }));
+    const edges = state.edges.filter(function (e) {
+      const s = typeof e.source === "object" ? e.source.id : e.source;
+      const t = typeof e.target === "object" ? e.target.id : e.target;
+      return ids.has(s) && ids.has(t);
+    });
+    return { nodes: nodes, edges: edges };
+  }
+
+  function render() {
+    svg.selectAll("*").remove();
+    const view = visible();
+    const width = svg.node().clientWidth || 900;
+    const height = svg.node().clientHeight || 600;
+
+    legend.innerHTML = ["da", "dna", "sna"].map(function (l) {
+      const count = view.nodes.filter(function (n) { return layerOf(n) === l; }).length;
+      return '<span><span class="swatch" style="background:' + COLORS[l] + '"></span> ' +
+        l.toUpperCase() + " " + count + "</span>";
+    }).join("") + '<span>' + view.edges.length + " edges</span>";
+
+    note.textContent = state.disclosure.truncated
+      ? "Bounded view: " + (state.disclosure.dropped_nodes || 0) + " nodes and " +
+        (state.disclosure.dropped_edges || 0) + " edges were left out. This is not the full network."
+      : "Drag to pin a node, scroll to zoom, click to inspect. Layout position carries no theoretical meaning.";
+
+    if (!view.nodes.length) {
+      empty.hidden = false;
+      empty.textContent = "No nodes match the current filters. Widen the date range or enable more layers.";
+      return;
+    }
+    empty.hidden = true;
+
+    const root = svg.append("g");
+    const zoom = d3.zoom().scaleExtent([0.15, 6]).on("zoom", function (event) { root.attr("transform", event.transform); });
+    svg.call(zoom);
+
+    const edges = root.append("g").selectAll("line").data(view.edges).join("line")
+      .attr("class", function (d) { return "edge" + (d.cross_layer ? " bridge" : ""); })
+      .attr("stroke", function (d) { return COLORS[d.layer] || COLORS.other; })
+      .attr("stroke-width", function (d) { return 1 + Math.sqrt(Math.max(1, d.weight || 1)); });
+
+    const nodes = root.append("g").selectAll("g").data(view.nodes, function (d) { return d.id; }).join("g")
+      .attr("class", "node")
+      .call(d3.drag()
+        .on("start", function (event, d) { if (!event.active) simulation.alphaTarget(0.2).restart(); d.fx = d.x; d.fy = d.y; })
+        .on("drag", function (event, d) { d.fx = event.x; d.fy = event.y; })
+        .on("end", function (event, d) { if (!event.active) simulation.alphaTarget(0); if (!frozen) { d.fx = null; d.fy = null; } }));
+
+    nodes.append("circle")
+      .attr("r", function (d) { return d.radius; })
+      .attr("fill", function (d) { return COLORS[layerOf(d)] || COLORS.other; });
+
+    nodes.append("text")
+      .attr("x", function (d) { return d.radius + 4; })
+      .attr("y", 3)
+      .text(function (d) { return d.label || d.id; });
+
+    nodes.on("mousemove", function (event, d) {
+      const box = document.querySelector(".stage").getBoundingClientRect();
+      tip.style.opacity = 1;
+      tip.style.left = Math.min(event.clientX - box.left + 14, box.width - 330) + "px";
+      tip.style.top = (event.clientY - box.top + 14) + "px";
+      tip.innerHTML = "";
+      const title = document.createElement("strong");
+      title.textContent = d.label || d.id;
+      const meta = document.createElement("div");
+      meta.textContent = [layerOf(d).toUpperCase(), d.type || "", d.degree ? d.degree + " links" : ""]
+        .filter(Boolean).join(" · ");
+      tip.appendChild(title); tip.appendChild(meta);
+    }).on("mouseleave", function () { tip.style.opacity = 0; })
+      .on("click", function (event, d) {
+        state.selected = d.id;
+        nodes.classed("selected", function (n) { return n.id === d.id; });
+        setValue({ selected: d.id, label: d.label, layer: layerOf(d), raw_ids: d.raw_ids || {} });
+      });
+
+    const byId = new Map(view.nodes.map(function (n) { return [n.id, n]; }));
+    edges.each(function (d) {
+      d.source = byId.get(typeof d.source === "object" ? d.source.id : d.source) || d.source;
+      d.target = byId.get(typeof d.target === "object" ? d.target.id : d.target) || d.target;
+    });
+
+    simulation = d3.forceSimulation(view.nodes)
+      .force("link", d3.forceLink(view.edges).id(function (d) { return d.id; }).distance(70).strength(0.5))
+      .force("charge", d3.forceManyBody().strength(-220))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collide", d3.forceCollide().radius(function (d) { return d.radius + 2; }))
+      .on("tick", function () {
+        edges.attr("x1", function (d) { return d.source.x; }).attr("y1", function (d) { return d.source.y; })
+             .attr("x2", function (d) { return d.target.x; }).attr("y2", function (d) { return d.target.y; });
+        nodes.attr("transform", function (d) { return "translate(" + d.x + "," + d.y + ")"; });
+      });
+
+    document.getElementById("reset").onclick = function () {
+      view.nodes.forEach(function (n) { n.fx = null; n.fy = null; n.x = width / 2; n.y = height / 2; });
+      simulation.alpha(1).restart();
+      svg.transition().duration(250).call(zoom.transform, d3.zoomIdentity);
+    };
+    document.getElementById("pin").onclick = function (event) {
+      frozen = !frozen;
+      event.currentTarget.setAttribute("aria-pressed", String(frozen));
+      event.currentTarget.textContent = frozen ? "Unfreeze" : "Freeze";
+      if (frozen) simulation.stop();
+      else simulation.alpha(0.4).restart();
+    };
+    const search = document.getElementById("search");
+    search.oninput = function () {
+      const query = search.value.trim().toLowerCase();
+      nodes.classed("selected", function (n) {
+        return query.length > 1 && (n.label || n.id).toLowerCase().includes(query);
+      });
+    };
+  }
+
+  ["da", "dna", "sna"].forEach(function (l) {
+    const box = document.getElementById("layer-" + l);
+    if (box) box.onchange = render;
+  });
+  new ResizeObserver(function () { if (simulation) simulation.alpha(0.1).restart(); }).observe(document.body);
+  setHeight(680);
+})();
+</script>
+</body>
+</html>
