@@ -1,0 +1,21 @@
+[Unit]
+Description=AI26 consolidated researcher dashboard (Laskin :8504, issue #330)
+Documentation=https://github.com/TomiToivio/LaclauGPT-Data-Visualization/issues/330
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/workspace/LaclauGPT-Data-Visualization
+EnvironmentFile=%h/.config/laclaugpt/ai26/dashboard.env
+ExecStart=/mnt/workspace/LaclauGPT-Data-Visualization/.venv/bin/python -m streamlit run \
+    src/laclaugpt_visualization/ai26_dashboard.py \
+    --server.address 100.115.95.109 --server.port 8504 \
+    --server.headless true --browser.gatherUsageStats false
+# The dashboard is a research interface, not a batch job: it must never start analysis by loading.
+Restart=on-failure
+RestartSec=20
+StandardOutput=append:%h/.config/laclaugpt/ai26/dashboard.log
+StandardError=append:%h/.config/laclaugpt/ai26/dashboard.log
+
+[Install]
+WantedBy=default.target
