@@ -2,7 +2,7 @@
 
 Supersedes the earlier `:8501` canonical policy and every older Laskin dashboard note. There is now
 exactly one dashboard on Laskin, the AI26 research dashboard, and it serves on
-`http://100.115.95.109:8504/`. No Streamlit password gate: access is restricted outside Streamlit
+`http://<private-host>:8504/`. No Streamlit password gate: access is restricted outside Streamlit
 (the service binds the host's private address only).
 
 ## Deployed state (2026-11-26)
@@ -21,28 +21,28 @@ Units stopped and disabled: `laclaugpt-ep24-researcher`, `laclaugpt-live-steps`,
 
 Untouched: `ai26-capture`, `ai26-backup.timer`, `ai26-export.timer`, `brazil-capture` and every
 research-data repository on the host. The external EP24 reference dashboards
-(`195.148.31.227:8501/8502`) are not affected.
+(on their separate host) are not affected.
 
-## The service
+## The service template
 
 `deploy/laskin/ai26-dashboard.service` (installed at `~/.config/systemd/user/`):
 
-* `WorkingDirectory=/mnt/workspace/LaclauGPT-Data-Visualization`, a checkout of `main`;
+* `WorkingDirectory=%h/LaclauGPT-Data-Visualization`, a checkout of `main`; override both WorkingDirectory and ExecStart in a local systemd drop-in if the checkout is elsewhere;
 * `ExecStart` runs `streamlit run src/laclaugpt_visualization/ai26_dashboard.py` on
-  `--server.address 100.115.95.109 --server.port 8504`;
+  `--server.address <private-host> --server.port 8504`;
 * configuration comes from `~/.config/laclaugpt/ai26/dashboard.env` (mode 600). It holds the
   `LACLAUGPT_VIS_*` and `LACLAUGPT_REDIS_URL` values the previous dashboard ran with, with
-  `LACLAUGPT_VIS_SERVER_PORT=8504`. Secrets stay in that file and never in this repository;
+  `LACLAUGPT_VIS_SERVER_PORT=8504` and `LACLAUGPT_VIS_SERVER_ADDRESS` set to the private host address. Secrets stay in that file and never in this repository;
 * `Restart=on-failure`, `WantedBy=default.target`; the user has `Linger=yes`, so it survives logout
   and reboot.
 
 The dashboard loads canonical AI26 records; it does not start analysis on load and needs no Allas
 download for display.
 
-## Verification performed
+## Verification reported by the original deployment operator
 
 ```
-ss -ltnp | grep :85            -> one listener: 100.115.95.109:8504
+ss -ltnp | grep :85            -> one listener: <private-host>:8504
 curl :8504/_stcore/health      -> 200
 systemctl --user list-unit-files --state=enabled | grep -i dash
                                -> ai26-dashboard.service  (only)
