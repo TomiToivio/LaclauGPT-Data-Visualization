@@ -11,7 +11,7 @@ Group=<service-group>
 # "no deployments configured", and because 2 is a SuccessExitStatus below, the oneshot still shows
 # as successful — the log is the only evidence. NAME=PORT:PATH[@detached][#UNIT]; #UNIT is what ties
 # the port to the unit that owns it, which a healthy port alone cannot prove (#293).
-Environment=LACLAUGPT_VIS_DEPLOYMENTS=ai26=8504:<visualization-root>#laclaugpt-visualization-ai26.service
+Environment=LACLAUGPT_VIS_DEPLOYMENTS=ai26=8504:<visualization-root>#ai26-dashboard.service
 # The report is read-only: it resolves /proc/<pid>/cwd and reads git, nothing else.
 ExecStart=<visualization-root>/.venv/bin/python <visualization-root>/deploy/served-drift-report.py --fetch
 # A non-zero exit is the signal, not a reason to retry: the log line records which deployment drifted.
