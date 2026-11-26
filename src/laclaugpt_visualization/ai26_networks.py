@@ -3,6 +3,7 @@
 The producer owns all theoretical classifications, social ties and identity decisions.
 NetworkX only organizes explicit records/edges for the bounded on-screen graph.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -50,8 +51,7 @@ def _analysis(record: Mapping[str, Any]) -> Mapping[str, Any]:
 def coded_labels(record: Mapping[str, Any], field: str) -> set[str]:
     """Only producer-coded objects; ordinary signifiers are not empty-signifier candidates."""
     return {
-        label for item in _rows(_analysis(record).get(field))
-        if (label := _text(item.get("label")))
+        label for item in _rows(_analysis(record).get(field)) if (label := _text(item.get("label")))
     }
 
 
@@ -103,14 +103,18 @@ def period_bounds(
 
 
 def filter_publication_window(
-    frame: pd.DataFrame, start: pd.Timestamp | None, end: pd.Timestamp | None,
+    frame: pd.DataFrame,
+    start: pd.Timestamp | None,
+    end: pd.Timestamp | None,
 ) -> pd.DataFrame:
     """Use source timestamps only; never substitute collection or analysis times."""
     if start is None and end is None:
         return frame
     times = pd.to_datetime(
         frame.get("source_timestamp", pd.Series(index=frame.index, dtype="object")),
-        utc=True, errors="coerce", format="mixed",
+        utc=True,
+        errors="coerce",
+        format="mixed",
     )
     mask = times.notna()
     if start is not None:
@@ -177,26 +181,39 @@ def _record_edges(
                         node_id = f"reference:{source_url}:{endpoint}"
                         by_reference[endpoint] = node_id
                         _add_node(nodes, _node(node_id, "reference", endpoint, "da"))
-                edges.append({
-                    "id": f"da:{source_url}:{ref}", "source": by_reference[src],
-                    "target": by_reference[dst], "layer": "da", "type": kind,
-                    "weight": relation.get("weight"), "directed": True,
-                    "assertion_kind": "coded", "source_url": source_url,
-                    "provenance": {
-                        "evidence_ids": relation.get("evidence_ids") or [],
-                        "provenance_id": relation.get("provenance_id"),
-                    },
-                    "review_status": relation.get("review_status"),
-                    "timestamp": str(row.get("source_timestamp") or ""),
-                })
+                edges.append(
+                    {
+                        "id": f"da:{source_url}:{ref}",
+                        "source": by_reference[src],
+                        "target": by_reference[dst],
+                        "layer": "da",
+                        "type": kind,
+                        "weight": relation.get("weight"),
+                        "directed": True,
+                        "assertion_kind": "coded",
+                        "source_url": source_url,
+                        "provenance": {
+                            "evidence_ids": relation.get("evidence_ids") or [],
+                            "provenance_id": relation.get("provenance_id"),
+                        },
+                        "review_status": relation.get("review_status"),
+                        "timestamp": str(row.get("source_timestamp") or ""),
+                    }
+                )
     return nodes, edges
 
 
 def _safe_provenance(provenance: Mapping[str, Any]) -> dict[str, Any]:
     """Allow only fields in the producer GraphProvenance contract into browser payloads."""
     scalars = (
-        "source_id", "source_url", "run_id", "provenance_id", "method",
-        "model", "config_id", "transformation",
+        "source_id",
+        "source_url",
+        "run_id",
+        "provenance_id",
+        "method",
+        "model",
+        "config_id",
+        "transformation",
     )
     result = {key: value for key in scalars if isinstance(value := provenance.get(key), str)}
     for key in ("evidence_ids", "codebook_refs"):
@@ -207,7 +224,8 @@ def _safe_provenance(provenance: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _artifact_edges(
-    payload: Mapping[str, Any], sources: set[str],
+    payload: Mapping[str, Any],
+    sources: set[str],
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], int]:
     """Read the Analysis v1 AnalyticalGraph (not a locally inferred projection)."""
     if payload.get("schema_version") != "1.0.0":
@@ -228,9 +246,16 @@ def _artifact_edges(
             raise ValueError("Conflicting typed identity in upstream graph")
         references[ref] = node_id
         layer = _LAYER.get(node.get("layer"), "source")
-        _add_node(nodes, _node(
-            node_id, kind, _text(node.get("label")) or ref, layer, uri=node.get("uri"),
-        ))
+        _add_node(
+            nodes,
+            _node(
+                node_id,
+                kind,
+                _text(node.get("label")) or ref,
+                layer,
+                uri=node.get("uri"),
+            ),
+        )
     edges: list[dict[str, Any]] = []
     omitted = 0
     seen: set[str] = set()
@@ -256,17 +281,25 @@ def _artifact_edges(
             raise ValueError("Duplicate analytical edge identity")
         seen.add(identifier)
         properties = _mapping(edge.get("properties"))
-        edges.append({
-            "id": identifier, "source": src, "target": dst, "type": edge.get("kind"),
-            "layer": layer, "weight": edge.get("weight"),
-            "directed": edge.get("directed") is True,
-            "assertion_kind": edge.get("assertion_kind"),
-            "source_url": source_url, "provenance": _safe_provenance(provenance),
-            "review_status": properties.get("review_status"),
-            "stance": properties.get("qualifier") or properties.get("stance"),
-            "timestamp": edge.get("valid_from"), "valid_to": edge.get("valid_to"),
-            "snapshot_id": edge.get("snapshot_id"),
-        })
+        edges.append(
+            {
+                "id": identifier,
+                "source": src,
+                "target": dst,
+                "type": edge.get("kind"),
+                "layer": layer,
+                "weight": edge.get("weight"),
+                "directed": edge.get("directed") is True,
+                "assertion_kind": edge.get("assertion_kind"),
+                "source_url": source_url,
+                "provenance": _safe_provenance(provenance),
+                "review_status": properties.get("review_status"),
+                "stance": properties.get("qualifier") or properties.get("stance"),
+                "timestamp": edge.get("valid_from"),
+                "valid_to": edge.get("valid_to"),
+                "snapshot_id": edge.get("snapshot_id"),
+            }
+        )
     return nodes, edges, omitted
 
 
@@ -290,7 +323,8 @@ def graph_view(
     omitted = 0
     if artifact is not None:
         upstream_nodes, upstream_edges, omitted = _artifact_edges(
-            artifact, {_text(url) for url in frame.get("source_url", [])},
+            artifact,
+            {_text(url) for url in frame.get("source_url", [])},
         )
         # Prefer the upstream DA projection for each covered source, to avoid double counting.
         da_sources = {edge["source_url"] for edge in upstream_edges if edge["layer"] == "da"}
@@ -300,11 +334,14 @@ def graph_view(
         edges.extend(upstream_edges)
     available = {layer: sum(edge["layer"] == layer for edge in edges) for layer in LAYERS}
     selected = [
-        edge for edge in edges
-        if edge["layer"] in layers and (not edge_types or edge["type"] in edge_types)
-        and (min_weight == 0 or (
-            isinstance(edge["weight"], (int, float)) and edge["weight"] >= min_weight
-        ))
+        edge
+        for edge in edges
+        if edge["layer"] in layers
+        and (not edge_types or edge["type"] in edge_types)
+        and (
+            min_weight == 0
+            or (isinstance(edge["weight"], (int, float)) and edge["weight"] >= min_weight)
+        )
     ]
     # Stable ordering, no hidden weighting of research significance. Bounds retain full endpoints.
     groups = [
@@ -326,26 +363,43 @@ def graph_view(
     display_nodes = []
     for node_id in sorted(graph.nodes):
         item = dict(nodes[node_id])
-        item["layers"] = sorted({
-            edge["layer"] for edge in visible
-            if node_id in (edge["source"], edge["target"])
-        })
+        item["layers"] = sorted(
+            {edge["layer"] for edge in visible if node_id in (edge["source"], edge["target"])}
+        )
         item["degree"] = int(graph.degree(node_id))
         display_nodes.append(item)
     return {
-        "nodes": display_nodes, "edges": visible, "availability": available,
-        "matched_edges": len(selected), "truncated": len(visible) != len(selected),
+        "nodes": display_nodes,
+        "edges": visible,
+        "availability": available,
+        "matched_edges": len(selected),
+        "truncated": len(visible) != len(selected),
         "omitted_unlinked_edges": omitted,
         "input_truncated": bool(artifact and artifact.get("input_truncated")),
-        "filters": {"layers": list(layers), "edge_types": list(edge_types),
-                    "min_weight": min_weight, "max_nodes": max_nodes, "max_edges": max_edges},
+        "filters": {
+            "layers": list(layers),
+            "edge_types": list(edge_types),
+            "min_weight": min_weight,
+            "max_nodes": max_nodes,
+            "max_edges": max_edges,
+        },
     }
 
 
 def load_mongo_artifact(
-    database: Any, sources: set[str], *, limit: int = 5000,
+    database: Any,
+    sources: set[str],
+    *,
+    limit: int = 5000,
 ) -> dict[str, Any] | None:
-    """Read the documented Analysis MongoGraphStore, with the same source window as charts."""
+    """Read the documented Analysis MongoGraphStore, with the same source window as charts.
+
+    The bound is applied **per layer**, not once over the whole collection. One global id-ordered
+    limit silently erases a layer: the DNA projection contributes three edges per coded statement,
+    so in a large window it fills the budget and the smaller SNA layer, whose edge ids happen to
+    sort last, arrives as zero. The dashboard then reports "0 SNA edges" for a project that has
+    them. Each layer keeps its own deterministic window and reports its own truncation.
+    """
     if not sources:
         return None
     # Analysis examples use both spellings. Never combine two distinct project graphs.
@@ -356,13 +410,31 @@ def load_mongo_artifact(
         return None
     project_id = meta["project_id"]
     query = {"project_id": project_id, "provenance.source_url": {"$in": sorted(sources)}}
-    raw_edges = list(database["kg_edges"].find(query, {"_id": 0}).sort("id", 1).limit(limit + 1))
-    edges = raw_edges[:limit]
-    ids = sorted({
-        ref for edge in edges for ref in (edge.get("source"), edge.get("target"))
-        if isinstance(ref, str)
-    })
-    nodes = list(database["kg_nodes"].find(
-        {"project_id": project_id, "id": {"$in": ids}}, {"_id": 0},
-    ))
-    return {**meta, "nodes": nodes, "edges": edges, "input_truncated": len(raw_edges) > limit}
+    edges: list[dict[str, Any]] = []
+    truncated = False
+    for layer in LAYERS:
+        rows = list(
+            database["kg_edges"]
+            .find({**query, "layer": layer}, {"_id": 0})
+            .sort("id", 1)
+            .limit(limit + 1)
+        )
+        if len(rows) > limit:
+            truncated = True
+            rows = rows[:limit]
+        edges.extend(rows)
+    ids = sorted(
+        {
+            ref
+            for edge in edges
+            for ref in (edge.get("source"), edge.get("target"))
+            if isinstance(ref, str)
+        }
+    )
+    nodes = list(
+        database["kg_nodes"].find(
+            {"project_id": project_id, "id": {"$in": ids}},
+            {"_id": 0},
+        )
+    )
+    return {**meta, "nodes": nodes, "edges": edges, "input_truncated": truncated}
