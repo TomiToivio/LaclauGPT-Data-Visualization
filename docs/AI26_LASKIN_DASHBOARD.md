@@ -140,10 +140,10 @@ After installing the customized unit:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now laclaugpt-visualization-ai26.service
-sudo systemctl status laclaugpt-visualization-ai26.service
-sudo systemctl restart laclaugpt-visualization-ai26.service
-journalctl -u laclaugpt-visualization-ai26.service -n 200 --no-pager
+sudo systemctl enable --now ai26-dashboard.service
+sudo systemctl status ai26-dashboard.service
+sudo systemctl restart ai26-dashboard.service
+journalctl -u ai26-dashboard.service -n 200 --no-pager
 ```
 
 A user-service installation is also valid. Remove `User=` and `Group=`, install under `~/.config/systemd/user/`, use `WantedBy=default.target`, and run the equivalent `systemctl --user` commands.
@@ -166,12 +166,12 @@ After install, or whenever the endpoint looks wrong, check all three facts — p
 ss -ltnp | grep ':8504'                         # which pid owns the port
 readlink /proc/<pid>/cwd                        # which checkout it runs from
 grep -o '[^/]*\.service' /proc/<pid>/cgroup     # which unit owns it
-systemctl --user is-enabled laclaugpt-visualization-ai26.service
+systemctl --user is-enabled ai26-dashboard.service
 ```
 
 Exactly one enabled unit may name `:8504`, and it must be the one above. `deploy/served-drift-report.py`
 reports a listener owned by any other unit as drift when the deployment spec names the expected one
-(`--deployment 'ai26=8504:/path#laclaugpt-visualization-ai26.service'`), and it also reports a listener
+(`--deployment 'ai26=8504:/path#ai26-dashboard.service'`), and it also reports a listener
 that no unit owns.
 
 ## Consolidate Laskin deployments (#330)
@@ -193,14 +193,14 @@ git worktree list
 
 Check containers and other supervisor/autostart mechanisms if present. Record each listener's PID, unit, working directory, restart policy and dependencies in private deployment notes. Back up only the relevant service definitions and environment configuration securely; keep all research data and worktrees intact.
 
-The legacy JSONL dashboard/export path remains retired. After confirming these exact units belong to the retired deployment, the known user-unit cleanup command is:
+The legacy JSONL dashboard path remains retired. The host-capable agent reported the new canonical service name as `ai26-dashboard.service` in #337; do not disable the replacement unit. After confirming these exact units belong to retired deployments, known user-unit cleanup commands are:
 
 ```bash
-systemctl --user disable --now ai26-dashboard.service ai26-export.service ai26-export.timer
-systemctl --user disable --now laclaugpt-ai26-dashboard.service
+systemctl --user disable --now laclaugpt-visualization-ai26.service laclaugpt-ai26-dashboard.service
+systemctl --user disable --now laclaugpt-ep24-researcher.service laclaugpt-live-steps.service
 ```
 
-Never revive a retired exporter to feed the new service. Future portable exports should use a temporary file followed by atomic rename.
+Preserve independent export and backup jobs unless confirmed obsolete; the reported migration left the export timer in place. Never revive a retired exporter solely to feed the new service. Future portable exports should use a temporary file followed by atomic rename.
 
 Stop and disable the identified old dashboard units (including the old port 8504 instance) using the appropriate manager; do not blindly kill unrelated processes or disable upstream Collection/Analysis. Remove obsolete dashboard-only autostart definitions after dependency review. Confirm all four dashboard listeners are stopped before starting the new service. Replace the canonical service configuration, set the private bind address and explicit port 8504, and run preflight. Do not restart obsolete EP24 or live-steps dashboards. Keep external EP24 reference deployments unchanged.
 
@@ -237,8 +237,8 @@ git switch main                 # stop if another worktree owns main
 git pull --ff-only origin main
 .venv/bin/pip install -e '.[remote]'
 bash deploy/preflight-laskin-ai26.sh
-sudo systemctl restart laclaugpt-visualization-ai26.service
-sudo systemctl status laclaugpt-visualization-ai26.service
+sudo systemctl restart ai26-dashboard.service
+sudo systemctl status ai26-dashboard.service
 ```
 
 If preflight fails, leave the known-good service in place and fix the configuration or checkout before restarting.
@@ -286,7 +286,7 @@ Configure the single Laskin deployment:
 # The deployment paths are host state, not repository content: name them here or in
 # LACLAUGPT_VIS_DEPLOYMENTS (comma separated, NAME=PORT:PATH[#UNIT]).
 .venv/bin/python deploy/served-drift-report.py \
-  --deployment "ai26-dashboard=8504:$LACLAUGPT_VIS_REPO_ROOT#laclaugpt-visualization-ai26.service"
+  --deployment "ai26-dashboard=8504:$LACLAUGPT_VIS_REPO_ROOT#ai26-dashboard.service"
 ```
 
 Two operational details, both learned the hard way (#293). The variable is `LACLAUGPT_VIS_DEPLOYMENTS`;
