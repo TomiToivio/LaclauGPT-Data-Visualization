@@ -28,11 +28,10 @@ research-data repository on the host. The external EP24 reference dashboards
 `deploy/laskin/ai26-dashboard.service` (installed at `~/.config/systemd/user/`):
 
 * `WorkingDirectory=%h/LaclauGPT-Data-Visualization`, a checkout of `main`; override both WorkingDirectory and ExecStart in a local systemd drop-in if the checkout is elsewhere;
-* `ExecStart` runs `streamlit run src/laclaugpt_visualization/ai26_dashboard.py` on
-  `--server.address <private-host> --server.port 8504`;
+* the updated template runs preflight and then `laclaugpt-visualize serve` on the configured tailnet bind;
 * configuration comes from `~/.config/laclaugpt/ai26/dashboard.env` (mode 600). It holds the
   `LACLAUGPT_VIS_*` and `LACLAUGPT_REDIS_URL` values the previous dashboard ran with, with
-  `LACLAUGPT_VIS_SERVER_PORT=8504` and `LACLAUGPT_VIS_SERVER_ADDRESS` set to the private host address. Secrets stay in that file and never in this repository;
+  `LACLAUGPT_VIS_SERVER_PORT=8504` and `LACLAUGPT_VIS_SERVER_HOST` set to the private host address. Set the reviewed full `LACLAUGPT_VIS_RELEASE_SHA` and verified `LACLAUGPT_VIS_NETWORK_ACCESS_VERIFIED=1` there before restarting. Secrets stay in that file and never in this repository;
 * `Restart=on-failure`, `WantedBy=default.target`; the user has `Linger=yes`, so it survives logout
   and reboot.
 
@@ -53,15 +52,7 @@ AppTest.from_file(".../ai26_dashboard.py").run()   # on Laskin, service env load
 
 ## Rollback
 
-```bash
-systemctl --user disable --now ai26-dashboard
-systemctl --user enable --now laclaugpt-ep24-merge-lab   # the previous :8504 occupant
-# and, only if the old topology is genuinely needed:
-systemctl --user enable --now laclaugpt-ep24-researcher laclaugpt-live-steps
-```
-
-The retired units and their files are intact; nothing was deleted, so the previous topology is one
-`enable --now` away.
+Follow the [canonical runbook](AI26_LASKIN_DASHBOARD.md): stop the single AI26 unit and restore only a previously verified consolidated release, its dependencies and protected configuration. Do not re-enable retired EP24 or other dashboards. If no consolidated release is available, leave the service stopped.
 
 ## Still open under #330
 

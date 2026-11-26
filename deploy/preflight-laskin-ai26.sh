@@ -38,6 +38,22 @@ set +a
 [[ "${LACLAUGPT_VIS_BROWSER_DATA_CONTRACT:-}" == "canonical" ]] || fail "browser data contract must be canonical"
 [[ "${LACLAUGPT_VIS_MACHINE:-}" == "linux-server" ]] || fail "machine must be linux-server"
 [[ "${LACLAUGPT_VIS_EXECUTION:-}" == "web-service" ]] || fail "execution must be web-service"
+[[ "${LACLAUGPT_VIS_SERVER_PORT:-}" == "8504" ]] || fail "AI26 Laskin deployment must explicitly select port 8504 (#330)"
+# Direct access is restricted outside Streamlit. Reject public/wildcard binds;
+# actual network ACLs still require host-side operator verification.
+"$VENV/bin/python" - "${LACLAUGPT_VIS_SERVER_HOST:-}" <<'PY' || fail "set an explicit private IPv4 bind address"
+import ipaddress
+import sys
+
+try:
+    address = ipaddress.IPv4Address(sys.argv[1])
+except ValueError:
+    sys.exit(1)
+
+networks = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10")
+sys.exit(0 if any(address in ipaddress.IPv4Network(net) for net in networks) else 1)
+PY
+[[ "${LACLAUGPT_VIS_NETWORK_ACCESS_VERIFIED:-}" == "1" ]] || fail "verify private network ACLs and set LACLAUGPT_VIS_NETWORK_ACCESS_VERIFIED=1"
 [[ "${LACLAUGPT_VIS_RELEASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || fail "configure the full reviewed release SHA"
 [[ "$(git rev-parse HEAD)" == "$LACLAUGPT_VIS_RELEASE_SHA" ]] || fail "checkout differs from pinned release"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "release checkout contains local changes"
@@ -50,17 +66,17 @@ info "AI26 Phase 2 profile shape verified"
 # Optional distributed services are configuration choices. The application health command
 # performs sanitized validation and must degrade cleanly when optional capabilities are absent.
 if command -v systemctl >/dev/null 2>&1; then
-  legacy_units=(ai26-dashboard.service ai26-export.service ai26-export.timer)
+  legacy_units=(laclaugpt-ai26-dashboard.service laclaugpt-visualization-ai26.service laclaugpt-ep24-researcher.service laclaugpt-live-steps.service ep24-fiplpt.service laclaugpt-ep24-mongo-demo.service laclaugpt-ep24-demo.service ep24-workbench-laskin.service laclaugpt-ep24-merge-lab.service)
   active_legacy=()
   for unit in "${legacy_units[@]}"; do
-    if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
+    if systemctl --user is-active --quiet "$unit" 2>/dev/null || systemctl --user is-enabled --quiet "$unit" 2>/dev/null; then
       active_legacy+=("$unit")
     fi
   done
   if (( ${#active_legacy[@]} > 0 )); then
-    fail "legacy AI26 user units are still active: ${active_legacy[*]}; retire them before starting Visualization"
+    fail "retired dashboard user units are active or enabled: ${active_legacy[*]}; retire them before starting Visualization"
   fi
-  info "legacy AI26 dashboard/export user units are inactive"
+  info "retired dashboard user units are inactive"
 fi
 
 "$VENV/bin/laclaugpt-visualize" profile

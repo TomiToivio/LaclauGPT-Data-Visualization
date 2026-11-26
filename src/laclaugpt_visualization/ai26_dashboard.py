@@ -28,7 +28,6 @@ from laclaugpt_visualization.ai26_research_ux import (
     researcher_table,
 )
 from laclaugpt_visualization.canonical_explore import canonical_explore
-from laclaugpt_visualization.components import payload_from_projection, render_graph
 from laclaugpt_visualization.config import Settings, get_settings
 from laclaugpt_visualization.data import filter_frame, normalize_frame
 from laclaugpt_visualization.distributed import ProjectNamespace
@@ -37,7 +36,7 @@ from laclaugpt_visualization.integrations.hermes import (
     inspect_effective_config,
 )
 from laclaugpt_visualization.research_views import load_reports, timeline_counts
-from laclaugpt_visualization.transforms import graph_projection, monitor, relations
+from laclaugpt_visualization.transforms import monitor
 from laclaugpt_visualization.worker_status import RedisOperationalStatus
 
 AI26_PROJECT_ID = "ai26"
@@ -419,10 +418,19 @@ def apply_ai26_filters(
         countries=list(selections.get("countries", ())),
         languages=list(selections.get("languages", ())),
         formations=list(selections.get("formations", ())),
+        authors=list(selections.get("authors", ())),
+        topics=list(selections.get("topics", ())),
     )
 
 
 def _sidebar(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    from laclaugpt_visualization.ai26_networks import (
+        coded_labels,
+        filter_coded_records,
+        filter_publication_window,
+        period_bounds,
+    )
+
     st.sidebar.markdown("### AI26 filters")
     query = st.sidebar.text_input("Search text")
     selections = {
@@ -430,11 +438,43 @@ def _sidebar(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
         "languages": st.sidebar.multiselect("Language", _list_values(frame, "source_language")),
         "countries": st.sidebar.multiselect("Country/region", _list_values(frame, "source_country")),
         "formations": st.sidebar.multiselect("Formation", _list_values(frame, "formations")),
+        "authors": st.sidebar.multiselect("Username / account", _list_values(frame, "source_author")),
+        "topics": st.sidebar.multiselect("Topic / concept", _list_values(frame, "topics")),
     }
+    actors = sorted({label for row in frame.to_dict("records") for label in coded_labels(row, "entities")})
+    empties = sorted({
+        label for row in frame.to_dict("records")
+        for label in coded_labels(row, "empty_signifier_candidates")
+    })
+    selections["actors"] = st.sidebar.multiselect("Coded actor", actors)
+    selections["empty_signifiers"] = st.sidebar.multiselect("Empty-signifier candidate", empties)
+    preset = st.sidebar.selectbox("Publication period (UTC)", (
+        "All loaded dates", "Last 24 hours", "Last 7 days",
+        "Selected UTC day", "Selected UTC week", "Custom UTC dates",
+    ))
+    day = last = None
+    if preset in {"Selected UTC day", "Selected UTC week", "Custom UTC dates"}:
+        day = st.sidebar.date_input(
+            "Any day in week" if preset == "Selected UTC week" else "Start / selected day",
+        )
+    if preset == "Custom UTC dates":
+        last = st.sidebar.date_input("End date (inclusive)")
     filtered = apply_ai26_filters(frame, selections, query=query)
+    filtered = filter_coded_records(
+        filtered, actors=tuple(selections["actors"]),
+        empty_signifiers=tuple(selections["empty_signifiers"]),
+    )
+    try:
+        start, end = period_bounds(preset, selected_start=day, selected_end=last)
+        filtered = filter_publication_window(filtered, start, end)
+        selections["publication_start"] = start.isoformat() if start is not None else None
+        selections["publication_end_exclusive"] = end.isoformat() if end is not None else None
+    except ValueError as exc:
+        st.sidebar.warning(str(exc))
+        filtered = filtered.iloc[0:0]
+    st.sidebar.caption("Publication clock only. Missing publication dates are excluded from dated views.")
     st.sidebar.caption(f"Active view: {len(filtered):,} / {len(frame):,} loaded records")
     return filtered, selections
-
 
 def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
     st.markdown("### Corpus overview")
@@ -552,35 +592,95 @@ def _explore(frame: pd.DataFrame) -> None:
     st.markdown("#### Formation × signifier")
     render_overlap(frame, views["formation_signifier"])
 
-def _networks(frame: pd.DataFrame) -> None:
-    projection = graph_projection(frame)
-    payload = payload_from_projection(projection)
-    if payload["nodes"]:
-        st.caption(
-            "Drag a node to pin it, scroll to zoom, click to inspect. These are records and their "
-            "evidence-bearing relations, not a discourse, DNA or SNA graph; layout position carries "
-            "no theoretical meaning."
-        )
-        selected = render_graph(payload, key="ai26_networks_force_graph")
-        if isinstance(selected, Mapping) and selected.get("selected"):
-            st.info(
-                f"Inspecting **{selected.get('label') or selected['selected']}** "
-                f"({selected.get('type') or 'record'})."
-            )
-    else:
-        st.info("No relations to draw in the current filtered view.")
-    a, b = st.columns(2)
-    a.metric("Nodes", len(projection["nodes"]))
-    b.metric("Edges", len(projection["edges"]))
-    if projection["nodes"]:
-        st.dataframe(pd.DataFrame(projection["nodes"]).head(500), width="stretch")
-    if projection["edges"]:
-        st.dataframe(pd.DataFrame(projection["edges"]).head(1000), width="stretch")
-    relation_table = relations(frame, require_evidence=True)
-    if not relation_table.empty:
-        st.markdown("#### Evidence-bearing relations")
-        st.dataframe(relation_table.head(1000), width="stretch", hide_index=True)
+def _networks(frame: pd.DataFrame, settings: Settings | None = None) -> None:
+    from streamlit.components.v1 import html
 
+    from laclaugpt_visualization.ai26_graph_render import graph_html
+    from laclaugpt_visualization.ai26_networks import (
+        LAYERS,
+        graph_view,
+        load_mongo_artifact,
+    )
+
+    st.markdown("### Discourse and social networks")
+    st.caption(
+        "DA: coded relations · DNA: experimental coded statements · SNA: experimental "
+        "social ties. Shared producer IDs connect layers, never similar names. Dashed edges "
+        "indicate coded/inferred assertions; layout and visible degree are descriptive."
+    )
+    artifact = None
+    if settings is not None and not frame.empty:
+        client = None
+        try:
+            client = _mongo_client(settings)
+            artifact = load_mongo_artifact(
+                client[settings.mongodb_database], set(frame["source_url"].astype(str)),
+            )
+        except Exception as exc:  # noqa: BLE001 -- optional upstream graph must not disable DA
+            st.warning(f"Upstream graph unavailable: {type(exc).__name__}.")
+        finally:
+            if client is not None:
+                client.close()
+    uploaded = st.file_uploader("Optional private Analysis AnalyticalGraph JSON export", type=["json"])
+    if uploaded is not None:
+        try:
+            artifact = json.loads(uploaded.getvalue())
+            if not isinstance(artifact, Mapping):
+                raise TypeError("Expected a JSON object.")
+        except (ValueError, TypeError) as exc:
+            st.warning(f"Cannot open graph: {type(exc).__name__}.")
+            artifact = None
+    if artifact is None:
+        st.info("No validated upstream graph available. Showing explicit DA relations only; no DNA/SNA inferred.")
+    try:
+        baseline = graph_view(frame, artifact)
+    except (ValueError, TypeError) as exc:
+        st.warning(f"Upstream graph rejected: {exc}")
+        artifact = None
+        baseline = graph_view(frame)
+    left, right, third = st.columns(3)
+    for col, layer in zip((left, right, third), LAYERS, strict=True):
+        col.metric(f"{layer.upper()} available edges", baseline["availability"][layer])
+    chosen = st.multiselect("Network layers", list(LAYERS), default=list(LAYERS), format_func=str.upper)
+    types = sorted({edge["type"] for edge in baseline["edges"] if edge.get("type")})
+    edge_types = st.multiselect("Relation types (visible preview)", types)
+    a, b, c = st.columns(3)
+    nodes = a.number_input("Node limit", 10, 500, 250, 10)
+    edges = b.number_input("Edge limit", 10, 1000, 500, 10)
+    weight = c.number_input("Minimum reported edge weight", min_value=0.0, value=0.0)
+    graph = graph_view(
+        frame, artifact, layers=tuple(chosen), max_nodes=int(nodes), max_edges=int(edges),
+        min_weight=float(weight), edge_types=tuple(edge_types),
+    )
+    st.caption(
+        f"{len(graph['nodes'])} nodes · {len(graph['edges'])} displayed edges / "
+        f"{graph['matched_edges']} matching in the loaded source window."
+    )
+    if graph["truncated"] or graph["input_truncated"]:
+        st.warning("Graph is bounded/truncated; not the full network. Narrow the source filters.")
+    if graph["omitted_unlinked_edges"]:
+        st.caption(f"{graph['omitted_unlinked_edges']} upstream edges lack usable source/endpoint links.")
+    if not graph["edges"]:
+        st.info("No explicit relations match this combination of filters.")
+    else:
+        html(graph_html(graph), height=730, scrolling=True)
+        st.download_button(
+            "Download visible graph JSON", json.dumps(graph, ensure_ascii=False, default=str),
+            "ai26-network.json", "application/json",
+        )
+        with st.expander("Evidence-bearing relations"):
+            ids = {node["id"]: node["label"] for node in graph["nodes"]}
+            evidence = pd.DataFrame([
+                {
+                    "From": ids[edge["source"]], "To": ids[edge["target"]],
+                    "Layer": edge["layer"].upper(), "Relation": edge["type"],
+                    "Review": edge.get("review_status"), "Stance": edge.get("stance"),
+                    "Source": edge["source_url"],
+                    "Evidence": ", ".join(map(str, edge["provenance"].get("evidence_ids") or [])),
+                }
+                for edge in graph["edges"]
+            ])
+            st.dataframe(evidence, width="stretch", hide_index=True)
 
 def _records(frame: pd.DataFrame) -> None:
     if frame.empty:
@@ -786,7 +886,7 @@ def run() -> None:
     renderers = (
         lambda: _monitor(snapshot, filtered),
         lambda: _explore(filtered),
-        lambda: _networks(filtered),
+        lambda: _networks(filtered, settings),
         lambda: _records(filtered),
         lambda: _reports(settings, filtered),
         lambda: _rag(settings, filters),

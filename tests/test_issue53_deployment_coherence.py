@@ -9,16 +9,16 @@ REPO_ROOT = Path(__file__).parents[1]
 
 def test_laskin_preflight_rejects_active_legacy_units() -> None:
     script = (REPO_ROOT / "deploy" / "preflight-laskin-ai26.sh").read_text(encoding="utf-8")
-    assert "ai26-dashboard.service" in script
-    assert "ai26-export.service" in script
-    assert "ai26-export.timer" in script
-    assert "legacy AI26 user units are still active" in script
+    assert "laclaugpt-ai26-dashboard.service" in script
+    assert "laclaugpt-visualization-ai26.service" in script
+    assert "laclaugpt-ep24-researcher.service" in script
+    assert "retired dashboard user units are active or enabled" in script
 
 
 def test_runbook_retires_legacy_jsonl_export() -> None:
     guide = (REPO_ROOT / "docs" / "AI26_LASKIN_DASHBOARD.md").read_text(encoding="utf-8")
-    assert "legacy JSONL dashboard/export path" in guide
-    assert "disable --now ai26-dashboard.service ai26-export.service ai26-export.timer" in guide
+    assert "legacy JSONL dashboard path" in guide
+    assert "disable --now laclaugpt-visualization-ai26.service laclaugpt-ai26-dashboard.service" in guide
     assert "atomic rename" in guide
 
 
