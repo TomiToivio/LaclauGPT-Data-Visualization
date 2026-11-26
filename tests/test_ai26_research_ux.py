@@ -8,7 +8,9 @@ from laclaugpt_visualization.ai26_research_ux import (
     publication_activity,
     readable,
     researcher_table,
+    source_link,
     utc_dates,
+    valid_revision,
 )
 
 
@@ -74,3 +76,12 @@ def test_nested_evidence_is_readable_without_exposing_machine_fields():
     assert "internal" not in text
     assert readable(pd.NA) == ""
     assert readable(float("nan")) == ""
+
+
+def test_safe_links_and_revision_labels():
+    assert source_link("https://example.invalid/a(b)") == "https://example.invalid/a%28b%29"
+    assert source_link("javascript:alert(1)") is None
+    assert source_link("urn:record:synthetic") is None
+    assert valid_revision("12abCDE") == "12abcde"
+    assert valid_revision("/tmp/private") is None
+    assert valid_revision("bad") is None
