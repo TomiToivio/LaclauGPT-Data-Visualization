@@ -292,7 +292,7 @@ def render_record_details(row: Mapping):
         try:
             parsed = urlsplit(source)
             if parsed.scheme in {"http", "https"} and parsed.hostname:
-                url = quote(source, safe=":/?#[]@!                st.link_button("Open original source", source)\'*+,;=%")
+                url = quote(source, safe=":/?#[]@!*+,;=%")
                 st.markdown(f"[Open original source]({url})")
         except ValueError:
             pass
