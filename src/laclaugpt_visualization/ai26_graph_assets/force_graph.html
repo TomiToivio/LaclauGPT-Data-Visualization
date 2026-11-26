@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<style>
+:root { color-scheme: dark; font: 14px system-ui, sans-serif; background:#101627; color:#e6efff }
+body { margin:0; padding:12px; }
+header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+button,input { background:#202d48; color:inherit; border:1px solid #597297; border-radius:6px; padding:7px; }
+button:focus-visible,input:focus-visible,.node:focus-visible { outline:3px solid #fbbf24; }
+svg { width:100%; height:500px; touch-action:none; border:1px solid #344460; margin-top:10px; }
+.legend { display:flex; gap:1.2em; flex-wrap:wrap; }
+.da {color:#3ee9ed} .dna {color:#ffaf66} .sna {color:#d7a0ff}
+#details { min-height:50px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:140px; overflow:auto }
+.node { cursor:pointer; }
+.labels { font-size:10px; fill:#e6efff; pointer-events:none; }
+</style>
+<header>
+<label>Find a node <input id="search" placeholder="Name or concept"></label>
+<button id="reset">Reset view</button><button id="zoomIn">Zoom in</button>
+<button id="zoomOut">Zoom out</button><button id="neighbors">Toggle selected node neighborhood</button>
+<button id="export">Save SVG</button>
+</header>
+<p class="legend"><span class="da">● DA · coded discourse</span><span class="dna">● DNA · statements</span><span class="sna">● SNA · social ties</span></p>
+<svg id="graph" role="img" aria-label="Interactive analytical graph. Use the node search and details list to explore."></svg>
+<div role="status" id="details">Select a node or edge to inspect the displayed relation and its evidence.</div>
+<script>/* D3_BUNDLE */</script>
+<script>
+const data = /* GRAPH_DATA */;
+const palette = {da:'#3ee9ed',dna:'#ffaf66',sna:'#d7a0ff'};
+const svg = d3.select('#graph');
+const width = svg.node().clientWidth, height=500;
+svg.attr('viewBox',[0,0,width,height]);
+const viewport=svg.append('g');
+const zoom=d3.zoom().scaleExtent([0.15,8]).on('zoom',()=>viewport.attr('transform',d3.event.transform));
+svg.call(zoom);
+const defs=svg.append('defs');
+Object.entries(palette).forEach(([layer,color])=>{
+ defs.append('marker').attr('id','arrow-'+layer).attr('viewBox','0 -5 10 10').attr('refX',18)
+ .attr('refY',0).attr('markerWidth',5).attr('markerHeight',5).attr('orient','auto')
+ .append('path').attr('d','M0,-5L10,0L0,5').attr('fill',color);
+});
+const nodeById=new Map(data.nodes.map(d=>[d.id,d]));
+const originalEdges=data.edges.map(d=>({...d}));
+const radius=d=>Math.min(18,5+Math.sqrt(d.degree)*3);
+const simulation=d3.forceSimulation(data.nodes)
+ .force('link',d3.forceLink(data.edges).id(d=>d.id).distance(92))
+ .force('charge',d3.forceManyBody().strength(-170))
+ .force('collision',d3.forceCollide(d=>radius(d)+5))
+ .force('center',d3.forceCenter(width/2,height/2));
+const detail=document.getElementById('details');
+const label=id=>nodeById.get(typeof id==='object'?id.id:id)?.label || String(id);
+const lines=viewport.append('g').selectAll('path').data(data.edges).enter().append('path')
+ .attr('fill','none').attr('stroke',d=>palette[d.layer]).attr('stroke-opacity',0.68)
+ .attr('stroke-width',d=>1.4+Math.min(3,Math.sqrt(Math.abs(Number(d.weight)||0))))
+ .attr('stroke-dasharray',d=>d.assertion_kind==='empirical' && d.type!=='co-occurrence'?null:'5 3')
+ .attr('marker-end',d=>d.directed?'url(#arrow-'+d.layer+')':null)
+ .on('click',d=>{
+   detail.textContent=[label(d.source)+' → '+label(d.target),d.layer.toUpperCase()+' · '+d.type,
+    d.assertion_kind, d.stance?'Stance: '+d.stance:'', d.review_status?'Review: '+d.review_status:'',
+    d.weight==null?'Weight unavailable':'Weight: '+d.weight, d.timestamp||'',
+    'Source: '+d.source_url, 'Evidence IDs: '+(d.provenance?.evidence_ids||[]).join(', ')].filter(Boolean).join('\n');
+ });
+lines.append('title').text(d=>d.layer.toUpperCase()+' · '+d.type+(d.stance?' · '+d.stance:''));
+let selected=null, ego=false;
+function showNode(d){
+ selected=d.id;
+ const incident=originalEdges.filter(e=>e.source===selected || e.target===selected);
+ detail.textContent=d.label+' · '+d.kind+'\n'+d.layers.map(x=>x.toUpperCase()).join(' / ')
+ +'\n'+d.degree+' visible incident edges\n'+incident.slice(0,15).map(
+ e=>label(e.source)+' '+e.type+' '+label(e.target)+' ['+e.layer.toUpperCase()+'] · '+e.source_url).join('\n');
+ highlight();
+}
+const nodes=viewport.append('g').selectAll('circle').data(data.nodes).enter().append('circle')
+ .attr('class','node').attr('r',radius).attr('fill',d=>d.layers.length>1?'#e6efff':palette[d.layers[0]])
+ .attr('stroke','#101627').attr('stroke-width',1.5).attr('tabindex',0).attr('role','button')
+ .attr('aria-label',d=>d.label+' '+d.kind)
+ .on('click',showNode).on('keydown',d=>{if(d3.event.key==='Enter'||d3.event.key===' '){d3.event.preventDefault();showNode(d);}})
+ .call(d3.drag().on('start',d=>{if(!d3.event.active)simulation.alphaTarget(0.2).restart();d.fx=d.x;d.fy=d.y;})
+ .on('drag',d=>{d.fx=d3.event.x;d.fy=d3.event.y;}).on('end',()=>{if(!d3.event.active)simulation.alphaTarget(0);}))
+ .on('dblclick',d=>{d.fx=null;d.fy=null;simulation.alpha(0.3).restart();});
+nodes.append('title').text(d=>d.label+' · '+d.kind+' · '+d.degree+' displayed incident edges');
+const labels=viewport.append('g').attr('class','labels').selectAll('text').data(data.nodes).enter()
+ .append('text').attr('dx',d=>radius(d)+4).attr('dy',3).text(d=>d.label);
+function highlight(){
+ const q=document.getElementById('search').value.trim().toLowerCase();
+ const neighborhood=new Set([selected]);
+ originalEdges.forEach(e=>{if(e.source===selected)neighborhood.add(e.target);if(e.target===selected)neighborhood.add(e.source);});
+ const visible=d=>(!ego || !selected || neighborhood.has(d.id)) && (!q || d.label.toLowerCase().includes(q));
+ nodes.attr('opacity',d=>visible(d)?1:0.16).attr('stroke',d=>d.id===selected?'#fbbf24':'#101627');
+ labels.attr('opacity',d=>visible(d)?1:0.12);
+ lines.attr('stroke-opacity',d=>visible(d.source)&&visible(d.target)?0.72:0.08);
+}
+document.getElementById('search').addEventListener('input',highlight);
+document.getElementById('neighbors').addEventListener('click',()=>{ego=!ego;highlight();});
+document.getElementById('zoomIn').addEventListener('click',()=>svg.call(zoom.scaleBy,1.35));
+document.getElementById('zoomOut').addEventListener('click',()=>svg.call(zoom.scaleBy,1/1.35));
+document.getElementById('reset').addEventListener('click',()=>{
+ svg.call(zoom.transform,d3.zoomIdentity); document.getElementById('search').value='';
+ selected=null;ego=false;data.nodes.forEach(d=>{d.fx=null;d.fy=null;});simulation.alpha(0.5).restart();highlight();
+});
+document.getElementById('export').addEventListener('click',()=>{
+ const clone=svg.node().cloneNode(true);clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+ const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)],{type:'image/svg+xml'}));
+ const a=document.createElement('a');a.href=url;a.download='ai26-network.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+function tick(){
+ lines.attr('d',d=>{
+  const x=d.source.x,y=d.source.y,dx=d.target.x-x,dy=d.target.y-y;
+  const distance=Math.sqrt(dx*dx+dy*dy);
+  if(distance<0.01)return 'M'+x+','+y+'c35,-45 55,40 0,0';
+  return 'M'+x+','+y+'A'+Math.max(20,distance*1.5)+','+Math.max(20,distance*1.5)+' 0 0,1 '+d.target.x+','+d.target.y;
+ });
+ nodes.attr('cx',d=>d.x).attr('cy',d=>d.y);
+ labels.attr('x',d=>d.x).attr('y',d=>d.y);
+}
+simulation.on('tick',tick);
+if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){simulation.stop();simulation.tick(250);tick();}
+</script>
+</html>
