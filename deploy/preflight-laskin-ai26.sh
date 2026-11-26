@@ -66,7 +66,7 @@ info "AI26 profile and retired dashboard ports verified"
 # Optional distributed services are configuration choices. The application health command
 # performs sanitized validation and must degrade cleanly when optional capabilities are absent.
 if command -v systemctl >/dev/null 2>&1; then
-  legacy_units=(ai26-dashboard.service ai26-export.service ai26-export.timer laclaugpt-ai26-dashboard.service)
+  legacy_units=(laclaugpt-ai26-dashboard.service laclaugpt-visualization-ai26.service laclaugpt-ep24-researcher.service laclaugpt-live-steps.service ep24-fiplpt.service laclaugpt-ep24-mongo-demo.service laclaugpt-ep24-demo.service ep24-workbench-laskin.service laclaugpt-ep24-merge-lab.service)
   active_legacy=()
   for unit in "${legacy_units[@]}"; do
     if systemctl --user is-active --quiet "$unit" 2>/dev/null || systemctl --user is-enabled --quiet "$unit" 2>/dev/null; then
@@ -74,9 +74,9 @@ if command -v systemctl >/dev/null 2>&1; then
     fi
   done
   if (( ${#active_legacy[@]} > 0 )); then
-    fail "legacy AI26 user units are active or enabled: ${active_legacy[*]}; retire them before starting Visualization"
+    fail "retired dashboard user units are active or enabled: ${active_legacy[*]}; retire them before starting Visualization"
   fi
-  info "legacy AI26 dashboard/export user units are inactive"
+  info "retired dashboard user units are inactive"
 fi
 
 "$VENV/bin/laclaugpt-visualize" profile
