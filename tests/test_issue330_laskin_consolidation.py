@@ -13,7 +13,7 @@ SCRIPT = ROOT / "deploy" / "preflight-laskin-ai26.sh"
 
 
 class LaskinConsolidationTest(unittest.TestCase):
-    def run_preflight(self, host: str, port: str, verified: str, legacy: bool = False):
+    def run_preflight(self, host: str, port: str, verified: str, legacy: bool = False, listener: bool = False):
         """Use fake local services and a disposable checkout, never touch a host."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -25,6 +25,10 @@ class LaskinConsolidationTest(unittest.TestCase):
             bin_dir.mkdir(parents=True)
             (bin_dir / "python").symlink_to(sys.executable)
             scripts = {
+                "ss": (
+                    '#!/bin/sh\n'
+                    + ("echo 'LISTEN 0 32 127.0.0.1:8502 0.0.0.0:*'\n" if listener else "")
+                ),
                 "git": '#!/bin/sh\npwd\n',
                 "laclaugpt-visualize": '#!/bin/sh\nexit 0\n',
                 "systemctl": (
@@ -62,6 +66,11 @@ class LaskinConsolidationTest(unittest.TestCase):
     def test_private_port_with_verified_acl(self):
         result = self.run_preflight("100.64.0.1", "8504", "1")
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_retired_listener_blocks_start(self):
+        result = self.run_preflight("100.64.0.1", "8504", "1", listener=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("still have listeners", result.stderr)
 
     def test_invalid_settings_fail_closed(self):
         cases = [
