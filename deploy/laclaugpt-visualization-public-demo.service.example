@@ -1,0 +1,35 @@
+[Unit]
+# Public demonstration copy of the AI26 dashboard (issue #342).
+# This is the *copy* unit. The Laskin development service is a different unit and is not
+# replaced by this file: the copy has its own root, its own env file and its own data scope.
+Description=LaclauGPT AI26 public demo dashboard (read-only copy)
+Documentation=https://github.com/TomiToivio/LaclauGPT-Data-Visualization/issues/342
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<demo-user>
+Group=<demo-group>
+WorkingDirectory=<demo-root>
+Environment=LACLAUGPT_VIS_REPO_ROOT=<demo-root>
+# The env file is the only place that names the data source, the bind address and the demo
+# label. Never commit it; start from deploy/public-demo.env.example.
+EnvironmentFile=<demo-env-file>
+# `serve` binds to LACLAUGPT_VIS_SERVER_HOST:LACLAUGPT_VIS_SERVER_PORT and serves the project's
+# own module, so the copy cannot drift onto the legacy generic workbench (#44).
+ExecStart=<demo-root>/.venv/bin/laclaugpt-visualize serve
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillSignal=SIGINT
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=<demo-root>
+ReadWritePaths=<demo-runtime-root>
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

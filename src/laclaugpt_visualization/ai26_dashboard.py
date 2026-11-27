@@ -777,6 +777,31 @@ def _diagnostics(settings: Settings, snapshot: LiveSnapshot, frame: pd.DataFrame
     )
 
 
+#: The tabs the research deployment serves, in order.
+RESEARCH_TABS = (
+    "Monitor",
+    "Explore",
+    "Networks",
+    "Records",
+    "Reports",
+    "RAG Chat",
+    "Configuration",
+    "Hermes",
+    "Diagnostics",
+)
+
+#: Surfaces a public demonstration copy may serve (#342). The excluded ones either render
+#: raw corpus text (Records), call a model over the private corpus (RAG Chat), print effective
+#: configuration (Configuration) or expose agent operation (Hermes, Diagnostics). Removing a
+#: tab is not a permission check: the code path is not reachable from the copy at all.
+PUBLIC_DEMO_TABS = ("Monitor", "Explore", "Networks", "Reports")
+
+
+def visible_tabs(demo_mode: bool) -> tuple[str, ...]:
+    """Return the tabs this deployment may serve."""
+    return PUBLIC_DEMO_TABS if demo_mode else RESEARCH_TABS
+
+
 def run() -> None:
     st.set_page_config(page_title="LaclauGPT AI26 Research Dashboard", layout="wide")
     st.title("LaclauGPT · AI26 Research Dashboard")
@@ -787,6 +812,12 @@ def run() -> None:
     st.warning(CAVEAT)
     settings = get_settings()
     ai26_namespace(settings)
+    if settings.demo_mode:
+        st.info(
+            "Public demonstration copy of the LaclauGPT AI26 dashboard. "
+            f"Data scope: {settings.demo_data_label or 'not labelled'}. "
+            "Raw records, agent operations and configuration are not part of this copy."
+        )
     if settings.storage != "distributed" or settings.data_backend != "mongodb":
         st.error("AI26 live dashboard requires distributed storage with MongoDB durable data.")
         return
@@ -814,33 +845,24 @@ def run() -> None:
         return
     filtered, filters = _sidebar(snapshot.frame)
     st.sidebar.caption(f"Last loaded: {snapshot.loaded_at} · manual refresh")
-    tabs = st.tabs(
-        [
-            "Monitor",
-            "Explore",
-            "Networks",
-            "Records",
-            "Reports",
-            "RAG Chat",
-            "Configuration",
-            "Hermes",
-            "Diagnostics",
-        ]
-    )
-    renderers = (
-        lambda: _monitor(snapshot, filtered),
-        lambda: _explore(filtered),
-        lambda: _networks(filtered),
-        lambda: _records(filtered),
-        lambda: _reports(settings, filtered),
-        lambda: _rag(settings, filters),
-        lambda: _configuration(settings),
-        lambda: _hermes(settings, filtered),
-        lambda: _diagnostics(settings, snapshot, filtered),
-    )
-    for tab, renderer in zip(tabs, renderers, strict=True):
+    renderers = {
+        "Monitor": lambda: _monitor(snapshot, filtered),
+        "Explore": lambda: _explore(filtered),
+        "Networks": lambda: _networks(filtered),
+        "Records": lambda: _records(filtered),
+        "Reports": lambda: _reports(settings, filtered),
+        "RAG Chat": lambda: _rag(settings, filters),
+        "Configuration": lambda: _configuration(settings),
+        "Hermes": lambda: _hermes(settings, filtered),
+        "Diagnostics": lambda: _diagnostics(settings, snapshot, filtered),
+    }
+    # The served set is decided once, so a demo copy cannot reach an excluded surface by
+    # navigating to it: the renderer is never registered.
+    names = visible_tabs(settings.demo_mode)
+    tabs = st.tabs(list(names))
+    for tab, name in zip(tabs, names, strict=True):
         with tab:
-            renderer()
+            renderers[name]()
 
 
 if __name__ == "__main__":

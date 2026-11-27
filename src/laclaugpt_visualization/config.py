@@ -72,6 +72,15 @@ class Settings(BaseSettings):
     server_port: int = 8501
     cache_max_entries: int = 512
 
+    # Public demonstration copies (#342). Off means the research deployment: every tab,
+    # including the ones that render raw corpus text, agent operations and effective
+    # configuration. A copy that anyone may open sets this on, so those surfaces are not
+    # served at all rather than merely hidden behind a login the copy does not have.
+    demo_mode: bool = False
+    #: What a visitor is looking at, e.g. "synthetic fixture" or "approved snapshot 2026-11-27".
+    #: Rendered verbatim in the demo banner; never carries private or personal data.
+    demo_data_label: str = ""
+
     mongodb_uri: str | None = Field(default=None, repr=False)
     mongodb_database: str = "laclaugpt"
     mongodb_collection: str | None = None
@@ -217,6 +226,7 @@ class Settings(BaseSettings):
             "server_host": self.server_host,
             "server_port": self.server_port,
             "cache_max_entries": self.cache_max_entries,
+            "demo_mode": self.demo_mode,
             "mongodb_database": self.mongodb_database,
             "mongodb_collection": self.resolved_mongodb_collection,
             "mongodb_graph_collection": self.resolved_mongodb_graph_collection,
