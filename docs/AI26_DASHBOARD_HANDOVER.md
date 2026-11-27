@@ -9,13 +9,13 @@ versioned bundle and nothing else.
 
 | Item | Verified value |
 | --- | --- |
-| Host / endpoint | `laskin01`, `http://100.115.95.109:8504/` — Tailscale address, not a public one |
-| Repository | `TomiToivio/LaclauGPT-Data-Visualization`, checkout `/mnt/workspace/LaclauGPT-Data-Visualization` |
-| Branch / served commit | `main` @ `61f0559` (verified with `git -C <checkout> rev-parse --short HEAD`; the page footer prints the revision it first rendered) |
+| Host / endpoint | The Laskin development host (`laskin01`), on its Tailnet address and port 8504 — private network only, never public |
+| Repository | `TomiToivio/LaclauGPT-Data-Visualization`, private checkout on the host (path withheld) |
+| Branch / served commit | `main` @ `61f0559` (verified in the served checkout; the page footer also prints the revision it first rendered) |
 | Entrypoint | `src/laclaugpt_visualization/ai26_dashboard.py` (`streamlit run`) |
 | Start command | `.venv/bin/python -m streamlit run src/laclaugpt_visualization/ai26_dashboard.py --server.address <host> --server.port 8504 --server.headless true` |
 | Service manager | user unit `ai26-dashboard.service`, `Restart=on-failure`, `RestartSec=20` |
-| Environment file | `~/.config/laclaugpt/ai26/dashboard.env` (outside the repository, mode-protected) |
+| Environment file | A private unit environment file outside the repository, mode-protected (path withheld) |
 | Python / UI stack | Python 3.11.14, Streamlit 1.67.0, plotly, pandas; dependencies declared in `pyproject.toml` (no lockfile — pin a commit instead) |
 | Data source | MongoDB (private endpoint, set by `LACLAUGPT_VIS_MONGODB_URI` / `LACLAUGPT_VIS_MONGODB_DATABASE`), collections `ai26__records`, `ai26__analysis_results`, and `kg_meta`/`kg_nodes`/`kg_edges` for the DNA/SNA layers |
 | Refresh | manual: sidebar **Refresh now**; no background polling |
