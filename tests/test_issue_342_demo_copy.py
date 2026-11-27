@@ -122,3 +122,15 @@ def test_the_live_dataset_source_is_opt_in_and_explicit() -> None:
     assert live.demo_source == "live"
     # Demo mode is still off by default, so the research deployment is untouched.
     assert default.demo_mode is False
+
+
+def test_the_demo_refuses_a_non_ai26_project() -> None:
+    """EP24 is an official university project and is never served by this demo (issue #342)."""
+    import inspect
+
+    from laclaugpt_visualization import ai26_dashboard
+
+    source = inspect.getsource(ai26_dashboard.run_demo)
+    assert "EP24 is out of scope" in source
+    assert source.index("EP24 is out of scope") < source.index("load_ai26_snapshot")
+    assert ai26_dashboard.AI26_PROJECT_ID == "ai26"

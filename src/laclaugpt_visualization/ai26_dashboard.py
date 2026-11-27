@@ -943,6 +943,12 @@ def run_demo(settings: Settings) -> None:
     render_header()
     st.caption("Public demonstration copy of the AI26 research dashboard · read-only")
     st.warning(CAVEAT)
+    if settings.project_id.casefold() != AI26_PROJECT_ID:
+        # Issue #342: EP24 is an official university project and is permanently out of scope for
+        # this demo. Refusing the project here — before any read — keeps that a property of the
+        # code rather than a promise in a document.
+        st.error("This public demo serves AI26 only; EP24 is out of scope and was not read.")
+        return
     live = settings.demo_source == "live"
     networks_settings: Settings | None = None
     if live:
