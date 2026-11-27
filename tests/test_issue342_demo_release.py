@@ -84,6 +84,7 @@ def test_a_tampered_bundle_is_refused_before_anything_is_written(tmp_path: Path)
             "--root",
             str(tmp_path / "demo-root"),
         ],
+        check=False,
         capture_output=True,
         text=True,
     )
