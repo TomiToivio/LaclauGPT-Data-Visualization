@@ -643,6 +643,7 @@ def _networks(
     settings: Settings | None = None,
     *,
     artifact_path: Path | None = None,
+    public_demo: bool = False,
 ) -> None:
     from streamlit.components.v1 import html
 
@@ -683,17 +684,6 @@ def _networks(
         finally:
             if client is not None:
                 client.close()
-    uploaded = st.file_uploader(
-        "Optional private Analysis AnalyticalGraph JSON export", type=["json"]
-    )
-    if uploaded is not None:
-        try:
-            artifact = json.loads(uploaded.getvalue())
-            if not isinstance(artifact, Mapping):
-                raise TypeError("Expected a JSON object.")
-        except (ValueError, TypeError) as exc:
-            st.warning(f"Cannot open graph: {type(exc).__name__}.")
-            artifact = None
     if artifact is None:
         st.info(
             "No validated upstream graph available. Showing explicit DA relations only; no DNA/SNA inferred."
@@ -739,32 +729,33 @@ def _networks(
         st.info("No explicit relations match this combination of filters.")
     else:
         html(graph_html(graph), height=730, scrolling=True)
-        st.download_button(
-            "Download visible graph JSON",
-            json.dumps(graph, ensure_ascii=False, default=str),
-            "ai26-network.json",
-            "application/json",
-        )
-        with st.expander("Evidence-bearing relations"):
-            ids = {node["id"]: node["label"] for node in graph["nodes"]}
-            evidence = pd.DataFrame(
-                [
-                    {
-                        "From": ids[edge["source"]],
-                        "To": ids[edge["target"]],
-                        "Layer": edge["layer"].upper(),
-                        "Relation": edge["type"],
-                        "Review": edge.get("review_status"),
-                        "Stance": edge.get("stance"),
-                        "Source": edge["source_url"],
-                        "Evidence": ", ".join(
-                            map(str, edge["provenance"].get("evidence_ids") or [])
-                        ),
-                    }
-                    for edge in graph["edges"]
-                ]
+        if not public_demo:
+            st.download_button(
+                "Download visible graph JSON",
+                json.dumps(graph, ensure_ascii=False, default=str),
+                "ai26-network.json",
+                "application/json",
             )
-            st.dataframe(evidence, width="stretch", hide_index=True)
+            with st.expander("Evidence-bearing relations"):
+                ids = {node["id"]: node["label"] for node in graph["nodes"]}
+                evidence = pd.DataFrame(
+                    [
+                        {
+                            "From": ids[edge["source"]],
+                            "To": ids[edge["target"]],
+                            "Layer": edge["layer"].upper(),
+                            "Relation": edge["type"],
+                            "Review": edge.get("review_status"),
+                            "Stance": edge.get("stance"),
+                            "Source": edge["source_url"],
+                            "Evidence": ", ".join(
+                                map(str, edge["provenance"].get("evidence_ids") or [])
+                            ),
+                        }
+                        for edge in graph["edges"]
+                    ]
+                )
+                st.dataframe(evidence, width="stretch", hide_index=True)
 
 
 def _records(frame: pd.DataFrame) -> None:
@@ -977,6 +968,7 @@ def run_demo(settings: Settings) -> None:
             filtered,
             networks_settings,
             artifact_path=None if live else settings.demo_graph,
+            public_demo=True,
         ),
         lambda: _records(filtered),
     )
