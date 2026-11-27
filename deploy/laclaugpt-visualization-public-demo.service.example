@@ -1,0 +1,41 @@
+[Unit]
+# The public demonstration copy of the AI26 dashboard (issue #342).
+# It runs the same maintained module as the Laskin research deployment, against a versioned
+# bundle under <demo-root>/current and nothing else: no MongoDB, no Redis, no S3.
+Description=LaclauGPT AI26 public demo dashboard (bundle-backed copy)
+Documentation=https://github.com/TomiToivio/LaclauGPT-Data-Visualization/issues/342
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<demo-user>
+Group=<demo-group>
+WorkingDirectory=<demo-root>/app
+Environment=LACLAUGPT_VIS_PROJECT_ID=ai26
+Environment=LACLAUGPT_VIS_DEMO_MODE=true
+Environment=LACLAUGPT_VIS_DEMO_BUNDLE=<demo-root>/current/records.jsonl
+# Optional: only when the bundle carries an AnalyticalGraph export.
+#Environment=LACLAUGPT_VIS_DEMO_GRAPH=<demo-root>/current/graph.json
+Environment=LACLAUGPT_VIS_DEMO_AS_OF=<data-as-of from manifest.json>
+# Loopback only; the public HTTPS endpoint belongs to the reverse proxy in front of it.
+Environment=LACLAUGPT_VIS_SERVER_HOST=127.0.0.1
+Environment=LACLAUGPT_VIS_SERVER_PORT=8600
+ExecStart=<demo-root>/app/.venv/bin/python -m streamlit run \
+    src/laclaugpt_visualization/ai26_dashboard.py \
+    --server.address 127.0.0.1 --server.port 8600 \
+    --server.headless true --browser.gatherUsageStats false
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillSignal=SIGINT
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=<demo-root>
+ReadWritePaths=<demo-runtime-root>
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
