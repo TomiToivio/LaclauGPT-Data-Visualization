@@ -926,34 +926,58 @@ def _diagnostics(settings: Settings, snapshot: LiveSnapshot, frame: pd.DataFrame
 
 
 def run_demo(settings: Settings) -> None:
-    """Render the public demonstration copy from an approved bundle (issue #342).
+    """Render the public demonstration copy (issue #342).
 
-    A copy of this dashboard runs from files, not from the private database: the bundle is a
-    versioned JSONL of records plus an optional AnalyticalGraph JSON, both produced by
-    ``scripts/export_ai26_demo_bundle.py``. Only the read-only views are rendered — no reports,
-    RAG chat, configuration, Hermes integration or host diagnostics, because those read services
-    the demo must not have.
+    Two approved sources, chosen explicitly by the operator:
+
+    - ``demo_source=live``: the real-time AI26 dataset, read through a dedicated read-only
+      database account. Same three read-only views, no private tabs.
+    - ``demo_source=bundle`` (default): a versioned export written by
+      ``scripts/export_ai26_demo_bundle.py``, for an offline or scheduled snapshot.
+
+    Neither path builds the Reports, RAG Chat, Configuration, Hermes or Diagnostics tabs: those
+    read a service, write review state, or expose host configuration. Neither path writes to the
+    store, and neither falls back to the other when its source is missing.
     """
     st.set_page_config(page_title="LaclauGPT AI26 Public Demo", layout="wide")
     render_header()
     st.caption("Public demonstration copy of the AI26 research dashboard · read-only")
     st.warning(CAVEAT)
-    frame = _demo_frame(settings)
-    if frame is None or frame.empty:
-        st.error(
-            "No demo bundle loaded. Set LACLAUGPT_VIS_DEMO_BUNDLE to the approved bundle file."
+    live = settings.demo_source == "live"
+    networks_settings: Settings | None = None
+    if live:
+        try:
+            snapshot = load_ai26_snapshot(settings, limit=DEFAULT_PAGE_SIZE)
+        except (OSError, RuntimeError, ValueError, TimeoutError) as exc:
+            st.error("The AI26 data source is unavailable for this demo copy.")
+            st.caption(f"Error category: {type(exc).__name__}. No records were loaded.")
+            return
+        frame = snapshot.frame
+        st.info(
+            f"Live AI26 data: {len(frame)} analysed records · newest analysis "
+            f"{snapshot.newest_analyzed_at or 'not recorded'} · DNA and SNA are experimental "
+            "Phase 2 products"
         )
-        st.caption("A demo copy never falls back to a private database or a private endpoint.")
-        return
-    st.info(
-        f"Demo data: {len(frame)} records · data as of {settings.demo_as_of or 'not recorded'} · "
-        "DNA and SNA are experimental Phase 2 products"
-    )
+        networks_settings = settings
+    else:
+        frame = _demo_frame(settings)
+        if frame is None or frame.empty:
+            st.error("No demo bundle loaded. Set LACLAUGPT_VIS_DEMO_BUNDLE to the approved bundle.")
+            st.caption("A demo copy never falls back to another source when this one is missing.")
+            return
+        st.info(
+            f"Demo data: {len(frame)} records · data as of {settings.demo_as_of or 'not recorded'} · "
+            "DNA and SNA are experimental Phase 2 products"
+        )
     filtered, _filters = _sidebar(frame)
-    st.sidebar.caption("Public demo · read-only · refreshed by the operator on each release")
+    st.sidebar.caption("Public demo · read-only · no writes, no review changes")
     renderers = (
         lambda: _explore(filtered),
-        lambda: _networks(filtered, None, artifact_path=settings.demo_graph),
+        lambda: _networks(
+            filtered,
+            networks_settings,
+            artifact_path=None if live else settings.demo_graph,
+        ),
         lambda: _records(filtered),
     )
     for tab, renderer in zip(st.tabs(list(DEMO_TABS)), renderers, strict=True):

@@ -112,3 +112,13 @@ def test_demo_mode_is_off_unless_asked_for() -> None:
     demo = Settings(_env_file=None, demo_mode=True, demo_bundle=Path("/tmp/bundle/records.jsonl"))
     assert demo.demo_mode is True
     assert demo.demo_bundle == Path("/tmp/bundle/records.jsonl")
+
+
+def test_the_live_dataset_source_is_opt_in_and_explicit() -> None:
+    """A copy reads a bundle unless the operator names the live source (issue #342)."""
+    default = Settings(_env_file=None)
+    assert default.demo_source == "bundle"
+    live = Settings(_env_file=None, demo_mode=True, demo_source="live")
+    assert live.demo_source == "live"
+    # Demo mode is still off by default, so the research deployment is untouched.
+    assert default.demo_mode is False

@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     # private database. Demo mode is off by default, so the research deployment is unchanged;
     # when it is on, the dashboard reads the bundle below and renders only the read-only views.
     demo_mode: bool = False
+    demo_source: Literal["bundle", "live"] = "bundle"
     demo_bundle: Path | None = None
     demo_graph: Path | None = None
     demo_as_of: str = ""
