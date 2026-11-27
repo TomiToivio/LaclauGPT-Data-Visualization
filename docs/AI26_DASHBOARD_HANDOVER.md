@@ -109,3 +109,31 @@ Restart=on-failure
   not that deployment.
 - The DNA/SNA layers appear in the demo only when the bundle includes a `graph.json` produced by
   Data Analysis; without it the copy honestly reports zero edges for those layers.
+
+## 5. The operational pieces a demo host installs
+
+Two files turn the runbook above into something a host can own rather than retype:
+
+* `deploy/laclaugpt-visualization-public-demo.service.example` — the demo unit. It pins
+  `LACLAUGPT_VIS_DEMO_MODE=true`, reads `<demo-root>/current/records.jsonl`, binds `127.0.0.1:8600`
+  and carries no database, cache or object-store variables at all, so the copy cannot reach a
+  private endpoint even by mistake.
+* `scripts/update_ai26_demo_release.sh` — the daily switch. It verifies every checksum in
+  `manifest.json` **before** writing, stages `releases/<stamp>/`, moves the `current` symlink
+  atomically, restarts the unit, waits for `/_stcore/health`, and rolls the symlink back to the
+  previous release when health does not come up. `--dry-run` verifies and prints the plan without
+  touching the filesystem or the service.
+
+```bash
+# stage and switch, rollback automatic on failure
+scripts/update_ai26_demo_release.sh \
+  --bundle /srv/ai26-demo/incoming --root /srv/ai26-demo \
+  --service ai26-demo.service --health-url http://127.0.0.1:8600/_stcore/health
+
+# verify-only, safe to run in a monitoring job
+scripts/update_ai26_demo_release.sh --bundle /srv/ai26-demo/incoming --root /srv/ai26-demo --dry-run
+```
+
+A tampered bundle never reaches `current`: the checksum check runs first and exits non-zero with
+the offending file named. The record count and the data-as-of stamp in the banner come from the
+same manifest, so a visitor always sees which snapshot is live.
