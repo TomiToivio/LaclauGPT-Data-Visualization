@@ -4,6 +4,7 @@ MongoDB is the durable source of research state. Redis is coordination only. Thi
 composes the existing Visualization contracts into a bounded private AI26 research workbench
 and never downloads multimodal blobs merely for display.
 """
+
 from __future__ import annotations
 
 import json
@@ -11,6 +12,7 @@ import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -29,7 +31,7 @@ from laclaugpt_visualization.ai26_research_ux import (
 )
 from laclaugpt_visualization.canonical_explore import canonical_explore
 from laclaugpt_visualization.config import Settings, get_settings
-from laclaugpt_visualization.data import filter_frame, normalize_frame
+from laclaugpt_visualization.data import filter_frame, load_frame, normalize_frame
 from laclaugpt_visualization.distributed import ProjectNamespace
 from laclaugpt_visualization.integrations.hermes import (
     clear_derived_cache,
@@ -43,6 +45,9 @@ AI26_PROJECT_ID = "ai26"
 DEFAULT_PAGE_SIZE = 500
 MAX_PAGE_SIZE = 5000
 FRESHNESS_WARNING_HOURS = 6
+#: Views a public copy may render (issue #342). Everything else reads a private service, writes
+#: review state, or exposes host configuration, so a demo copy does not build those tabs at all.
+DEMO_TABS = ("Explore", "Networks", "Records")
 MUTABLE_VISUALIZATION_SETTINGS = frozenset(
     {
         "refresh_seconds",
@@ -102,13 +107,19 @@ def _ranked_bar(table: pd.DataFrame, label_column: str, title: str):
     subset[label_column] = subset[label_column].astype(str)
     subset = subset.iloc[::-1]
     figure = px.bar(
-        subset, x="count", y=label_column, orientation="h", title=title,
-        labels={"count": "Records", label_column: "Label"}, text="count",
+        subset,
+        x="count",
+        y=label_column,
+        orientation="h",
+        title=title,
+        labels={"count": "Records", label_column: "Label"},
+        text="count",
     )
     figure.update_layout(
         height=max(280, min(620, 115 + len(subset) * 30)),
         margin={"l": 12, "r": 20, "t": 48, "b": 28},
-        yaxis_title=None, showlegend=False,
+        yaxis_title=None,
+        showlegend=False,
     )
     figure.update_traces(textposition="outside", cliponaxis=False)
     return figure
@@ -181,8 +192,7 @@ def _first(record: Mapping[str, Any], names: Iterable[str]) -> Any:
 
 def _identity(record: Mapping[str, Any]) -> str:
     return str(
-        _first(record, ("source_url", "source_record_id", "record_id", "canonical_id", "_id"))
-        or ""
+        _first(record, ("source_url", "source_record_id", "record_id", "canonical_id", "_id")) or ""
     )
 
 
@@ -261,7 +271,8 @@ def load_ai26_snapshot(settings: Settings, *, limit: int = DEFAULT_PAGE_SIZE) ->
     newest_analyzed_at = newest.isoformat() if newest else None
     analyzed_age_hours = (
         max(0.0, (datetime.now(UTC) - newest).total_seconds() / 3600)
-        if newest is not None else None
+        if newest is not None
+        else None
     )
 
     return LiveSnapshot(
@@ -434,24 +445,42 @@ def _sidebar(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
     st.sidebar.markdown("### AI26 filters")
     query = st.sidebar.text_input("Search text")
     selections = {
-        "platforms": st.sidebar.multiselect("Source/platform", _list_values(frame, "source_platform")),
+        "platforms": st.sidebar.multiselect(
+            "Source/platform", _list_values(frame, "source_platform")
+        ),
         "languages": st.sidebar.multiselect("Language", _list_values(frame, "source_language")),
-        "countries": st.sidebar.multiselect("Country/region", _list_values(frame, "source_country")),
+        "countries": st.sidebar.multiselect(
+            "Country/region", _list_values(frame, "source_country")
+        ),
         "formations": st.sidebar.multiselect("Formation", _list_values(frame, "formations")),
-        "authors": st.sidebar.multiselect("Username / account", _list_values(frame, "source_author")),
+        "authors": st.sidebar.multiselect(
+            "Username / account", _list_values(frame, "source_author")
+        ),
         "topics": st.sidebar.multiselect("Topic / concept", _list_values(frame, "topics")),
     }
-    actors = sorted({label for row in frame.to_dict("records") for label in coded_labels(row, "entities")})
-    empties = sorted({
-        label for row in frame.to_dict("records")
-        for label in coded_labels(row, "empty_signifier_candidates")
-    })
+    actors = sorted(
+        {label for row in frame.to_dict("records") for label in coded_labels(row, "entities")}
+    )
+    empties = sorted(
+        {
+            label
+            for row in frame.to_dict("records")
+            for label in coded_labels(row, "empty_signifier_candidates")
+        }
+    )
     selections["actors"] = st.sidebar.multiselect("Coded actor", actors)
     selections["empty_signifiers"] = st.sidebar.multiselect("Empty-signifier candidate", empties)
-    preset = st.sidebar.selectbox("Publication period (UTC)", (
-        "All loaded dates", "Last 24 hours", "Last 7 days",
-        "Selected UTC day", "Selected UTC week", "Custom UTC dates",
-    ))
+    preset = st.sidebar.selectbox(
+        "Publication period (UTC)",
+        (
+            "All loaded dates",
+            "Last 24 hours",
+            "Last 7 days",
+            "Selected UTC day",
+            "Selected UTC week",
+            "Custom UTC dates",
+        ),
+    )
     day = last = None
     if preset in {"Selected UTC day", "Selected UTC week", "Custom UTC dates"}:
         day = st.sidebar.date_input(
@@ -461,7 +490,8 @@ def _sidebar(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
         last = st.sidebar.date_input("End date (inclusive)")
     filtered = apply_ai26_filters(frame, selections, query=query)
     filtered = filter_coded_records(
-        filtered, actors=tuple(selections["actors"]),
+        filtered,
+        actors=tuple(selections["actors"]),
         empty_signifiers=tuple(selections["empty_signifiers"]),
     )
     try:
@@ -472,9 +502,12 @@ def _sidebar(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
     except ValueError as exc:
         st.sidebar.warning(str(exc))
         filtered = filtered.iloc[0:0]
-    st.sidebar.caption("Publication clock only. Missing publication dates are excluded from dated views.")
+    st.sidebar.caption(
+        "Publication clock only. Missing publication dates are excluded from dated views."
+    )
     st.sidebar.caption(f"Active view: {len(filtered):,} / {len(frame):,} loaded records")
     return filtered, selections
+
 
 def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
     st.markdown("### Corpus overview")
@@ -485,15 +518,18 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
     )
     totals = st.columns(3)
     totals[0].metric(
-        "Collected records · corpus", snapshot.counts["records"],
+        "Collected records · corpus",
+        snapshot.counts["records"],
         help="Project-wide collected source records in MongoDB.",
     )
     totals[1].metric(
-        "Stored analyses · corpus", snapshot.counts["analyzed"],
+        "Stored analyses · corpus",
+        snapshot.counts["analyzed"],
         help="Project-wide durable result documents, including possible reruns of a source.",
     )
     totals[2].metric(
-        "Filtered records · loaded window", len(frame),
+        "Filtered records · loaded window",
+        len(frame),
         help="Current view after filters. This is the denominator for the charts below.",
     )
     if snapshot.counts["records"]:
@@ -511,7 +547,9 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
             "exist for one source, so stored analyses are not unique sources."
         )
     if snapshot.analyzed_age_hours is None:
-        st.warning("Analysis freshness unavailable: no durable analysis result with a valid timestamp was found.")
+        st.warning(
+            "Analysis freshness unavailable: no durable analysis result with a valid timestamp was found."
+        )
     elif snapshot.analyzed_age_hours >= FRESHNESS_WARNING_HOURS:
         st.warning(
             f"Analysis is stale: newest visible stored analysis is {snapshot.analyzed_age_hours:.1f} hours old "
@@ -529,10 +567,16 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
         st.markdown("#### Records across time")
         st.caption("Source, collection, analysis and event clocks describe different timestamps.")
         st.plotly_chart(
-            chart_style(px.line(
-                timeline, x="period", y="documents", color="time_kind", markers=True,
-                labels={"period": "Date", "documents": "Records", "time_kind": "Clock"},
-            )),
+            chart_style(
+                px.line(
+                    timeline,
+                    x="period",
+                    y="documents",
+                    color="time_kind",
+                    markers=True,
+                    labels={"period": "Date", "documents": "Records", "time_kind": "Clock"},
+                )
+            ),
             width="stretch",
         )
     # Side by side rather than stacked: formations, signifiers and actors are read as a set, and
@@ -549,8 +593,9 @@ def _monitor(snapshot: LiveSnapshot, frame: pd.DataFrame) -> None:
             column.caption(f"No {title.lower()} in the current filtered window.")
             continue
         column.plotly_chart(
-            chart_style(px.bar(table.head(12).iloc[::-1], x="count",
-                               y=table.columns[0], orientation="h")),
+            chart_style(
+                px.bar(table.head(12).iloc[::-1], x="count", y=table.columns[0], orientation="h")
+            ),
             width="stretch",
             height=340,
         )
@@ -592,7 +637,13 @@ def _explore(frame: pd.DataFrame) -> None:
     st.markdown("#### Formation × signifier")
     render_overlap(frame, views["formation_signifier"])
 
-def _networks(frame: pd.DataFrame, settings: Settings | None = None) -> None:
+
+def _networks(
+    frame: pd.DataFrame,
+    settings: Settings | None = None,
+    *,
+    artifact_path: Path | None = None,
+) -> None:
     from streamlit.components.v1 import html
 
     from laclaugpt_visualization.ai26_graph_render import graph_html
@@ -609,19 +660,32 @@ def _networks(frame: pd.DataFrame, settings: Settings | None = None) -> None:
         "indicate coded/inferred assertions; layout and visible degree are descriptive."
     )
     artifact = None
+    if artifact_path is not None:
+        # Issue #342: a copied demo ships a versioned graph bundle and never reaches a database.
+        try:
+            artifact = json.loads(Path(artifact_path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            st.warning(
+                f"Bundled graph artifact unreadable ({type(artifact_path).__name__}); "
+                "showing explicit DA relations only."
+            )
+            artifact = None
     if settings is not None and not frame.empty:
         client = None
         try:
             client = _mongo_client(settings)
             artifact = load_mongo_artifact(
-                client[settings.mongodb_database], set(frame["source_url"].astype(str)),
+                client[settings.mongodb_database],
+                set(frame["source_url"].astype(str)),
             )
         except Exception as exc:  # noqa: BLE001 -- optional upstream graph must not disable DA
             st.warning(f"Upstream graph unavailable: {type(exc).__name__}.")
         finally:
             if client is not None:
                 client.close()
-    uploaded = st.file_uploader("Optional private Analysis AnalyticalGraph JSON export", type=["json"])
+    uploaded = st.file_uploader(
+        "Optional private Analysis AnalyticalGraph JSON export", type=["json"]
+    )
     if uploaded is not None:
         try:
             artifact = json.loads(uploaded.getvalue())
@@ -631,7 +695,9 @@ def _networks(frame: pd.DataFrame, settings: Settings | None = None) -> None:
             st.warning(f"Cannot open graph: {type(exc).__name__}.")
             artifact = None
     if artifact is None:
-        st.info("No validated upstream graph available. Showing explicit DA relations only; no DNA/SNA inferred.")
+        st.info(
+            "No validated upstream graph available. Showing explicit DA relations only; no DNA/SNA inferred."
+        )
     try:
         baseline = graph_view(frame, artifact)
     except (ValueError, TypeError) as exc:
@@ -641,7 +707,9 @@ def _networks(frame: pd.DataFrame, settings: Settings | None = None) -> None:
     left, right, third = st.columns(3)
     for col, layer in zip((left, right, third), LAYERS, strict=True):
         col.metric(f"{layer.upper()} available edges", baseline["availability"][layer])
-    chosen = st.multiselect("Network layers", list(LAYERS), default=list(LAYERS), format_func=str.upper)
+    chosen = st.multiselect(
+        "Network layers", list(LAYERS), default=list(LAYERS), format_func=str.upper
+    )
     types = sorted({edge["type"] for edge in baseline["edges"] if edge.get("type")})
     edge_types = st.multiselect("Relation types (visible preview)", types)
     a, b, c = st.columns(3)
@@ -649,8 +717,13 @@ def _networks(frame: pd.DataFrame, settings: Settings | None = None) -> None:
     edges = b.number_input("Edge limit", 10, 1000, 500, 10)
     weight = c.number_input("Minimum reported edge weight", min_value=0.0, value=0.0)
     graph = graph_view(
-        frame, artifact, layers=tuple(chosen), max_nodes=int(nodes), max_edges=int(edges),
-        min_weight=float(weight), edge_types=tuple(edge_types),
+        frame,
+        artifact,
+        layers=tuple(chosen),
+        max_nodes=int(nodes),
+        max_edges=int(edges),
+        min_weight=float(weight),
+        edge_types=tuple(edge_types),
     )
     st.caption(
         f"{len(graph['nodes'])} nodes · {len(graph['edges'])} displayed edges / "
@@ -659,28 +732,40 @@ def _networks(frame: pd.DataFrame, settings: Settings | None = None) -> None:
     if graph["truncated"] or graph["input_truncated"]:
         st.warning("Graph is bounded/truncated; not the full network. Narrow the source filters.")
     if graph["omitted_unlinked_edges"]:
-        st.caption(f"{graph['omitted_unlinked_edges']} upstream edges lack usable source/endpoint links.")
+        st.caption(
+            f"{graph['omitted_unlinked_edges']} upstream edges lack usable source/endpoint links."
+        )
     if not graph["edges"]:
         st.info("No explicit relations match this combination of filters.")
     else:
         html(graph_html(graph), height=730, scrolling=True)
         st.download_button(
-            "Download visible graph JSON", json.dumps(graph, ensure_ascii=False, default=str),
-            "ai26-network.json", "application/json",
+            "Download visible graph JSON",
+            json.dumps(graph, ensure_ascii=False, default=str),
+            "ai26-network.json",
+            "application/json",
         )
         with st.expander("Evidence-bearing relations"):
             ids = {node["id"]: node["label"] for node in graph["nodes"]}
-            evidence = pd.DataFrame([
-                {
-                    "From": ids[edge["source"]], "To": ids[edge["target"]],
-                    "Layer": edge["layer"].upper(), "Relation": edge["type"],
-                    "Review": edge.get("review_status"), "Stance": edge.get("stance"),
-                    "Source": edge["source_url"],
-                    "Evidence": ", ".join(map(str, edge["provenance"].get("evidence_ids") or [])),
-                }
-                for edge in graph["edges"]
-            ])
+            evidence = pd.DataFrame(
+                [
+                    {
+                        "From": ids[edge["source"]],
+                        "To": ids[edge["target"]],
+                        "Layer": edge["layer"].upper(),
+                        "Relation": edge["type"],
+                        "Review": edge.get("review_status"),
+                        "Stance": edge.get("stance"),
+                        "Source": edge["source_url"],
+                        "Evidence": ", ".join(
+                            map(str, edge["provenance"].get("evidence_ids") or [])
+                        ),
+                    }
+                    for edge in graph["edges"]
+                ]
+            )
             st.dataframe(evidence, width="stretch", hide_index=True)
+
 
 def _records(frame: pd.DataFrame) -> None:
     if frame.empty:
@@ -690,6 +775,7 @@ def _records(frame: pd.DataFrame) -> None:
     if len(table.columns):
         st.dataframe(table, width="stretch", hide_index=True)
     render_record_picker(frame, "ai26_records_inspector")
+
 
 def _reports(settings: Settings, frame: pd.DataFrame) -> None:
     reports = load_reports(settings.data_path("reports"))
@@ -705,7 +791,8 @@ def _reports(settings: Settings, frame: pd.DataFrame) -> None:
     if report.source_urls:
         linked = (
             frame[frame["source_url"].isin(report.source_urls)]
-            if "source_url" in frame else frame.iloc[0:0]
+            if "source_url" in frame
+            else frame.iloc[0:0]
         )
         st.caption(f"Evidence links visible in current filtered view: {len(linked)}")
 
@@ -772,7 +859,9 @@ def _configuration(settings: Settings) -> None:
             actor="dashboard-researcher",
             reason=reason,
         )
-        st.success(f"Published config event {request_id}. The receiving module must validate/apply it.")
+        st.success(
+            f"Published config event {request_id}. The receiving module must validate/apply it."
+        )
 
 
 def _hermes(settings: Settings, frame: pd.DataFrame) -> None:
@@ -836,7 +925,63 @@ def _diagnostics(settings: Settings, snapshot: LiveSnapshot, frame: pd.DataFrame
     )
 
 
+def run_demo(settings: Settings) -> None:
+    """Render the public demonstration copy from an approved bundle (issue #342).
+
+    A copy of this dashboard runs from files, not from the private database: the bundle is a
+    versioned JSONL of records plus an optional AnalyticalGraph JSON, both produced by
+    ``scripts/export_ai26_demo_bundle.py``. Only the read-only views are rendered — no reports,
+    RAG chat, configuration, Hermes integration or host diagnostics, because those read services
+    the demo must not have.
+    """
+    st.set_page_config(page_title="LaclauGPT AI26 Public Demo", layout="wide")
+    render_header()
+    st.caption("Public demonstration copy of the AI26 research dashboard · read-only")
+    st.warning(CAVEAT)
+    frame = _demo_frame(settings)
+    if frame is None or frame.empty:
+        st.error(
+            "No demo bundle loaded. Set LACLAUGPT_VIS_DEMO_BUNDLE to the approved bundle file."
+        )
+        st.caption("A demo copy never falls back to a private database or a private endpoint.")
+        return
+    st.info(
+        f"Demo data: {len(frame)} records · data as of {settings.demo_as_of or 'not recorded'} · "
+        "DNA and SNA are experimental Phase 2 products"
+    )
+    filtered, _filters = _sidebar(frame)
+    st.sidebar.caption("Public demo · read-only · refreshed by the operator on each release")
+    renderers = (
+        lambda: _explore(filtered),
+        lambda: _networks(filtered, None, artifact_path=settings.demo_graph),
+        lambda: _records(filtered),
+    )
+    for tab, renderer in zip(st.tabs(list(DEMO_TABS)), renderers, strict=True):
+        with tab:
+            renderer()
+
+
+def _demo_frame(settings: Settings) -> pd.DataFrame | None:
+    """The approved demo bundle, or ``None`` when it is missing."""
+    bundle = (
+        Path(settings.demo_bundle)
+        if settings.demo_bundle
+        else settings.data_dir / "demo" / "records.jsonl"
+    )
+    if not bundle.is_file():
+        return None
+    try:
+        return load_frame(bundle, settings)
+    except (OSError, ValueError):
+        return None
+
+
 def run() -> None:
+    settings = get_settings()
+    if settings.demo_mode:
+        # Issue #342: a copied public demo renders the approved bundle and nothing else. The
+        # research deployment below is untouched because demo mode defaults to off.
+        return run_demo(settings)
     st.set_page_config(page_title="LaclauGPT AI26 Research Dashboard", layout="wide")
     render_header()
     st.caption("Live AI26 research dashboard · descriptive observations and source evidence")

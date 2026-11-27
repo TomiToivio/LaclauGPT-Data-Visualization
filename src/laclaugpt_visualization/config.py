@@ -1,4 +1,5 @@
 """Configuration for local-first and optional distributed visualization backends."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -67,6 +68,14 @@ class Settings(BaseSettings):
     output_dir: Path = Path("data/exports")
     sqlite_path: Path = Path("data/database/visualization.sqlite3")
     analysis_data_dir: Path | None = None
+
+    # Issue #342: a copied public demo runs from an approved, versioned bundle instead of the
+    # private database. Demo mode is off by default, so the research deployment is unchanged;
+    # when it is on, the dashboard reads the bundle below and renders only the read-only views.
+    demo_mode: bool = False
+    demo_bundle: Path | None = None
+    demo_graph: Path | None = None
+    demo_as_of: str = ""
 
     server_host: str = "127.0.0.1"
     server_port: int = 8501
@@ -159,7 +168,9 @@ class Settings(BaseSettings):
 
     @property
     def resolved_mongodb_collection(self) -> str:
-        return self.mongodb_collection or self.distributed_namespace.mongo_collection("analysis_results")
+        return self.mongodb_collection or self.distributed_namespace.mongo_collection(
+            "analysis_results"
+        )
 
     @property
     def expected_mongodb_collection(self) -> str:
@@ -168,7 +179,9 @@ class Settings(BaseSettings):
 
     @property
     def resolved_mongodb_graph_collection(self) -> str:
-        return self.mongodb_graph_collection or self.distributed_namespace.mongo_collection("relations")
+        return self.mongodb_graph_collection or self.distributed_namespace.mongo_collection(
+            "relations"
+        )
 
     @property
     def deployment_profile(self) -> DeploymentProfile:
@@ -259,7 +272,10 @@ class Settings(BaseSettings):
             raise ValueError("mongodb storage backend requires LACLAUGPT_VIS_MONGODB_URI")
         if self.data_backend == "mongodb" and not self.mongodb_uri:
             raise ValueError("mongodb backend requires LACLAUGPT_VIS_MONGODB_URI")
-        if self.data_backend == "mongodb" and self.resolved_mongodb_collection != self.expected_mongodb_collection:
+        if (
+            self.data_backend == "mongodb"
+            and self.resolved_mongodb_collection != self.expected_mongodb_collection
+        ):
             raise ValueError(
                 "canonical MongoDB source must match Analysis output "
                 f"{self.expected_mongodb_collection!r}; got {self.resolved_mongodb_collection!r}"
